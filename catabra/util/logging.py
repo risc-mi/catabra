@@ -1,4 +1,3 @@
-from typing import List
 import os
 import sys
 import traceback
@@ -14,10 +13,6 @@ def err(*msg, **kwargs):
 
 def warn(*msg, **kwargs):
     print('WARNING:', *msg, flush=True, file=sys.stderr, **kwargs)
-
-
-def info(*msg, **kwargs):
-    print('INFO:', *msg, flush=True, file=sys.stderr, **kwargs)
 
 
 class LogHide:
@@ -66,11 +61,12 @@ class LogMirror:
             warn("and in case you need warnings")
             print("no need to use the custom log functions")
     """
-    def __init__(self, log_path: str):
+    def __init__(self, log_path: str, mode: str = 'w'):
         self._log_path = log_path
+        self._mode = mode
 
     def __enter__(self):
-        self._file = open(self._log_path, 'w')
+        self._file = open(self._log_path, mode=self._mode)
         self._stdout = sys.stdout
         self._stderr = sys.stderr
         sys.stdout = self._tee(self._stdout, self._file)
