@@ -1,6 +1,5 @@
 from typing import Union, Optional, Tuple
 from pathlib import Path
-import json
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -388,13 +387,11 @@ class Encoder(BaseEstimator):
             features=self._features,
             targets=self._targets
         )
-        with open(file, mode='wt') as f:
-            json.dump(io.to_json(dct), f, indent=2)
+        io.dump(io.to_json(dct), file)
 
     @classmethod
     def load(cls, file: Union[str, Path]) -> 'Encoder':
-        with open(file, mode='rt') as f:
-            dct = json.load(f)
+        dct = io.load(file)
         encoder = Encoder()
         value = dct.get('classify')
         if value is not None:

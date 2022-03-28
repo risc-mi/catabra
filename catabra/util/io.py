@@ -1,5 +1,8 @@
 from typing import Union, Iterable, Dict
 from pathlib import Path
+import json
+import pickle
+import joblib
 import pandas as pd
 from csv import Sniffer
 
@@ -101,6 +104,59 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
         with pd.HDFStore(str(fn), mode=mode) as h5:
             for k, df in dfs.items():
                 h5[k] = df
+    else:
+        raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
+
+
+def load(fn: Union[str, Path]):
+    """
+    Load a Python object from disk. The object can be stored in JSON, Pickle or joblib format. The format is
+    automatically determined based on the given file extension:
+    * ".json" => JSON
+    * ".pkl", ".pickle" => Pickle
+    * ".joblib" => joblib
+    :param fn: The file to load.
+    :return: The loaded object.
+    """
+    if not isinstance(fn, Path):
+        fn = Path(fn)
+    if fn.suffix.lower() == '.json':
+        with open(fn, mode='rt') as f:
+            return json.load(f)
+    elif fn.suffix.lower() in ('.pkl', '.pickle'):
+        with open(fn, mode='rb') as f:
+            return pickle.load(f)
+    elif fn.suffix.lower() == '.joblib':
+        return joblib.load(fn.as_posix())
+    else:
+        raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
+
+
+def dump(obj, fn: Union[str, Path]):
+    """
+    Dump a Python object to disk, either as a JSON, Pickle or joblib file. The format is determined automatically based
+    on the given file extension:
+    * ".json" => JSON
+    * ".pkl", ".pickle" => Pickle
+    * ".joblib" => joblib
+
+    When dumping objects as JSON, calling `to_json()` beforehand might be necessary to ensure compliance with the
+    JSON standard.
+    joblib is preferred over Pickle, as it is more efficient if the object contains large Numpy arrays.
+
+    :param obj: The object to dump.
+    :param fn: The file.
+    """
+    if not isinstance(fn, Path):
+        fn = Path(fn)
+    if fn.suffix.lower() == '.json':
+        with open(fn, mode='wt') as f:
+            json.dump(obj, f, indent=2)
+    elif fn.suffix.lower() in ('.pkl', '.pickle'):
+        with open(fn, mode='wb') as f:
+            pickle.dump(obj, f)
+    elif fn.suffix.lower() == '.joblib':
+        joblib.dump(obj, fn.as_posix())
     else:
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
 
