@@ -159,9 +159,10 @@ class Encoder(BaseEstimator):
         """
         Transform features- and/or labels DataFrames.
         :param inplace: Whether to modify the given data in place.
-        :param kwargs: The data to transform, with keys "x" (features) or "y" (labels).
+        :param kwargs: The data to transform, with keys "x" (features), "y" (labels) or "data" (features+labels).
         :return: The transformed DataFrame(s), either a single DataFrame if only one of "x" or "y" is passed, or a
-        pair of DataFrames in the same order as in the argument dict.
+        pair of DataFrames in the same order as in the argument dict. If "data" is passed, returns the pair of encoded
+        features and labels.
         """
         out = []
         for k, v in kwargs.items():
@@ -188,6 +189,19 @@ class Encoder(BaseEstimator):
                                 copy = False
                             v[c] = s
                 out.append(v)
+            elif k == 'data':
+                if v is None:
+                    out += [None, None]
+                elif self._targets is None:
+                    # `data` only contains features
+                    out += [self.transform(inplace=inplace, x=v), None]
+                else:
+                    target_columns = [f['name'] for f in self._targets]
+                    missing = [c for c in target_columns if c not in v.columns]
+                    if missing:
+                        raise ValueError('The following columns are missing: ' + cu.repr_list(missing, brackets=False))
+                    y = v[target_columns].copy()
+                    out += [self.transform(inplace=inplace, x=v), self.transform(inplace=True, y=y)]
             else:
                 raise TypeError(f"transform() got an unexpected keyword argument '{k}'")
 
