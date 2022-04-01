@@ -1,3 +1,4 @@
+from typing import Optional, List
 import os
 import sys
 import traceback
@@ -13,6 +14,67 @@ def err(*msg, **kwargs):
 
 def warn(*msg, **kwargs):
     print('WARNING:', *msg, flush=True, file=sys.stderr, **kwargs)
+
+
+def prompt(msg: str, accepted: Optional[List[str]] = None, allow_headless: bool = True) -> str:
+    if Headless.headless():
+        if allow_headless:
+            if isinstance(accepted, list):
+                return accepted[0].lower()
+            else:
+                return ''
+        else:
+            raise RuntimeError(f'Input prompt "{msg}" in headless mode.')
+    else:
+        if isinstance(accepted, list):
+            assert accepted     # internal consistency check
+            accepted = [a.lower() for a in accepted]
+            msg += f' [{"/".join(accepted)}] '
+        else:
+            msg += ' '
+        res = input(msg).lower()
+        if accepted is None or res in accepted:
+            return res
+        else:
+            msg = f'Not understood; please type in one of {", ".join(accepted)}: '
+            while True:
+                res = input(msg).lower()
+                if res in accepted:
+                    return res
+
+
+class Headless:
+    __VALUE = False
+
+    @staticmethod
+    def headless() -> bool:
+        return Headless.__VALUE
+
+    def __init__(self, enabled: bool = True):
+        self._enabled = enabled
+        self._active = False
+        self._headless = None
+
+    @property
+    def active(self) -> bool:
+        return self._active
+
+    def __enter__(self):
+        self.activate()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.deactivate()
+
+    def activate(self):
+        if not self._active:
+            self._headless = Headless.__VALUE
+            Headless.__VALUE = self._enabled
+            self._active = True
+
+    def deactivate(self):
+        if self._active:
+            Headless.__VALUE = self._headless
+            self._active = False
 
 
 class LogHide:
