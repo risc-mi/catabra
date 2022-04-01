@@ -1,4 +1,4 @@
-from typing import Tuple, List, Dict, Union, Iterable
+from typing import Tuple, List, Dict, Union, Optional, Iterable
 import numpy as np
 import pandas as pd
 
@@ -117,14 +117,15 @@ def merge_tables(tables: Iterable[Union[pd.DataFrame, str, io.Path]]) -> Tuple[p
     return df, id_cols
 
 
-def train_test_split(df: pd.DataFrame, by: str) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def train_test_split(df: pd.DataFrame, by: str) -> Tuple[Dict[str, np.ndarray], Optional[str]]:
     """
     Split the given DataFrame into train- and test set(s), by a given column.
     :param df: The DataFrame.
     :param by: The name of the column to split by. Must have bool or categorical data type.
-    :return: Pair `(df_train, dfs_test)`, where `df_train` is the (possibly empty) portion of `df` containing the
-    training samples, and `dfs_test` is a (possibly empty) dict where string-keys are mapped to non-empty,
-    non-overlapping DataFrames with test samples.
+    :return: Pair `(split_masks, train_key)`, where
+    * `split_masks` is a dict mapping string-keys to masks corresponding to non-overlapping portions of `df`.
+    * `train_key` is the key (in `split_masks`) containing the training set, or None if the training set could not be
+        determined.
     """
     if by not in df.columns:
         raise ValueError(f'"{by}" is no column of the given DataFrame.')
@@ -132,20 +133,23 @@ def train_test_split(df: pd.DataFrame, by: str) -> Tuple[pd.DataFrame, Dict[str,
     if s.dtype.kind == 'b':
         train = 'train' in by.lower()
         test = 'test' in by.lower() or 'val' in by.lower()
-        if train:
-            if test:
-                raise ValueError(f'Name of bool train-test-split column "{by}" is ambiguous.')
+        if train == test:
+            if s.all():
+                return {by: s.values}, None
+            elif not s.any():
+                return {'not_' + by: ~s.values}, None
             else:
-                s = ~s
-        elif not test:
-            raise ValueError(f'Name of bool train-test-split column "{by}" is ambiguous.')
-        # `s` is True for entries belonging to test set
-        if s.all():
-            return df.iloc[:0].copy(), {'test': df}
-        elif s.any():
-            return df[~s].copy(), {'test': df[s].copy()}
+                return {'not_' + by: ~s.values, by: s.values}, None
+        elif train:
+            if s.all():
+                return {by: s.values}, by
+            else:
+                return {by: s.values, 'not_' + by: ~s.values}, by
         else:
-            return df, {}
+            if s.any():
+                return {'not_' + by: ~s.values, by: s.values}, 'not_' + by
+            else:
+                return {'not_' + by: ~s.values}, 'not_' + by
     elif s.dtype.name == 'category':
         train = [c for c in s.cat.categories if 'train' in c.lower()]
         if len(train) == 0:
@@ -153,20 +157,21 @@ def train_test_split(df: pd.DataFrame, by: str) -> Tuple[pd.DataFrame, Dict[str,
         if len(train) == 1:
             train = train[0]
             mask = s == train
-            if mask.all():
-                return df, {}
-            else:
-                test = {}
+            out = {str(train): mask.values}
+            if not mask.all():
                 for c in s.cat.categories:
                     if c != train:
                         c_mask = s == c
-                        if c_mask.all():
-                            test[c] = df
-                        elif c_mask.any():
-                            test[c] = df[c_mask].copy()
-                return df[mask].copy(), test
+                        if c_mask.any():
+                            out[c] = c_mask.values
+            return out, str(train)
         else:
-            raise ValueError(f'Categories of train-test-split column "{by}" are ambiguous.')
+            test = {}
+            for c in s.cat.categories:
+                c_mask = s == c
+                if c_mask.any():
+                    test[c] = c_mask.values
+            return test, None
     else:
         raise ValueError(
             f'The data type of train-test-split column "{by}" must be bool or categorical, but found {s.dtype.name}.'
