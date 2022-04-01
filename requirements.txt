@@ -3,3 +3,4 @@ auto-sklearn
 pandas
 pytables
 xlrd
+xlsxwriter
