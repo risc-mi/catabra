@@ -9,6 +9,8 @@ DEFAULT_CONFIG = {
     "memory_limit": 3072,           # memory limit for single models, in MB
     "time_limit": 10,               # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
     "jobs": 1,                      # default number of jobs to use; negative means all available processors; overwritten by command-line parameter
+    "copy_train_data": False,       # whether to copy training data into run folder; can be True, False or maximum size to copy, in MB
+    "copy_test_data": False,        # whether to copy test data into run folder; same possible values as for "copy_train_data"
 
     # binary classification performance metrics; see https://scikit-learn.org/stable/modules/model_evaluation.html
     # first element is main metric used for choosing best model
