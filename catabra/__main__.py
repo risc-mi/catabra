@@ -23,7 +23,12 @@ def make_parser():
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
-                ignore=args.ignore, t=args.time, out=args.out, config=args.config, jobs=args.jobs)
+                ignore=args.ignore, time=args.time, out=args.out, config=args.config, jobs=args.jobs)
+
+    def _evaluate(args: argparse.Namespace):
+        from .evaluation import evaluate
+        evaluate(*args.table, folder=args.src, split=args.split, model_id=args.model_id, out=args.out, jobs=args.jobs,
+                 batch_size=args.batch_size)
 
     analyzer = subparsers.add_parser(
         'analyze',
@@ -98,14 +103,55 @@ def make_parser():
 
     evaluator = subparsers.add_parser(
         'evaluate',
-        help='Evaluate a trained prediction model on held-out test data.'
+        help='Evaluate an existing CaTabRa object on held-out test data.'
+    )
+    evaluator.add_argument(
+        'src',
+        type=str,
+        metavar='SOURCE',
+        help='The CaTabRa object to evaluate. Must be the path to a folder which was the output directory of a'
+             ' previous invocation of `analyze`.'
+    )
+    evaluator.add_argument(
+        '--on',
+        type=str,
+        nargs='+',
+        metavar='ON',
+        help='The table(s) on which to evaluate SOURCE. Must be CSV- or Excel files, or tables stored in HDF5 files.'
+    )
+    evaluator.add_argument(
+        '-s', '--split',
+        type=str,
+        metavar='SPLIT_COL',
+        help='The name of the column containing information about data splits.'
+             ' If given, SOURCE is evaluated on each split separately.'
+    )
+    evaluator.add_argument(
+        '-m', '--model-id',
+        type=str,
+        metavar='MODEL_ID',
+        help='The ID of the prediction model to evaluate. If omitted, evaluate the sole trained model or the whole'
+             ' ensemble.'
+    )
+    evaluator.add_argument(
+        '-b', '--batch-size',
+        type=str,
+        metavar='BATCH_SIZE',
+        help='The batch size to use for applying the trained prediction model.'
+    )
+    evaluator.add_argument(
+        '-o', '--out',
+        type=str,
+        metavar='OUT',
+        help='The name of the directory where to store the evaluation results.'
+             ' Defaults to "SOURCE/eval_ON_DATE_TIME", where DATE and TIME are the current date and time.'
     )
     _add_jobs(evaluator)
-    # TODO
+    evaluator.set_defaults(func=_evaluate)
 
     applier = subparsers.add_parser(
         'apply',
-        help='Apply a trained prediction model to new data.'
+        help='Apply an existing CaTabRa object to new data.'
     )
     _add_jobs(applier)
     # TODO
