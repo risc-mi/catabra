@@ -181,6 +181,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')
         logging.log(f'### Elapsed time: {end - start}')
+        logging.log(f'### Output saved in {out.as_posix()}')
 
 
 def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray]) -> pd.DataFrame:

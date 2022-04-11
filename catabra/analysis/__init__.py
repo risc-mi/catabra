@@ -266,6 +266,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         end = pd.Timestamp.now()
         logging.log(f'### Analysis finished at {end}')
         logging.log(f'### Elapsed time: {end - start}')
+        logging.log(f'### Output saved in {out.as_posix()}')
 
     if len(split_masks) > 0:
         from .. import evaluation
