@@ -7,6 +7,20 @@ import pandas as pd
 from csv import Sniffer
 
 
+def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
+    """
+    Convert a path-like object into a proper path object, i.e., an instance of class `Path`.
+    :param p: Path-like object. If an instance of `Path` and `absolute` is False, `p` is returned unchanged.
+    :param absolute: Whether to make sure that the output is an absolute path. If False, the path may be relative.
+    :return: Path object.
+    """
+    if not isinstance(p, Path):
+        p = Path(p)
+    if absolute:
+        return p.absolute()
+    return p
+
+
 def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> pd.DataFrame:
     """
     Read a DataFrame from a CSV, Excel or HDF5 file. The file type is determined from the file extension of the given
@@ -16,8 +30,7 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
     keys are read an concatenated along the row axis.
     :return: A DataFrame.
     """
-    if isinstance(fn, str):
-        fn = Path(fn)
+    fn = make_path(fn)
     if fn.suffix.lower() in ('.xlsx', '.xls'):
         return pd.read_excel(str(fn))
     elif fn.suffix.lower() == '.csv':
@@ -47,8 +60,7 @@ def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: s
     :param key: The key in the HDF5 file, if `fn` is an HDF5 file. If None, `fn` may contain only one table.
     :param mode: The mode in which the HDF5 file shall be opened, if `fn` is an HDF5 file. Ignored otherwise.
     """
-    if not isinstance(fn, Path):
-        fn = Path(fn)
+    fn = make_path(fn)
     fn.parent.mkdir(exist_ok=True, parents=True)
     if fn.suffix.lower() in ('.xlsx', '.xls'):
         delta_cols = [c for c in df.columns if df[c].dtype.kind == 'm']
@@ -77,8 +89,7 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
     :param fn: The target file name.
     :param mode: The mode in which the file shall be opened, if `fn` is an Excel- or HDF5 file. Ignored otherwise.
     """
-    if not isinstance(fn, Path):
-        fn = Path(fn)
+    fn = make_path(fn)
     if not dfs:
         if mode != 'a' and fn.exists():
             fn.unlink()
@@ -118,8 +129,7 @@ def load(fn: Union[str, Path]):
     :param fn: The file to load.
     :return: The loaded object.
     """
-    if not isinstance(fn, Path):
-        fn = Path(fn)
+    fn = make_path(fn)
     if fn.suffix.lower() == '.json':
         with open(fn, mode='rt') as f:
             return json.load(f)
@@ -147,8 +157,7 @@ def dump(obj, fn: Union[str, Path]):
     :param obj: The object to dump.
     :param fn: The file.
     """
-    if not isinstance(fn, Path):
-        fn = Path(fn)
+    fn = make_path(fn)
     if fn.suffix.lower() == '.json':
         with open(fn, mode='wt') as f:
             json.dump(obj, f, indent=2)

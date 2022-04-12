@@ -37,13 +37,13 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     :param ignore: Optional, list of columns to ignore when training prediction models. Automatically includes `group`
     and `split`, but may contain further columns.
     :param time: Optional, time budget for model training, in minutes. Some AutoML backends require a fixed budget,
-    others might not.
+    others might not. Overwrites the "time_limit" config param.
     :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in the
     parent directory of `table`, with a name following a fixed naming pattern. If `out` already exists, the user is
     prompted to specify whether it should be replaced; otherwise, it is automatically created.
     :param config: Optional, configuration dict or path to JSON file containing such a dict. Merged with the default
     configuration in `util/config.py`.
-    :param jobs: Optional, number of jobs to use.
+    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     """
 
     if len(table) == 0:
@@ -61,15 +61,19 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         raise ValueError('At least one of `classify` and `regress` must be None.')
 
     start = pd.Timestamp.now()
+    table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in table]
+    if isinstance(table[0], Path):
+        dataset_name = table[0].stem
+    else:
+        dataset_name = None
+
     if out is None:
         out = table[0]
         if isinstance(out, pd.DataFrame):
             raise ValueError('Output directory must be specified when passing a DataFrame.')
-        elif not isinstance(out, Path):
-            out = Path(out)
         out = out.parent / (out.stem + '_catabra_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-    elif not isinstance(out, Path):
-        out = Path(out)
+    else:
+        out = io.make_path(out, absolute=True)
     if out.exists():
         if logging.prompt(f'Output folder "{out.as_posix()}" already exists. Delete?',
                           accepted=['y', 'n'], allow_headless=False) == 'y':
@@ -82,12 +86,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             return
     out.mkdir(parents=True)
 
-    if isinstance(table[0], str):
-        dataset_name = Path(table[0]).stem
-    elif isinstance(table[0], Path):
-        dataset_name = table[0].stem
-    else:
-        dataset_name = None
+    if isinstance(config, (str, Path)):
+        config = io.make_path(config, absolute=True)
 
     with logging.LogMirror((out / 'console.txt').as_posix()):
         logging.log(f'### Analysis started at {start}')
@@ -242,6 +242,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
         # TODO: Generate descriptive statistics, in total and for each split individually.
         #   If binary/multiclass classification, generate statistics for each class.
+        #   Generate suitable plots, e.g., feature correlation plots.
 
         # encoder
         encoder = Encoder(classify=classify)

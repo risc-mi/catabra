@@ -60,13 +60,13 @@ def make_parser():
     analyzer.add_argument(
         '-g', '--group',
         type=str,
-        metavar='GROUP_COL',
+        metavar='GROUP',
         help='The name of the column to group samples by when forming cross-validation splits.'
     )
     analyzer.add_argument(
         '-s', '--split',
         type=str,
-        metavar='SPLIT_COL',
+        metavar='SPLIT',
         help='The name of the column containing information about train-test splits.'
              ' If given, models are trained on the training data and automatically evaluated on all test splits'
              ' afterward.'
@@ -90,7 +90,7 @@ def make_parser():
         metavar='OUT',
         help='The name of the directory where to store the analysis results.'
              ' Defaults to "TABLE_catabra_DATE_TIME" in the parent directory of TABLE,'
-             ' where DATE and TIME are the current date and time.'
+             ' where DATE and TIME are the current date and time. "." is a shortcut for the current working directory.'
     )
     analyzer.add_argument(
         '--config',
@@ -110,7 +110,7 @@ def make_parser():
         type=str,
         metavar='SOURCE',
         help='The CaTabRa object to evaluate. Must be the path to a folder which was the output directory of a'
-             ' previous invocation of `analyze`.'
+             ' previous invocation of `analyze`. "." is a shortcut for the current working directory.'
     )
     evaluator.add_argument(
         '--on',
@@ -122,7 +122,7 @@ def make_parser():
     evaluator.add_argument(
         '-s', '--split',
         type=str,
-        metavar='SPLIT_COL',
+        metavar='SPLIT',
         help='The name of the column containing information about data splits.'
              ' If given, SOURCE is evaluated on each split separately.'
     )
@@ -145,6 +145,7 @@ def make_parser():
         metavar='OUT',
         help='The name of the directory where to store the evaluation results.'
              ' Defaults to "SOURCE/eval_ON_DATE_TIME", where DATE and TIME are the current date and time.'
+             ' "." is a shortcut for the current working directory.'
     )
     _add_jobs(evaluator)
     evaluator.set_defaults(func=_evaluate)

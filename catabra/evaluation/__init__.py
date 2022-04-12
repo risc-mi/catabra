@@ -28,31 +28,31 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
     with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
     should be replaced; otherwise, it is automatically created.
-    :param jobs: Optional, number of jobs to use.
+    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for applying the prediction model.
     """
     if len(table) == 0:
         raise ValueError('No table specified.')
     if folder is None:
         raise ValueError('No folder specified.')
-    elif not isinstance(folder, Path):
-        folder = Path(folder)
+    else:
+        folder = io.make_path(folder, absolute=True)
     if not folder.exists():
         raise ValueError(f'Folder "{folder.as_posix()}" does not exist.')
 
     config = io.load(folder / 'config.json')
 
     start = pd.Timestamp.now()
+    table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in table]
+
     if out is None:
         out = table[0]
         if isinstance(out, pd.DataFrame):
             out = folder / ('eval_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
         else:
-            if not isinstance(out, Path):
-                out = Path(out)
             out = folder / ('eval_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-    elif not isinstance(out, Path):
-        out = Path(out)
+    else:
+        out = io.make_path(out, absolute=True)
     if out.exists():
         if logging.prompt(f'Evaluation folder "{out.as_posix()}" already exists. Delete?',
                           accepted=['y', 'n'], allow_headless=False) == 'y':
