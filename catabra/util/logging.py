@@ -5,30 +5,40 @@ import traceback
 
 
 def log(*msg, **kwargs):
-    print(*msg, flush=True, **kwargs)
+    print('[CaTabRa]', *msg, flush=True, **kwargs)
 
 
 def err(*msg, **kwargs):
-    print('ERROR:', *msg, flush=True, file=sys.stderr, **kwargs)
+    print('[CaTabRa error]', *msg, flush=True, file=sys.stderr, **kwargs)
 
 
 def warn(*msg, **kwargs):
-    print('WARNING:', *msg, flush=True, file=sys.stderr, **kwargs)
+    print('[CaTabRa warning]', *msg, flush=True, file=sys.stderr, **kwargs)
 
 
 def prompt(msg: str, accepted: Optional[List[str]] = None, allow_headless: bool = True) -> str:
+    """
+    Prompt the user for input.
+    :param msg: The message to be printed.
+    :param accepted: List of accepted inputs. Must be lower-case. If None, all inputs are accepted.
+    :param allow_headless: What to do in headless mode. If True, the first element in `accepted` is returned if
+    `accepted` is a list and "" is returned if `accepted` is None. If False, a RunTimeError is raised.
+    :return: The input of the user, an element of `accepted` if `accepted` is a list, or arbitrary if `accepted` is
+    None.
+    """
     if Headless.headless():
         if allow_headless:
+            assert not any(c.isupper() for a in accepted for c in a)
             if isinstance(accepted, list):
-                return accepted[0].lower()
+                return accepted[0]
             else:
                 return ''
         else:
             raise RuntimeError(f'Input prompt "{msg}" in headless mode.')
     else:
         if isinstance(accepted, list):
-            assert accepted     # internal consistency check
-            accepted = [a.lower() for a in accepted]
+            assert accepted
+            assert not any(c.isupper() for a in accepted for c in a)
             msg += f' [{"/".join(accepted)}] '
         else:
             msg += ' '
