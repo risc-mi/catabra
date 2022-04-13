@@ -187,7 +187,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             ignore.update({split})
 
         # copy training data
-        copy_data = config.get('copy_train_data', False)
+        copy_data = config.get('copy_analysis_data', False)
         if isinstance(copy_data, (int, float)):
             copy_data = df_train.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
         if copy_data:

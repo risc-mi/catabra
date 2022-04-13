@@ -83,7 +83,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
 
         # copy test data
-        copy_data = config.get('copy_test_data', False)
+        copy_data = config.get('copy_evaluation_data', False)
         if isinstance(copy_data, (int, float)):
             copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
         if copy_data:
