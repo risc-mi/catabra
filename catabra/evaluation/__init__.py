@@ -14,23 +14,44 @@ from ..util.encoding import Encoder
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
              split: Optional[str] = None, out: Union[str, Path, None] = None, jobs: Optional[int] = None,
-             batch_size: Optional[int] = None):
+             batch_size: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
     :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
     a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
     :param folder: The folder containing the CaTabRa object to evaluate.
-    :param model_id: Optional, ID of the prediction model to evaluate. If None, the sole trained model or the entire
-    ensemble are evaluated.
-    :param split: Optional, column used for splitting the data into disjoint subsets. If specified, each subset is
-    evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to carry any
-    semantic information about training and test sets.
+    :param model_id: Optional, ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained
+    model or the entire ensemble are evaluated.
+    :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
+    subset is evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to
+    carry any semantic information about training and test sets.
     :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
     with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
     should be replaced; otherwise, it is automatically created.
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for applying the prediction model.
+    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
+    explicitly specified are taken from this dict; this also includes the table to analyze.
     """
+
+    if isinstance(from_invocation, (str, Path)):
+        from_invocation = io.load(from_invocation)
+    if isinstance(from_invocation, dict):
+        if len(table) == 0:
+            table = from_invocation.get('table') or []
+            if '<DataFrame>' in table:
+                raise ValueError('Invocations must not contain "<DataFrame>" tables.')
+        if folder is None:
+            folder = from_invocation.get('folder')
+        if model_id is None:
+            model_id = from_invocation.get('model_id')
+        if split is None:
+            split = from_invocation.get('split')
+        if out is None:
+            out = from_invocation.get('out')
+        if jobs is None:
+            jobs = from_invocation.get('jobs')
+
     if len(table) == 0:
         raise ValueError('No table specified.')
     if folder is None:
@@ -61,9 +82,12 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             else:
                 out.unlink()
         else:
-            print('### Aborting')
+            logging.log('### Aborting')
             return
     out.mkdir(parents=True)
+
+    if split == '':
+        split = None
 
     with logging.LogMirror((out / 'console.txt').as_posix()):
         logging.log(f'### Evaluation started at {start}')
@@ -73,6 +97,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             model_id=model_id,
             split=split,
             out=out,
+            jobs=jobs,
             timestamp=start
         )
         io.dump(io.to_json(invocation), out / 'invocation.json')

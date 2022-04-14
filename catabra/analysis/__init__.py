@@ -18,7 +18,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
             split: Optional[str] = None, ignore: Optional[Iterable[str]] = None, time: Optional[int] = None,
             out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
-            jobs: Optional[int] = None):
+            jobs: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
     the remaining ones.
@@ -28,12 +28,12 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     Must be None if `regress` is given.
     :param regress: Optional, column(s) to regress. Must have numerical or time-like data type.
     Must be None if `classify` is given.
-    :param group: Optional, column used for grouping samples for internal (cross) validation. If not specified and the
-    row index of the given table has a name, group by row index.
-    :param split: Optional, column used for splitting the data into train- and test set. If specified, descriptive
-    statistics, OOD-detectors and prediction models are generated based exclusively on the training split and then
-    automatically evaluated on the test split. The name and/or values of the column must contain the string "train",
-    "test" or "val", to clearly indicate what is the training- and what is the test data.
+    :param group: Optional, column used for grouping samples for internal (cross) validation. If not specified or set
+    to "", and the row index of the given table has a name, group by row index.
+    :param split: Optional, column used for splitting the data into train- and test set. If specified and not "",
+    descriptive statistics, OOD-detectors and prediction models are generated based exclusively on the training split
+    and then automatically evaluated on the test split. The name and/or values of the column must contain the string
+    "train", "test" or "val", to clearly indicate what is the training- and what is the test data.
     :param ignore: Optional, list of columns to ignore when training prediction models. Automatically includes `group`
     and `split`, but may contain further columns.
     :param time: Optional, time budget for model training, in minutes. Some AutoML backends require a fixed budget,
@@ -42,9 +42,41 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     parent directory of `table`, with a name following a fixed naming pattern. If `out` already exists, the user is
     prompted to specify whether it should be replaced; otherwise, it is automatically created.
     :param config: Optional, configuration dict or path to JSON file containing such a dict. Merged with the default
-    configuration in `util/config.py`.
+    configuration in `util/config.py`. Empty string means that the default configuration is used.
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
+    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
+    explicitly specified are taken from this dict; this also includes the table to analyze.
     """
+
+    if isinstance(from_invocation, (str, Path)):
+        from_invocation = io.load(from_invocation)
+    if isinstance(from_invocation, dict):
+        if len(table) == 0:
+            table = from_invocation.get('table') or []
+            if '<DataFrame>' in table:
+                raise ValueError('Invocations must not contain "<DataFrame>" tables.')
+        if classify is None and regress is None:
+            target = from_invocation.get('target') or []
+            if '<DataFrame>' in target:
+                raise ValueError('Invocations must not contain "<DataFrame>" targets.')
+            if from_invocation.get('classify', True):
+                classify = target
+            else:
+                regress = target
+        if group is None:
+            group = from_invocation.get('group')
+        if split is None:
+            split = from_invocation.get('split')
+        if ignore is None:
+            ignore = from_invocation.get('ignore')
+        if out is None:
+            out = from_invocation.get('out')
+        if config is None:
+            config = from_invocation.get('config')
+        if time is None:
+            time = from_invocation.get('time')
+        if jobs is None:
+            jobs = from_invocation.get('jobs')
 
     if len(table) == 0:
         raise ValueError('No table specified.')
@@ -82,10 +114,16 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             else:
                 out.unlink()
         else:
-            print('### Aborting')
+            logging.log('### Aborting')
             return
     out.mkdir(parents=True)
 
+    if group == '':
+        group = None
+    if split == '':
+        split = None
+    if config == '':
+        config = None
     if isinstance(config, (str, Path)):
         config = io.make_path(config, absolute=True)
 

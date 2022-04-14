@@ -20,15 +20,25 @@ def make_parser():
             help='The number of jobs to use. -1 means all available processors.'
         )
 
+    def _add_from(_p: argparse.ArgumentParser):
+        _p.add_argument(
+            '--from',
+            type=str,
+            metavar='FROM',
+            help='The path to an invocation.json file. All command-line arguments not explicitly specified are taken'
+                 ' from this file.'
+        )
+
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
-                ignore=args.ignore, time=args.time, out=args.out, config=args.config, jobs=args.jobs)
+                ignore=args.ignore, time=args.time, out=args.out, config=args.config, jobs=args.jobs,
+                from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
-        evaluate(*args.table, folder=args.src, split=args.split, model_id=args.model_id, out=args.out, jobs=args.jobs,
-                 batch_size=args.batch_size)
+        evaluate(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, out=args.out,
+                 jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
 
     analyzer = subparsers.add_parser(
         'analyze',
@@ -37,14 +47,14 @@ def make_parser():
     analyzer.add_argument(
         'table',
         type=str,
-        nargs='+',
+        nargs='*',
         metavar='TABLE',
         help='The table(s) to analyze. Must be CSV- or Excel files, or tables stored in HDF5 files.'
     )
     analyzer.add_argument(
         '-c', '--classify',
         type=str,
-        nargs='+',
+        nargs='*',
         metavar='CLASSIFY',
         help='The name of the column(s) containing the variable(s) to classify, or the path to a table.'
              ' Must be omitted if flag "-r" is provided.'
@@ -52,7 +62,7 @@ def make_parser():
     analyzer.add_argument(
         '-r', '--regress',
         type=str,
-        nargs='+',
+        nargs='*',
         metavar='REGRESS',
         help='The name of the column(s) containing the variable(s) to regress, or the path to a table.'
              ' Must be omitted if flag "-c" is provided.'
@@ -60,14 +70,19 @@ def make_parser():
     analyzer.add_argument(
         '-g', '--group',
         type=str,
+        nargs='?',
+        const='',
         metavar='GROUP',
-        help='The name of the column to group samples by when forming cross-validation splits.'
+        help='Name of the column used for grouping samples for internal (cross) validation. If no GROUP is given,'
+             ' samples are grouped by the row index of TABLE, if it has a name; otherwise, grouping is disabled.'
     )
     analyzer.add_argument(
         '-s', '--split',
         type=str,
+        nargs='?',
+        const='',
         metavar='SPLIT',
-        help='The name of the column containing information about train-test splits.'
+        help='Name of the column used for splitting the data into train- and test set.'
              ' If given, models are trained on the training data and automatically evaluated on all test splits'
              ' afterward.'
     )
@@ -76,7 +91,7 @@ def make_parser():
         type=str,
         nargs='*',
         metavar='IGNORE',
-        help='Names of columns to ignore, typically ID-columns. GROUP_COL and SPLIT_COL are always ignored.'
+        help='Names of columns to ignore, typically ID-columns. GROUP and SPLIT are always ignored.'
     )
     analyzer.add_argument(
         '-t', '--time',
@@ -95,10 +110,14 @@ def make_parser():
     analyzer.add_argument(
         '--config',
         type=str,
+        nargs='?',
+        const='',
         metavar='CONFIG',
-        help='The path to an alternative config file.'
+        help='The path to an alternative config file. If no CONFIG is given, the default configuration from'
+             ' util/config.py is used.'
     )
     _add_jobs(analyzer)
+    _add_from(analyzer)
     analyzer.set_defaults(func=_analyze)
 
     evaluator = subparsers.add_parser(
@@ -108,6 +127,7 @@ def make_parser():
     evaluator.add_argument(
         'src',
         type=str,
+        nargs='?',
         metavar='SOURCE',
         help='The CaTabRa object to evaluate. Must be the path to a folder which was the output directory of a'
              ' previous invocation of `analyze`. "." is a shortcut for the current working directory.'
@@ -122,6 +142,8 @@ def make_parser():
     evaluator.add_argument(
         '-s', '--split',
         type=str,
+        nargs='?',
+        const='',
         metavar='SPLIT',
         help='The name of the column containing information about data splits.'
              ' If given, SOURCE is evaluated on each split separately.'
@@ -129,9 +151,11 @@ def make_parser():
     evaluator.add_argument(
         '-m', '--model-id',
         type=str,
+        nargs='?',
+        const='__ensemble__',
         metavar='MODEL_ID',
-        help='The ID of the prediction model to evaluate. If omitted, evaluate the sole trained model or the whole'
-             ' ensemble.'
+        help='The ID of the prediction model to evaluate. If no MODEL_ID is given, the sole trained model or the whole'
+             ' ensemble is evaluated.'
     )
     evaluator.add_argument(
         '-b', '--batch-size',
@@ -148,6 +172,7 @@ def make_parser():
              ' "." is a shortcut for the current working directory.'
     )
     _add_jobs(evaluator)
+    _add_from(evaluator)
     evaluator.set_defaults(func=_evaluate)
 
     applier = subparsers.add_parser(
