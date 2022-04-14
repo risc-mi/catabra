@@ -264,12 +264,14 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return out
 
 
-def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray]) \
-        -> Tuple[dict, pd.DataFrame]:
+def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
+                                       thresholds: Optional[list] = None) -> Tuple[dict, pd.DataFrame]:
     """
     Calculate all suitable metrics.
     :param y_true: Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
     :param y_hat: Predictions. Must have the same number of rows as `y_true` and either 1 or 2 columns.
+    :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
+    depending on the values of `y_hat` is constructed.
     :return: Pair `(overall, threshold)`, where `overall` is a dict containing the scores of threshold-independent
     metrics (e.g., ROC-AUC) and `threshold` is a DataFrame with one column for each threshold-dependent metric, and one
     row for each decision threshold.
@@ -289,7 +291,7 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     y_true = y_true[mask]
     y_hat = y_hat[mask]
 
-    precision, recall, thresholds = sklearn.metrics.precision_recall_curve(y_true, y_hat)
+    precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_hat)
     dct = dict(n=mask.sum())
     for name, func in [('roc_auc', sklearn.metrics.roc_auc_score),
                        ('average_precision', sklearn.metrics.average_precision_score),
@@ -305,10 +307,13 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     except:  # noqa
         pass
 
-    if len(thresholds) == 0:
-        thresholds = [0.5]
-    elif len(thresholds) > 110:
-        thresholds = thresholds[np.linspace(0, len(thresholds) - 1, 100).round().astype(np.int32)]
+    if thresholds is None:
+        thresholds = np.sort(y_hat)
+        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, 100).round().astype(np.int32)])
+        if (0 <= y_hat).all() and (y_hat <= 1).all():
+            thresholds.update({0.5, 1.})
+        thresholds = list(thresholds)
+        thresholds.sort()
     out = pd.DataFrame(data=dict(threshold=thresholds))
     n_positive = (y_true > 0).sum()
     n_negative = (y_true < 1).sum()
