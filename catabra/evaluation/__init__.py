@@ -161,12 +161,30 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
                 if encoder.task_ == 'multilabel_classification':
-                    # TODO
-                    # - per sample: true class indicators, predicted probabilities
-                    # - per split: all suitable metrics for overall performance, multilabel confusion matrix (?),
-                    #       binary classification output for each class individually
-                    # - plots: binary classification plots for each class individually
-                    pass
+                    # decoded ground truth and predictions for each target
+                    y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
+                    y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+                    y_hat_decoded.index = y_test_decoded.index
+                    y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
+                    detailed = y_test_decoded.join(y_hat_decoded)
+                    detailed = detailed.reindex(
+                        [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
+                        axis=1
+                    )
+                    del y_test_decoded
+                    del y_hat_decoded
+
+                    pos_label = list(
+                        encoder.inverse_transform(y=np.ones((1, len(y_test.columns)), dtype=np.float32)).iloc[0]
+                    ) + [None] * 3
+                    for mask, directory in _iter_splits():
+                        directory.mkdir(exist_ok=True, parents=True)
+                        io.write_df(detailed[mask], directory / 'predictions.xlsx')
+                        overall, thresh, thresh_per_class = calc_multilabel_metrics(y_test[mask], y_hat[mask])
+                        overall.insert(0, 'pos_label', pos_label)
+                        io.write_dfs(dict(overall=overall, thresholded=thresh, **thresh_per_class),
+                                     directory / 'metrics.xlsx')
+                        # TODO: Binary classification plots for each class individually.
                 else:
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
@@ -301,7 +319,9 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     y_true = y_true[mask]
     y_hat = y_hat[mask]
 
-    dct = dict(n=mask.sum())
+    n_positive = (y_true > 0).sum()
+    n_negative = (y_true < 1).sum()
+    dct = dict(n=mask.sum(), n_pos=n_positive)
     for m, func in _BINARY_PROBA_METRICS:
         try:
             dct[m] = func(y_true, y_hat)
@@ -316,8 +336,6 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
         thresholds = list(thresholds)
         thresholds.sort()
     out = pd.DataFrame(data=dict(threshold=thresholds))
-    n_positive = (y_true > 0).sum()
-    n_negative = (y_true < 1).sum()
     for i, t in enumerate(thresholds):
         y_pred = (y_hat >= t).astype(np.float32)
         for m, func in _BINARY_CLASS_METRICS:
@@ -450,6 +468,112 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     # drop all-NaN columns
     per_class.dropna(axis=1, how='all', inplace=True)
     return dct, conf_mat, per_class
+
+
+def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
+                            thresholds: Optional[list] = None) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """
+    Calculate all metrics suitable for multilabel classification.
+    :param y_true: Ground truth. Must have `n_classes` columns with float data type and values among 0, 1 and NaN.
+    :param y_hat: Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
+    :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
+    depending on the values of `y_hat` is constructed.
+    :return: Triple `(overall, threshold, threshold_per_class)`:
+    * `overall` is a DataFrame containing non-thresholded metrics per class and for all classes combined
+        ("__micro__", "__macro__" and "__weighted__"). Weights are the number of positive samples per class.
+    * `threshold` is a DataFrame containing thresholded metrics for different thresholds for all classes combined.
+    * `threshold_per_class` is a dict mapping classes to per-class thresholded metrics.
+    """
+    assert len(y_true) == len(y_hat)
+    if isinstance(y_hat, pd.DataFrame):
+        y_hat = y_hat.values
+    assert y_hat.ndim == 2
+    labels = list(y_true.columns)
+    y_true = y_true.values
+
+    mask = np.isfinite(y_true) & np.isfinite(y_hat)
+
+    n_positive = (y_true > 0).sum(axis=0)
+    n_negative = (y_true < 1).sum(axis=0)
+
+    dct = {}
+    for i, lbl in enumerate(labels):
+        dct_i = dict(n=mask[:, i].sum(), n_pos=n_positive[i])
+        for m, func in _BINARY_PROBA_METRICS:
+            try:
+                dct_i[m] = func(y_true[mask[:, i], i], y_hat[mask[:, i], i])
+            except:  # noqa
+                pass
+        dct[lbl] = dct_i
+
+    # micro average
+    y_true_flat = y_true.ravel()
+    y_hat_flat = y_hat.ravel()
+    mask_flat = mask.ravel()
+    dct_i = dict(n=mask.sum(), n_pos=(y_true > 0).sum())
+    for m, func in _BINARY_PROBA_METRICS:
+        try:
+            dct_i[m] = func(y_true_flat[mask_flat], y_hat_flat[mask_flat])
+        except:  # noqa
+            pass
+    dct['__micro__'] = dct_i
+
+    # macro and weighted average
+    dct['__macro__'] = dict(n=mask.any(axis=1).sum(), n_pos=(y_true > 0).any(axis=1).sum())
+    dct['__weighted__'] = dct['__macro__']
+    overall = pd.DataFrame.from_dict(dct, orient='index')
+    div = overall['n_pos'].sum() - overall.loc[['__micro__', '__macro__', '__weighted__'], 'n_pos'].sum()
+    for c in overall.columns:
+        if c not in ('n', 'n_pos'):
+            overall.loc['__macro__', c] = overall[c].iloc[:-3].mean()
+            overall.loc['__weighted__', c] = (overall['n_pos'].iloc[:-3] * overall[c].iloc[:-3]).sum() / div
+
+    if thresholds is None:
+        thresholds = np.sort(y_hat.reshape(-1))
+        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, 100).round().astype(np.int32)])
+        if not ((y_hat < 0).any() or (1 < y_hat).any()):
+            thresholds.update({0.5, 1.})
+        thresholds = list(thresholds)
+        thresholds.sort()
+
+    per_class = {}
+    for j, lbl in enumerate(labels):
+        out = pd.DataFrame(data=dict(threshold=thresholds))
+        y_true_j = y_true[mask[:, j], j]
+        y_hat_j = y_hat[mask[:, j], j]
+        for i, t in enumerate(thresholds):
+            y_pred = y_hat_j >= t
+            for m, func in _BINARY_CLASS_METRICS:
+                if i == 0:
+                    out[m] = np.nan
+                try:
+                    out[m].values[i] = func(y_true_j, y_pred)
+                except:  # noqa
+                    pass
+            if i == 0:
+                out['true_positive'] = 0
+                out['true_negative'] = 0
+            out['true_positive'].values[i] = ((y_true_j > 0) & (y_pred > 0)).sum()
+            out['true_negative'].values[i] = ((y_true_j < 1) & (y_pred < 1)).sum()
+        out['false_positive'] = n_negative[j] - out['true_negative']
+        out['false_negative'] = n_positive[j] - out['true_positive']
+
+        per_class[lbl] = out
+
+    out = pd.DataFrame(data=dict(threshold=thresholds))
+    for m, func in _BINARY_CLASS_METRICS:
+        out[m + '_micro'] = np.nan
+        for i, t in enumerate(thresholds):
+            try:
+                out[m + '_micro'].values[i] = func(y_true_flat, y_hat_flat >= t)
+            except:  # noqa
+                pass
+        out[m + '_macro'] = sum(v[m] for v in per_class.values()) / len(per_class)
+        out[m + '_weighted'] = sum(v[m] * overall.loc[k, 'n_pos'] for k, v in per_class.items()) / div
+
+    # drop all-NaN columns
+    out.dropna(axis=1, how='all', inplace=True)
+    return overall, out, per_class
 
 
 def pr_auc_score(y_true, y_score, **kwargs) -> float:
