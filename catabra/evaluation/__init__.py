@@ -5,6 +5,7 @@ import shutil
 import numpy as np
 import pandas as pd
 import sklearn
+import sklearn.metrics
 
 from ..util import table as tu
 from ..util import io
@@ -200,7 +201,14 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
                             io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                            # TODO: Generate confusion matrix and other suitable metrics. Use PyCM?
+                            overall, conf_mat, per_class = calc_multiclass_metrics(
+                                y_test[mask],
+                                y_hat[mask],
+                                labels=encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0]
+                            )
+                            overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
+                            io.write_dfs(dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class),
+                                         directory / 'metrics.xlsx')
                             # TODO: Plot color-coded confusion matrix.
 
         end = pd.Timestamp.now()
@@ -291,21 +299,12 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     y_true = y_true[mask]
     y_hat = y_hat[mask]
 
-    precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_hat)
     dct = dict(n=mask.sum())
-    for name, func in [('roc_auc', sklearn.metrics.roc_auc_score),
-                       ('average_precision', sklearn.metrics.average_precision_score),
-                       ('brier_loss', sklearn.metrics.brier_score_loss),
-                       ('hinge_loss', sklearn.metrics.hinge_loss),
-                       ('log_loss', sklearn.metrics.log_loss)]:
+    for m, func in _BINARY_PROBA_METRICS:
         try:
-            dct[name] = func(y_true, y_hat)
+            dct[m] = func(y_true, y_hat)
         except:     # noqa
             pass
-    try:
-        dct['pr_auc'] = sklearn.metrics.auc(precision, recall)
-    except:  # noqa
-        pass
 
     if thresholds is None:
         thresholds = np.sort(y_hat)
@@ -319,20 +318,11 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     n_negative = (y_true < 1).sum()
     for i, t in enumerate(thresholds):
         y_pred = (y_hat >= t).astype(np.float32)
-        for name, func in [('accuracy', sklearn.metrics.accuracy_score),
-                           ('balanced_accuracy', sklearn.metrics.balanced_accuracy_score),
-                           ('f1', sklearn.metrics.f1_score),
-                           ('sensitivity', partial(sklearn.metrics.recall_score, zero_division=0)),
-                           ('specificity', partial(sklearn.metrics.recall_score, pos_label=0, zero_division=0)),
-                           ('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=0)),
-                           ('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=0)),
-                           ('cohen_kappa', sklearn.metrics.cohen_kappa_score),
-                           ('hamming_loss', sklearn.metrics.hamming_loss),
-                           ('jaccard_index', sklearn.metrics.jaccard_score)]:
+        for m, func in _BINARY_CLASS_METRICS:
             if i == 0:
-                out[name] = np.nan
+                out[m] = np.nan
             try:
-                out[name].values[i] = func(y_true, y_pred)
+                out[m].values[i] = func(y_true, y_pred)
             except:     # noqa
                 pass
         if i == 0:
@@ -346,3 +336,140 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     # drop all-NaN columns
     out.dropna(axis=1, how='all', inplace=True)
     return dct, out
+
+
+def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
+                            labels: Optional[list] = None) -> Tuple[dict, pd.DataFrame, pd.DataFrame]:
+    """
+    Calculate all metrics suitable for multiclass classification.
+    :param y_true: Ground truth. Must have 1 column with float data type and values among
+    NaN, 0, 1, ..., `n_classes` - 1.
+    :param y_hat: Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
+    :param labels: Class names.
+    :return: Triple `(overall, conf_mat, per_class)`, where `overall` is a dict with overall performance metrics
+    (accuracy, F1, etc.), `conf_mat` is the confusion matrix, and `per_class` is a DataFrame with per-class metrics
+    (one row per class, one column per metric).
+    """
+    assert y_true.shape[1] == 1
+    assert len(y_true) == len(y_hat)
+    if isinstance(y_hat, pd.DataFrame):
+        y_hat = y_hat.values
+    assert y_hat.ndim == 2
+    y_true = y_true.values[:, 0]
+    assert not (y_true < 0).any()
+    assert not (y_true >= y_hat.shape[1]).any()
+    if labels is None:
+        labels = list(range(y_hat.shape[1]))
+    else:
+        assert len(labels) == y_hat.shape[1]
+        assert '__total__' not in labels
+        labels = list(labels)
+
+    mask = np.isfinite(y_true) & np.isfinite(y_hat).all(axis=1)
+    y_true = y_true[mask]
+    y_hat = y_hat[mask]
+    y_pred = np.argmax(y_hat, axis=1).astype(y_true.dtype)
+
+    # confusion matrix
+    conf_mat = sklearn.metrics.confusion_matrix(y_true, y_pred)
+    conf_mat = np.concatenate([conf_mat, conf_mat.sum(axis=0, keepdims=True)])
+    conf_mat = pd.DataFrame(data=conf_mat, columns=labels, index=labels + ['__total__'])
+    conf_mat['__total__'] = conf_mat.sum(axis=1)
+    conf_mat.index.name = 'true \\ pred'        # suitable for saving as Excel file
+
+    precision, recall, f1, support = \
+        sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
+    jaccard = sklearn.metrics.jaccard_score(y_true, y_pred, average=None, zero_division=0)
+    n = support.sum()
+
+    # per-class metrics
+    per_class = pd.DataFrame(
+        index=labels,
+        columns=[m for m, _ in _BINARY_PROBA_METRICS] + [m for m, _ in _BINARY_CLASS_METRICS]
+    )
+    for i, lbl in enumerate(labels):
+        for m, func in _BINARY_PROBA_METRICS:
+            try:
+                per_class[m].values[i] = func(y_true == i, y_hat[:, i])
+            except:     # noqa
+                pass
+        for m, func in _BINARY_CLASS_METRICS:
+            if m == 'sensitivity':
+                per_class[m].values[i] = recall[i]
+            elif m == 'positive_predictive_value':
+                per_class[m].values[i] = precision[i]
+            elif m == 'f1':
+                per_class[m].values[i] = f1[i]
+            elif m == 'jaccard':
+                per_class[m].values[i] = jaccard[i]
+            else:
+                try:
+                    per_class[m].values[i] = func(y_true == i, y_pred == i)
+                except:     # noqa
+                    pass
+    per_class.insert(0, 'n', conf_mat['__total__'].iloc[:-1])
+
+    # overall metrics
+    dct = dict(n=n)
+    for name, func in [('accuracy', sklearn.metrics.accuracy_score),
+                       ('balanced_accuracy', sklearn.metrics.balanced_accuracy_score),
+                       ('cohen_kappa', sklearn.metrics.cohen_kappa_score),
+                       ('matthews_correlation_coefficient', sklearn.metrics.matthews_corrcoef)]:
+        try:
+            dct[name] = func(y_true, y_pred)
+        except:  # noqa
+            pass
+    for name, func in [('roc_auc_ovr', partial(sklearn.metrics.roc_auc_score, multi_class='ovr')),
+                       ('roc_auc_ovo', partial(sklearn.metrics.roc_auc_score, multi_class='ovo')),
+                       ('roc_auc_ovr_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovr', average='weighted')),
+                       ('roc_auc_ovo_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovo', average='weighted'))]:
+        try:
+            dct[name] = func(y_true, y_hat)
+        except:  # noqa
+            pass
+    precision_micro, recall_micro, f1_micro, _ = \
+        sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average='micro', zero_division=0)
+    dct.update(
+        precision_micro=precision_micro,
+        precision_macro=precision.mean(),
+        precision_weighted=precision.dot(support) / n,
+        recall_micro=recall_micro,
+        recall_macro=recall.mean(),
+        recall_weighted=recall.dot(support) / n,
+        f1_micro=f1_micro,
+        f1_macro=f1.mean(),
+        f1_weighted=f1.dot(support) / n,
+        jaccard_micro=sklearn.metrics.jaccard_score(y_true, y_pred, average='micro', zero_division=0),
+        jaccard_macro=jaccard.mean(),
+        jaccard_weighted=jaccard.dot(support) / n,
+        mean_average_precision=per_class['average_precision'].mean()
+    )
+
+    # drop all-NaN columns
+    per_class.dropna(axis=1, how='all', inplace=True)
+    return dct, conf_mat, per_class
+
+
+def pr_auc_score(y_true, y_score, **kwargs) -> float:
+    precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_score, **kwargs)
+    return sklearn.metrics.auc(recall, precision)
+
+
+# metrics for binary classification, which require probabilities of positive class
+_BINARY_PROBA_METRICS = [('roc_auc', sklearn.metrics.roc_auc_score),
+                         ('average_precision', sklearn.metrics.average_precision_score),
+                         ('pr_auc', pr_auc_score),
+                         ('brier_loss', sklearn.metrics.brier_score_loss),
+                         ('hinge_loss', sklearn.metrics.hinge_loss),
+                         ('log_loss', sklearn.metrics.log_loss)]
+# metrics for binary classification, which require predicted classes
+_BINARY_CLASS_METRICS = [('accuracy', sklearn.metrics.accuracy_score),
+                         ('balanced_accuracy', sklearn.metrics.balanced_accuracy_score),
+                         ('f1', sklearn.metrics.f1_score),
+                         ('sensitivity', partial(sklearn.metrics.recall_score, zero_division=0)),
+                         ('specificity', partial(sklearn.metrics.recall_score, pos_label=0, zero_division=0)),
+                         ('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=0)),
+                         ('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=0)),
+                         ('cohen_kappa', sklearn.metrics.cohen_kappa_score),
+                         ('hamming_loss', sklearn.metrics.hamming_loss),
+                         ('jaccard', sklearn.metrics.jaccard_score)]
