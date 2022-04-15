@@ -4,3 +4,4 @@ pandas
 pytables
 xlrd
 xlsxwriter
+openpyxl
