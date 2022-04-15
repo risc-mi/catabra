@@ -99,6 +99,15 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     else:
         dataset_name = None
 
+    if config is None:
+        config = {}
+    elif isinstance(config, dict):
+        config = copy.deepcopy(config)
+    else:
+        # if `config` is in `out`, it's better to load it before deleting `out`
+        config = io.load(config)
+    config = cfg.add_defaults(config)
+
     if out is None:
         out = table[0]
         if isinstance(out, pd.DataFrame):
@@ -143,14 +152,6 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             timestamp=start
         )
         io.dump(io.to_json(invocation), out / 'invocation.json')
-
-        if config is None:
-            config = {}
-        elif isinstance(config, dict):
-            config = copy.deepcopy(config)
-        else:
-            config = io.load(config)
-        config = cfg.add_defaults(config)
         io.dump(config, out / 'config.json')
 
         # merge tables

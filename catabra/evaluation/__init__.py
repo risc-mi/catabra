@@ -75,7 +75,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             out = folder / ('eval_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
     else:
         out = io.make_path(out, absolute=True)
-    if out.exists():
+    if out == folder:
+        raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
+    elif out.exists():
         if logging.prompt(f'Evaluation folder "{out.as_posix()}" already exists. Delete?',
                           accepted=['y', 'n'], allow_headless=False) == 'y':
             if out.is_dir():
