@@ -16,8 +16,8 @@ _EXTRA_SCORERS = dict(
     roc_auc_ovo=metrics.make_scorer('roc_auc_ovo', partial(sklearn.metrics.roc_auc_score, multi_class='ovo'), needs_threshold=True),
     roc_auc_ovr_weighted=metrics.make_scorer('roc_auc_ovr_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovr', average='weighted'), needs_threshold=True),
     roc_auc_ovo_weighted=metrics.make_scorer('roc_auc_ovo_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovo', average='weighted'), needs_threshold=True),
-    positive_predictive_value=metrics.make_scorer('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=0)),
-    negative_predictive_value=metrics.make_scorer('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=0)),
+    positive_predictive_value=metrics.make_scorer('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=1)),
+    negative_predictive_value=metrics.make_scorer('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=1)),
     sensitivity=metrics.make_scorer('sensitivity', partial(sklearn.metrics.recall_score, zero_division=0)),
     specificity=metrics.make_scorer('specificity', partial(sklearn.metrics.recall_score, pos_label=0, zero_division=0)),
 
