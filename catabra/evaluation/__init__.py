@@ -208,10 +208,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
                             io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                            overall, thresh = calc_binary_classification_metrics(y_test[mask], y_hat[mask])
+                            overall, thresh, calib = calc_binary_classification_metrics(y_test[mask], y_hat[mask])
                             overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
                             overall.insert(0, 'pos_label', pos_label)
-                            io.write_dfs(dict(overall=overall, thresholded=thresh), directory / 'metrics.xlsx')
+                            io.write_dfs(dict(overall=overall, thresholded=thresh, calibration=calib),
+                                         directory / 'metrics.xlsx')
                             # TODO: Plot
                             #   * ROC- and PR curves (both including best feature estimator);
                             #   * threshold vs. metric, with accuracy, balanced_accuracy, F1, sensitivity, specificity,
@@ -292,17 +293,25 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return out
 
 
-def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
-                                       thresholds: Optional[list] = None) -> Tuple[dict, pd.DataFrame]:
+def calc_binary_classification_metrics(
+        y_true: pd.DataFrame,
+        y_hat: Union[pd.DataFrame, np.ndarray],
+        thresholds: Optional[list] = None,
+        calibration_thresholds: Optional[np.ndarray] = None) -> Tuple[dict, pd.DataFrame, pd.DataFrame]:
     """
     Calculate all suitable metrics.
     :param y_true: Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
     :param y_hat: Predictions. Must have the same number of rows as `y_true` and either 1 or 2 columns.
     :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
     depending on the values of `y_hat` is constructed.
-    :return: Pair `(overall, threshold)`, where `overall` is a dict containing the scores of threshold-independent
-    metrics (e.g., ROC-AUC) and `threshold` is a DataFrame with one column for each threshold-dependent metric, and one
-    row for each decision threshold.
+    :param calibration_thresholds: Thresholds to use for calibration curves. If None, a default list depending on the
+    values of `y_hat` is constructed.
+    :return: Triple `(overall, threshold, calibration)`:
+    * `overall` is a dict containing the scores of threshold-independent metrics (e.g., ROC-AUC).
+    * `threshold` is a DataFrame with one column for each threshold-dependent metric, and one row for each decision
+        threshold.
+    * `calibration` is a DataFrame with one row for each threshold-bin and three columns with information about the
+        corresponding bin ranges and fraction of positive samples.
     """
     assert y_true.shape[1] == 1
     assert len(y_true) == len(y_hat)
@@ -329,12 +338,7 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
             pass
 
     if thresholds is None:
-        thresholds = np.sort(y_hat)
-        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, 100).round().astype(np.int32)])
-        if (0 <= y_hat).all() and (y_hat <= 1).all():
-            thresholds.update({0.5, 1.})
-        thresholds = list(thresholds)
-        thresholds.sort()
+        thresholds = _get_thresholds(y_hat, n_max=100, add_half_one=None)
     out = pd.DataFrame(data=dict(threshold=thresholds))
     for i, t in enumerate(thresholds):
         y_pred = (y_hat >= t).astype(np.float32)
@@ -353,9 +357,12 @@ def calc_binary_classification_metrics(y_true: pd.DataFrame, y_hat: Union[pd.Dat
     out['false_positive'] = n_negative - out['true_negative']
     out['false_negative'] = n_positive - out['true_positive']
 
+    fractions, th = calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
+    calibration = pd.DataFrame(data=dict(threshold_lower=th[:-1], threshold_upper=th[1:], pos_fraction=fractions))
+
     # drop all-NaN columns
     out.dropna(axis=1, how='all', inplace=True)
-    return dct, out
+    return dct, out, calibration
 
 
 def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
@@ -529,12 +536,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             overall.loc['__weighted__', c] = (overall['n_pos'].iloc[:-3] * overall[c].iloc[:-3]).sum() / div
 
     if thresholds is None:
-        thresholds = np.sort(y_hat.reshape(-1))
-        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, 100).round().astype(np.int32)])
-        if not ((y_hat < 0).any() or (1 < y_hat).any()):
-            thresholds.update({0.5, 1.})
-        thresholds = list(thresholds)
-        thresholds.sort()
+        thresholds = _get_thresholds(y_hat.reshape(-1), n_max=100, add_half_one=None)
 
     per_class = {}
     for j, lbl in enumerate(labels):
@@ -579,6 +581,47 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
 def pr_auc_score(y_true, y_score, **kwargs) -> float:
     precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_score, **kwargs)
     return sklearn.metrics.auc(recall, precision)
+
+
+def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optional[np.ndarray] = None) \
+        -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the calibration curve of a binary classification problem. The predicated class probabilities are binned and,
+    for each bin, the fraction of positive samples is determined. These fractions can then be plotted against the
+    midpoints of the respective bins. Ideally, the resulting curve will be monotonic increasing.
+    :param y_true: Ground truth, array of shape `(n,)` with values among 0 and 1. Values must not be NaN.
+    :param y_score: Predicated probabilities of the positive class, array of shape `(n,)` with arbitrary non-NaN values;
+    in particular, the values do not necessarily need to correspond to probabilities or confidences.
+    :param thresholds: The thresholds used for binning `y_score`. If None, suitable thresholds are determined
+    automatically.
+    :return: Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and
+    `fractions` is the corresponding array of fractions of positive samples in each bin, of shape `(m - 1,)`. Note that
+    the `i`-th bin ranges from `thresholds[i]` to `thresholds[i + 1]`.
+    """
+    assert y_true.shape == y_score.shape
+    if thresholds is None:
+        thresholds = _get_thresholds(y_score, n_max=40, add_half_one=False)
+    if len(thresholds) < 2:
+        return np.empty((0,), dtype=np.float32), thresholds
+    return \
+        np.array([y_true[(t1 <= y_score) & (y_score < t2)].mean() for t1, t2 in zip(thresholds[:-1], thresholds[1:])]),\
+        np.array(thresholds)
+
+
+def _get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None) -> list:
+    n = min(np.isfinite(y).sum(), n_max)
+    if n == 0:
+        thresholds = set()
+    elif n == 1:
+        thresholds = {np.nanmin(y)}
+    else:
+        thresholds = np.sort(y[np.isfinite(y)])
+        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, n).round().astype(np.int32)])
+    if add_half_one is True or (add_half_one is None and not (y < 0).any() and not (1 < y).any()):
+        thresholds.update({0.5, 1.})
+    thresholds = list(thresholds)
+    thresholds.sort()
+    return thresholds
 
 
 # metrics for binary classification, which require probabilities of positive class
