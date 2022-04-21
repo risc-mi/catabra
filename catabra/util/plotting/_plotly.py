@@ -159,12 +159,17 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     text = ['<b>{}</b>'.format(np.round(t, 2), 100 * t / n_samples) for t in z]
     text += ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), a) for t, a in zip(part_totals, part_acc)]
 
+    if n == 2:
+        correct_names = ['NPV', 'PPV', 'Specificity', 'Sensitivity']
+    else:
+        correct_names = ['Correct'] * n * 2
+    correct_names.append('Accuracy')
     hovertext = [f'True label: {j}<br>Predicted label: {i}<br>Count: {k}'
                  for i, j, k in zip(x_class, y_class, z)]
-    hovertext += ['<b>{}</b><br>Count: {}<br>Correct: {:.2f}%'.format(
+    hovertext += ['<b>{}</b><br>Count: {}<br>{}: {:.2f}%'.format(
         'Total' if i == 2 * n else
-        f'Predicted label: {classes[i]}' if i < n else f'True label: {classes[i - n]}', t, a)
-        for i, (t, a) in enumerate(zip(part_totals, part_acc))]
+        f'Predicted label: {classes[i]}' if i < n else f'True label: {classes[i - n]}', t, cn, a)
+        for i, (t, a, cn) in enumerate(zip(part_totals, part_acc, correct_names))]
 
     def _to_color(_c: tuple) -> str:
         return f'rgb({round(_c[0] * 256)},{round(_c[1] * 256)},{round(_c[2] * 256)})'
