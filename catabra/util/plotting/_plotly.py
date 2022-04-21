@@ -7,6 +7,59 @@ from plotly import graph_objects as go
 from . import _common
 
 
+def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History', legend=None, text=None):
+    """
+    Plot training history, with timestamps on x- and metrics on y-axis.
+    :param x: Timestamps, array of shape `(n,)`.
+    :param ys: Metrics, array of shape `(n,)`.
+    :param title: The title of the figure.
+    :param legend: Names of the individual curves. None or a list of strings with the same length as `ys`.
+    :param text: Additional information to display when hovering over a point. Same for all metrics. None or a list of
+    strings with the same length as `x`.
+    :return: plotly figure object.
+    """
+    if not isinstance(ys, list):
+        ys = [ys]
+    fig = go.Figure()
+
+    if x.dtype.kind == 'm':
+        unit, uom = _common.convert_timedelta(x)
+        x = x / unit
+        unit_suffix = f' [{uom}]'
+    else:
+        unit_suffix = ''
+
+    y_scale = 'linear'
+    if ys:
+        assert all(len(x) == len(y) for y in ys)
+        if legend is None:
+            legend = [None] * len(ys)
+        elif isinstance(legend, str):
+            legend = [legend]
+        if isinstance(text, str):
+            text = [text]
+        assert len(legend) == len(ys)
+        assert text is None or len(text) == len(x)
+        assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
+        for y, lbl in zip(ys, legend):
+            fig.add_trace(go.Scatter(x=x, y=y, name=lbl, mode='lines+markers', text=text))
+        maxes = [y.abs().max() for y in ys]
+        maxes = [np.log10(m) for m in maxes if m > 0]
+        if min(maxes) + 1 < max(maxes):
+            # logarithmic scale
+            # Unfortunately, plotly does not support "symlog", and workarounds are hacky.
+            #   (https://community.plotly.com/t/unable-to-see-negative-log-axis-scatter-plot/1364/3)
+            y_scale = 'log'
+
+    fig.update_layout(
+        xaxis=dict(title='Time' + unit_suffix),
+        yaxis=dict(title='Metric', type=y_scale),
+        title=dict(text=_common.make_title(None, title), x=0.5, xref='paper'),
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+    )
+    return fig
+
+
 def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str] = None,
                        title: Optional[str] = 'Truth-Prediction Plot'):
     """

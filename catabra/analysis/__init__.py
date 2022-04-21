@@ -10,6 +10,7 @@ from ..util import logging
 from ..util import table as tu
 from ..util import common as cu
 from ..util import config as cfg
+from ..util import plotting
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
 
@@ -279,6 +280,12 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         else:
             y_train = None
 
+        static_plots = config.get('static_plots', True)
+        interactive_plots = config.get('interactive_plots', False)
+        if interactive_plots and plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            interactive_plots = False
+
         # TODO: Generate descriptive statistics, in total and for each split individually.
         #   If binary/multiclass classification, generate statistics for each class.
         #   Generate suitable plots, e.g., feature correlation plots.
@@ -299,8 +306,12 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 backend.fit(x_train, y_train, groups=group, time=time, jobs=jobs, dataset_name=dataset_name)
                 io.dump(backend, out / 'model.joblib')
                 io.dump(io.to_json(backend.summary()), out / 'model_summary.json')
-                # TODO: Plot training history.
-                io.write_df(backend.training_history(), out / 'training_history.xlsx')
+                hist = backend.training_history()
+                io.write_df(hist, out / 'training_history.xlsx')
+                if static_plots:
+                    plotting.save(plot_training_history(hist, interactive=False), out)
+                if interactive_plots:
+                    plotting.save(plot_training_history(hist, interactive=True), out)
                 logging.log('Finished model building')
 
         end = pd.Timestamp.now()
@@ -311,3 +322,32 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     if len(split_masks) > 0:
         from .. import evaluation
         evaluation.evaluate(df, folder=out, split=split, out=out / 'eval', jobs=jobs)
+
+
+def plot_training_history(hist: pd.DataFrame, interactive: bool = False) -> dict:
+    if len(hist) <= 1:
+        return {}
+    elif interactive:
+        if plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            return {}
+        else:
+            backend = plotting.plotly_backend
+    else:
+        backend = plotting.mpl_backend
+
+    if 'timestamp' in hist.columns:
+        x = hist['timestamp'] - hist['timestamp'].iloc[0]
+    else:
+        x = np.arange(len(hist))
+    ms = [c for c in hist.columns if c.startswith('val_') or c.startswith('train_') or c.startswith('ensemble_val_')]
+    opt = ('model_id', 'type', 'ensemble_weight')
+    if any(c in hist.columns for c in opt):
+        text = [''] * len(hist)
+        for c in opt:
+            if c in hist.columns:
+                text = [((t + ', ') if t else t) + c + '=' + ('{:.2f}'.format(v) if isinstance(v, float) else str(v))
+                        for t, v in zip(text, hist[c])]
+    else:
+        text = None
+    return dict(training_history=backend.training_history(x, [hist[m] for m in ms], legend=ms, text=text))

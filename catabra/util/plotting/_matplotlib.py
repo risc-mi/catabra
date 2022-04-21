@@ -6,6 +6,56 @@ from matplotlib import pyplot as plt
 from . import _common
 
 
+def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History', ax=None, figsize='auto',
+                     legend=None, **kwargs):
+    """
+    Plot training history, with timestamps on x- and metrics on y-axis.
+    :param x: Timestamps, array of shape `(n,)`.
+    :param ys: Metrics, array of shape `(n,)`.
+    :param title: The title of the figure.
+    :param ax: An existing axis, or None.
+    :param figsize: Figure size.
+    :param legend: Names of the individual curves. None or a list of string with the same length as `ys`.
+    :return: Matplotlib figure object.
+    """
+    if not isinstance(ys, list):
+        ys = [ys]
+    if ax is None:
+        if figsize == 'auto':
+            figsize = (np.log10(len(x) + 1) + 5, 5)
+        _, ax = plt.subplots(figsize=figsize)
+
+    if x.dtype.kind == 'm':
+        unit, uom = _common.convert_timedelta(x)
+        x = x / unit
+        unit_suffix = f' [{uom}]'
+    else:
+        unit_suffix = ''
+
+    y_scale = 'linear'
+    if ys:
+        assert all(len(x) == len(y) for y in ys)
+        if legend is None:
+            legend = [None] * len(ys)
+        elif isinstance(legend, str):
+            legend = [legend]
+        assert len(legend) == len(ys)
+        assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
+        for y, lbl in zip(ys, legend):
+            ax.plot(x, y, label=lbl, marker='.')
+        if any(lbl is not None for lbl in legend):
+            ax.legend(loc='best')
+        maxes = [y.abs().max() for y in ys]
+        maxes = [np.log10(m) for m in maxes if m > 0]
+        if min(maxes) + 1 < max(maxes):
+            # logarithmic scale
+            y_scale = 'symlog' if any((y < 0).any() for y in ys) else 'log'
+
+    ax.set(xlabel='Time' + unit_suffix, ylabel='Metric', yscale=y_scale, title=_common.make_title(None, title))
+    plt.close(ax.figure)
+    return ax.figure
+
+
 def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str] = None,
                        title: Optional[str] = 'Truth-Prediction Plot', ax=None, figsize='auto'):
     """
