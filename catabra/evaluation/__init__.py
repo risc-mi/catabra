@@ -206,7 +206,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                 plot_multilabel(overall, thresh_per_class, interactive=True, labels=labels),
                                 directory / 'interactive_plots'
                             )
-                        overall.insert(0, 'pos_label', list(labels.iloc[0]) + [None] * 3)
+                        overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
                         io.write_dfs(dict(overall=overall, thresholded=thresh, **thresh_per_class),
                                      directory / 'metrics.xlsx')
                 else:
@@ -687,7 +687,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         out[m + '_micro'] = np.nan
         for i, t in enumerate(thresholds):
             try:
-                out[m + '_micro'].values[i] = func(y_true_flat, y_hat_flat >= t)
+                out[m + '_micro'].values[i] = func(y_true_flat[mask_flat], y_hat_flat[mask_flat] >= t)
             except:  # noqa
                 pass
         out[m + '_macro'] = sum(v[m] for v in per_class.values()) / len(per_class)
