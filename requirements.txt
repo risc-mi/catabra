@@ -5,3 +5,4 @@ pytables
 xlrd
 xlsxwriter
 openpyxl
+matplotlib

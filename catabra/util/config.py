@@ -11,6 +11,8 @@ DEFAULT_CONFIG = {
     "jobs": 1,                      # default number of jobs to use; negative means all available processors; overwritten by command-line parameter
     "copy_analysis_data": False,    # whether to copy data to be analyzed into output folder; can be True, False or maximum size to copy, in MB
     "copy_evaluation_data": False,  # whether to copy test data into output folder; same possible values as for "copy_analysis_data"
+    "static_plots": True,           # whether to create static plots in PDF format using Matplotlib
+    "interactive_plots": False,     # whether to create interactive plots in HTML format using plotly; if True, plotly must be installed separately
 
     # binary classification performance metrics; see https://scikit-learn.org/stable/modules/model_evaluation.html
     # first element is main metric used for choosing best model

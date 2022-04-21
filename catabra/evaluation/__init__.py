@@ -10,6 +10,7 @@ import sklearn.metrics
 from ..util import table as tu
 from ..util import io
 from ..util import logging
+from ..util import plotting
 from ..util.encoding import Encoder
 
 
@@ -131,6 +132,12 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         encoder = Encoder.load(folder / 'encoder.json')
         x_test, y_test = encoder.transform(data=df)
 
+        static_plots = config.get('static_plots', True)
+        interactive_plots = config.get('interactive_plots', False)
+        if interactive_plots and plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            interactive_plots = False
+
         # TODO: Perform OOD checks.
 
         if encoder.task_ is not None and (folder / 'model.joblib').exists():
@@ -144,6 +151,17 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
                 y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
                 y_hat_decoded.index = y_test_decoded.index
+
+                for mask, directory in _iter_splits():
+                    directory.mkdir(exist_ok=True, parents=True)
+                    io.write_df(calc_regression_metrics(y_test[mask], y_hat[mask]), directory / 'metrics.xlsx')
+                    if static_plots:
+                        plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=False),
+                                      directory / 'static_plots')
+                    if interactive_plots:
+                        plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=True),
+                                      directory / 'interactive_plots')
+
                 y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
                 detailed = y_test_decoded.join(y_hat_decoded)
                 detailed = detailed.reindex(
@@ -154,10 +172,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 del y_hat_decoded
 
                 for mask, directory in _iter_splits():
-                    directory.mkdir(exist_ok=True, parents=True)
                     io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                    io.write_df(calc_regression_metrics(y_test[mask], y_hat[mask]), directory / 'metrics.xlsx')
-                    # TODO: For each target: plot truth vs. prediction.
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
                 if encoder.task_ == 'multilabel_classification':
@@ -174,17 +189,26 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     del y_test_decoded
                     del y_hat_decoded
 
-                    pos_label = list(
-                        encoder.inverse_transform(y=np.ones((1, len(y_test.columns)), dtype=np.float32)).iloc[0]
-                    ) + [None] * 3
+                    labels = encoder.inverse_transform(
+                        y=np.vstack([np.zeros((len(y_test.columns),)), np.ones((len(y_test.columns),))])
+                    )
                     for mask, directory in _iter_splits():
                         directory.mkdir(exist_ok=True, parents=True)
                         io.write_df(detailed[mask], directory / 'predictions.xlsx')
                         overall, thresh, thresh_per_class = calc_multilabel_metrics(y_test[mask], y_hat[mask])
-                        overall.insert(0, 'pos_label', pos_label)
+                        if static_plots:
+                            plotting.save(
+                                plot_multilabel(overall, thresh_per_class, interactive=False, labels=labels),
+                                directory / 'static_plots'
+                            )
+                        if interactive_plots:
+                            plotting.save(
+                                plot_multilabel(overall, thresh_per_class, interactive=True, labels=labels),
+                                directory / 'interactive_plots'
+                            )
+                        overall.insert(0, 'pos_label', list(labels.iloc[0]) + [None] * 3)
                         io.write_dfs(dict(overall=overall, thresholded=thresh, **thresh_per_class),
                                      directory / 'metrics.xlsx')
-                        # TODO: Binary classification plots for each class individually.
                 else:
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
@@ -202,22 +226,28 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     detailed['__true_rank'] = (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1
                     detailed.loc[~mask, '__true_rank'] = -1
 
+                    labels = list(encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0])
                     if encoder.task_ == 'binary_classification':
-                        pos_label = \
-                            encoder.inverse_transform(y=np.ones((1,), dtype=np.float32), inplace=True).iloc[0, 0]
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
                             io.write_df(detailed[mask], directory / 'predictions.xlsx')
                             overall, thresh, calib = calc_binary_classification_metrics(y_test[mask], y_hat[mask])
+                            if static_plots:
+                                plotting.save(
+                                    plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
+                                                               neg_label=str(labels[0]), pos_label=str(labels[1])),
+                                    directory / 'static_plots'
+                                )
+                            if interactive_plots:
+                                plotting.save(
+                                    plot_binary_classification(overall, thresh, calibration=calib, interactive=True,
+                                                               neg_label=str(labels[0]), pos_label=str(labels[1])),
+                                    directory / 'interactive_plots'
+                                )
                             overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
-                            overall.insert(0, 'pos_label', pos_label)
+                            overall.insert(0, 'pos_label', labels[1])
                             io.write_dfs(dict(overall=overall, thresholded=thresh, calibration=calib),
                                          directory / 'metrics.xlsx')
-                            # TODO: Plot
-                            #   * ROC- and PR curves (both including best feature estimator);
-                            #   * threshold vs. metric, with accuracy, balanced_accuracy, F1, sensitivity, specificity,
-                            #       PPV, NPV in one common figure;
-                            #   * color-coded confusion matrix @0.5.
                     else:
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
@@ -225,12 +255,17 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                             overall, conf_mat, per_class = calc_multiclass_metrics(
                                 y_test[mask],
                                 y_hat[mask],
-                                labels=encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0]
+                                labels=labels
                             )
                             overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
                             io.write_dfs(dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class),
                                          directory / 'metrics.xlsx')
-                            # TODO: Plot color-coded confusion matrix.
+                            if static_plots:
+                                plotting.save(plot_multiclass(conf_mat, interactive=False),
+                                              directory / 'static_plots')
+                            if interactive_plots:
+                                plotting.save(plot_multiclass(conf_mat, interactive=True),
+                                              directory / 'interactive_plots')
 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')
@@ -240,7 +275,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
 def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray]) -> pd.DataFrame:
     """
-    Calculate all suitable metrics for all targets individually, and for their combination.
+    Calculate all suitable regression metrics for all targets individually, and for their combination.
     :param y_true: Ground truth. All columns must have numerical data type. Entries may be NaN, in which case only
     non-NaN entries are considered.
     :param y_hat: Predictions. Must have the same shape as `y_true`. Entries may be NaN, in which case only non-NaN
@@ -251,7 +286,7 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     """
     assert y_true.shape == y_hat.shape
     if isinstance(y_hat, pd.DataFrame):
-        assert y_hat.columns == y_true.columns
+        assert (y_hat.columns == y_true.columns).all()
         y_hat = y_hat.values
     elif isinstance(y_hat, np.ndarray) and y_hat.ndim == 1:
         y_hat = y_hat.reshape((-1, 1))
@@ -293,13 +328,35 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return out
 
 
+def plot_regression(y_true: pd.DataFrame, y_hat: pd.DataFrame, interactive: bool = False) -> dict:
+    """
+    Plot evaluation results of regression tasks.
+    :param y_true: Ground truth. May be encoded or decoded, and may contain NaN values.
+    :param y_hat: Predictions, with same shape, column names and data types as `y_true`.
+    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
+    Matplotlib backend.
+    :return: Dict mapping names to figures.
+    """
+    assert y_true.shape == y_hat.shape
+    assert (y_true.columns == y_hat.columns).all()
+
+    if interactive:
+        if plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            return {}
+        else:
+            return {c: plotting.plotly_backend.regression_scatter(y_true[c], y_hat[c], name=c) for c in y_true.columns}
+    else:
+        return {c: plotting.mpl_backend.regression_scatter(y_true[c], y_hat[c], name=c) for c in y_true.columns}
+
+
 def calc_binary_classification_metrics(
         y_true: pd.DataFrame,
         y_hat: Union[pd.DataFrame, np.ndarray],
         thresholds: Optional[list] = None,
         calibration_thresholds: Optional[np.ndarray] = None) -> Tuple[dict, pd.DataFrame, pd.DataFrame]:
     """
-    Calculate all suitable metrics.
+    Calculate all metrics suitable for binary classification tasks.
     :param y_true: Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
     :param y_hat: Predictions. Must have the same number of rows as `y_true` and either 1 or 2 columns.
     :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
@@ -363,6 +420,51 @@ def calc_binary_classification_metrics(
     # drop all-NaN columns
     out.dropna(axis=1, how='all', inplace=True)
     return dct, out, calibration
+
+
+def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibration: Optional[pd.DataFrame] = None,
+                               name: Optional[str] = None, neg_label: str = 'negative', pos_label: str = 'positive',
+                               interactive: bool = False) -> dict:
+    """
+    Plot evaluation results of binary classification tasks.
+    :param overall: Overall, non-thresholded performance metrics, as returned by function
+    `calc_binary_classification_metrics()`.
+    :param threshold: Thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
+    :param calibration: Calibration curve, as returned by function `calc_binary_classification_metrics()`.
+    :param name: Name of the classified variable.
+    :param neg_label: Name of the negative class.
+    :param pos_label: Name of the positive class.
+    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
+    Matplotlib backend.
+    :return: Dict mapping names to figures.
+    """
+    pos_prevalence = overall.get('n_pos', 0) / overall.get('n', 1)
+    metrics = [m for m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity',
+                           'positive_predictive_value', 'negative_predictive_value') if m in threshold.columns]
+    cm, th = _get_confusion_matrix_from_thresholds(threshold, neg_label=neg_label, pos_label=pos_label)
+    if interactive:
+        if plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            return {}
+        else:
+            backend = plotting.plotly_backend
+    else:
+        backend = plotting.mpl_backend
+
+    out = dict(
+        roc_curve=backend.roc_pr_curve(1 - threshold['specificity'], threshold['sensitivity'], roc=True,
+                                       legend='AUC={:.4f}'.format(overall.get('roc_auc', 0.5)), name=name),
+        pr_curve=backend.roc_pr_curve(threshold['sensitivity'], threshold['positive_predictive_value'], roc=False,
+                                      legend='AUC={:.4f}'.format(overall.get('pr_auc', pos_prevalence)),
+                                      positive_prevalence=pos_prevalence, name=name),
+        threshold=backend.threshold_metric_curve(threshold['threshold'], [threshold[m] for m in metrics],
+                                                 legend=metrics, name=name),
+        confusion_matrix=backend.confusion_matrix(cm, title='Confusion Matrix @ {:.2f}'.format(th), name=name)
+    )
+    if calibration is not None:
+        out['calibration'] = backend.calibration_curve(calibration['threshold_lower'], calibration['threshold_upper'],
+                                                       calibration['pos_fraction'], name=name)
+    return out
 
 
 def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
@@ -477,6 +579,24 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return dct, conf_mat, per_class
 
 
+def plot_multiclass(confusion_matrix: pd.DataFrame, interactive: bool = False) -> dict:
+    """
+    Plot evaluation results of multiclass classification tasks.
+    :param confusion_matrix: Confusion matrix, as returned by function `calc_multiclass_metrics()`.
+    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
+    Matplotlib backend.
+    :return: Dict mapping names to figures.
+    """
+    if interactive:
+        if plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            return {}
+        else:
+            return dict(confusion_matrix=plotting.plotly_backend.confusion_matrix(confusion_matrix))
+    else:
+        return dict(confusion_matrix=plotting.mpl_backend.confusion_matrix(confusion_matrix))
+
+
 def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
                             thresholds: Optional[list] = None) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
@@ -578,6 +698,26 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return overall, out, per_class
 
 
+def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, interactive: bool = False) -> dict:
+    """
+    Plot evaluation results of binary classification tasks.
+    :param overall: Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    :param threshold: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    :param labels: Class names. None or a DataFrame with `n_class` columns and 2 rows.
+    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
+    Matplotlib backend.
+    :return: Dict mapping names to figures.
+    """
+    out = {}
+    kwargs = {}
+    for name, th in threshold.items():
+        if labels is not None:
+            kwargs = dict(neg_label=str(labels[name].iloc[0]), pos_label=str(labels[name].iloc[1]))
+        out[name] = \
+            plot_binary_classification(overall.loc[name].to_dict(), th, name=name, interactive=interactive, **kwargs)
+    return out
+
+
 def pr_auc_score(y_true, y_score, **kwargs) -> float:
     precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_score, **kwargs)
     return sklearn.metrics.auc(recall, precision)
@@ -622,6 +762,16 @@ def _get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool
     thresholds = list(thresholds)
     thresholds.sort()
     return thresholds
+
+
+def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: float = 0.5, neg_label: str = 'negative',
+                                          pos_label: str = 'positive') -> Tuple[pd.DataFrame, float]:
+    i = (thresholds['threshold'] - threshold).abs().idxmin()
+    return pd.DataFrame(
+        data={neg_label: [thresholds.loc[i, 'true_negative'], thresholds.loc[i, 'false_negative']],
+              pos_label: [thresholds.loc[i, 'false_positive'], thresholds.loc[i, 'true_positive']]},
+        index=[neg_label, pos_label]
+    ), thresholds.loc[i, 'threshold']
 
 
 # metrics for binary classification, which require probabilities of positive class
