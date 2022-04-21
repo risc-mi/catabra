@@ -414,6 +414,11 @@ def calc_binary_classification_metrics(
     out['false_positive'] = n_negative - out['true_negative']
     out['false_negative'] = n_positive - out['true_positive']
 
+    if 'sensitivity' in out.columns and 'specificity' in out.columns:
+        i = (out['sensitivity'] - out['specificity']).abs().idxmin()
+        dct['balance_threshold'] = out.loc[i, 'threshold']
+        dct['balance_score'] = (out.loc[i, 'sensitivity'] + out.loc[i, 'specificity']) * 0.5
+
     fractions, th = calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
     calibration = pd.DataFrame(data=dict(threshold_lower=th[:-1], threshold_upper=th[1:], pos_fraction=fractions))
 
@@ -679,6 +684,14 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             out['true_negative'].values[i] = ((y_true_j < 1) & (y_pred < 1)).sum()
         out['false_positive'] = n_negative[j] - out['true_negative']
         out['false_negative'] = n_positive[j] - out['true_positive']
+
+        if 'sensitivity' in out.columns and 'specificity' in out.columns:
+            i = (out['sensitivity'] - out['specificity']).abs().idxmin()
+            if 'balance_threshold' not in overall.columns:
+                overall['balance_threshold'] = np.nan
+                overall['balance_score'] = np.nan
+            overall.loc[lbl, 'balance_threshold'] = out.loc[i, 'threshold']
+            overall.loc[lbl, 'balance_score'] = (out.loc[i, 'sensitivity'] + out.loc[i, 'specificity']) * 0.5
 
         per_class[lbl] = out
 
