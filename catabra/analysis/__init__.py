@@ -13,6 +13,7 @@ from ..util import config as cfg
 from ..util import plotting
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
+from ..util import statistics
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -286,9 +287,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             logging.warn(plotting.PLOTLY_WARNING)
             interactive_plots = False
 
-        # TODO: Generate descriptive statistics, in total and for each split individually.
-        #   If binary/multiclass classification, generate statistics for each class.
-        #   Generate suitable plots, e.g., feature correlation plots.
+        # descriptive statistics
+        statistics.save_descriptive_statistics(df, target, classify, split_masks, out / 'statistics')
 
         # encoder
         encoder = Encoder(classify=classify)
