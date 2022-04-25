@@ -166,6 +166,11 @@ See `util/config.py` for further information, including the default values of th
     maximum size to copy, in MB.
 * `"copy_evaluation_data"`: Whether to copy test data into the output folder. Can be `true`, `false` or the
     maximum size to copy, in MB.
+* `"static_plots"`: Whether to create static plots of the training history, evaluation results, etc., using the
+    [Matplotlib](https://matplotlib.org/) backend. These plots are saved as PDF vector graphics.
+* `"interactive_plots"`: Whether to create interactive plots of the training history, evaluation results, etc., using
+    the optional [plotly](https://plotly.com/python/) backend. These plots are saved as HTML files. **Note**: plotly
+    is not installed by default, but must be installed separately!
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*
