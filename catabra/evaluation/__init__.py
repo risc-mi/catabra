@@ -1,17 +1,15 @@
 from typing import Union, Optional, Tuple
-from functools import partial
 from pathlib import Path
 import shutil
 import numpy as np
 import pandas as pd
-import sklearn
-import sklearn.metrics
 
 from ..util import table as tu
 from ..util import io
 from ..util import logging
 from ..util import plotting
 from ..util.encoding import Encoder
+from ..util import metrics
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -298,19 +296,11 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     out['n'].values[:-1] = mask.sum(axis=0)
     out.loc['__overall__', 'n'] = mask.all(axis=1).sum()
 
-    for name, func in [('r2', sklearn.metrics.r2_score),
-                       ('mean_absolute_error', sklearn.metrics.mean_absolute_error),
-                       ('mean_squared_error', sklearn.metrics.mean_squared_error),
-                       ('root_mean_squared_error', partial(sklearn.metrics.mean_squared_error, squared=False)),
-                       ('mean_squared_log_error', sklearn.metrics.mean_squared_log_error),
-                       ('median_absolute_error', sklearn.metrics.median_absolute_error),
-                       ('mean_absolute_percentage_error', sklearn.metrics.mean_absolute_percentage_error),
-                       ('max_error', sklearn.metrics.max_error),
-                       ('explained_variance', sklearn.metrics.explained_variance_score),
-                       ('mean_tweedie_deviance', sklearn.metrics.mean_tweedie_deviance),
-                       ('mean_poisson_deviance', sklearn.metrics.mean_poisson_deviance),
-                       ('mean_gamma_deviance', sklearn.metrics.mean_gamma_deviance)]:
+    for name in ['r2', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error', 'mean_squared_log_error',
+                 'median_absolute_error', 'mean_absolute_percentage_error', 'max_error', 'explained_variance',
+                 'mean_poisson_deviance', 'mean_gamma_deviance']:
         out[name] = np.nan
+        func = getattr(metrics, name)
         for i, c in enumerate(targets):
             try:
                 # some metrics cannot be computed if `y_true` or `y_hat` contain certain values,
@@ -388,38 +378,42 @@ def calc_binary_classification_metrics(
     n_positive = (y_true > 0).sum()
     n_negative = (y_true < 1).sum()
     dct = dict(n=mask.sum(), n_pos=n_positive)
-    for m, func in _BINARY_PROBA_METRICS:
+    for m in _BINARY_PROBA_METRICS:
         try:
-            dct[m] = func(y_true, y_hat)
+            dct[m] = getattr(metrics, m)(y_true, y_hat)
         except:     # noqa
             pass
 
     if thresholds is None:
-        thresholds = _get_thresholds(y_hat, n_max=100, add_half_one=None)
-    out = pd.DataFrame(data=dict(threshold=thresholds))
+        thresholds = metrics.get_thresholds(y_hat, n_max=100, add_half_one=None)
+    out = pd.DataFrame(data=dict(threshold=thresholds, true_positive=0, true_negative=0))
     for i, t in enumerate(thresholds):
-        y_pred = (y_hat >= t).astype(np.float32)
-        for m, func in _BINARY_CLASS_METRICS:
-            if i == 0:
-                out[m] = np.nan
-            try:
-                out[m].values[i] = func(y_true, y_pred)
-            except:     # noqa
-                pass
-        if i == 0:
-            out['true_positive'] = 0
-            out['true_negative'] = 0
-        out['true_positive'].values[i] = ((y_true > 0) & (y_pred > 0)).sum()
-        out['true_negative'].values[i] = ((y_true < 1) & (y_pred < 1)).sum()
+        out['true_positive'].values[i] = ((y_true > 0) & (y_hat >= t)).sum()
+        out['true_negative'].values[i] = ((y_true < 1) & (y_hat < t)).sum()
     out['false_positive'] = n_negative - out['true_negative']
     out['false_negative'] = n_positive - out['true_positive']
+
+    for m in reversed(_BINARY_CLASS_METRICS):
+        func = getattr(metrics, m + '_cm', None)
+        if func is None:
+            s = np.full((len(out),), np.nan)
+            func = getattr(metrics, m)
+            for i, t in enumerate(thresholds):
+                try:
+                    s[i] = func(y_true, y_hat >= t)
+                except:     # noqa
+                    pass
+        else:
+            s = func(tp=out['true_positive'], tn=out['true_negative'], fp=out['false_positive'],
+                     fn=out['false_negative'], average=None)
+        out.insert(1, m, s)
 
     if 'sensitivity' in out.columns and 'specificity' in out.columns:
         i = (out['sensitivity'] - out['specificity']).abs().idxmin()
         dct['balance_threshold'] = out.loc[i, 'threshold']
         dct['balance_score'] = (out.loc[i, 'sensitivity'] + out.loc[i, 'specificity']) * 0.5
 
-    fractions, th = calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
+    fractions, th = metrics.calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
     calibration = pd.DataFrame(data=dict(threshold_lower=th[:-1], threshold_upper=th[1:], pos_fraction=fractions))
 
     # drop all-NaN columns
@@ -505,29 +499,29 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     y_pred = np.argmax(y_hat, axis=1).astype(y_true.dtype)
 
     # confusion matrix
-    conf_mat = sklearn.metrics.confusion_matrix(y_true, y_pred)
+    conf_mat = metrics.confusion_matrix(y_true, y_pred)
     conf_mat = np.concatenate([conf_mat, conf_mat.sum(axis=0, keepdims=True)])
     conf_mat = pd.DataFrame(data=conf_mat, columns=labels, index=labels + ['__total__'])
     conf_mat['__total__'] = conf_mat.sum(axis=1)
     conf_mat.index.name = 'true \\ pred'        # suitable for saving as Excel file
 
     precision, recall, f1, support = \
-        sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
-    jaccard = sklearn.metrics.jaccard_score(y_true, y_pred, average=None, zero_division=0)
+        metrics.precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
+    jaccard = metrics.jaccard(y_true, y_pred, average=None, zero_division=0)
     n = support.sum()
 
     # per-class metrics
     per_class = pd.DataFrame(
         index=labels,
-        columns=[m for m, _ in _BINARY_PROBA_METRICS] + [m for m, _ in _BINARY_CLASS_METRICS]
+        columns=_BINARY_PROBA_METRICS + _BINARY_CLASS_METRICS
     )
     for i, lbl in enumerate(labels):
-        for m, func in _BINARY_PROBA_METRICS:
+        for m in _BINARY_PROBA_METRICS:
             try:
-                per_class[m].values[i] = func(y_true == i, y_hat[:, i])
+                per_class[m].values[i] = getattr(metrics, m)(y_true == i, y_hat[:, i])
             except:     # noqa
                 pass
-        for m, func in _BINARY_CLASS_METRICS:
+        for m in _BINARY_CLASS_METRICS:
             if m == 'sensitivity':
                 per_class[m].values[i] = recall[i]
             elif m == 'positive_predictive_value':
@@ -538,31 +532,25 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                 per_class[m].values[i] = jaccard[i]
             else:
                 try:
-                    per_class[m].values[i] = func(y_true == i, y_pred == i)
+                    per_class[m].values[i] = getattr(metrics, m)(y_true == i, y_pred == i)
                 except:     # noqa
                     pass
     per_class.insert(0, 'n', conf_mat['__total__'].iloc[:-1])
 
     # overall metrics
     dct = dict(n=n)
-    for name, func in [('accuracy', sklearn.metrics.accuracy_score),
-                       ('balanced_accuracy', sklearn.metrics.balanced_accuracy_score),
-                       ('cohen_kappa', sklearn.metrics.cohen_kappa_score),
-                       ('matthews_correlation_coefficient', sklearn.metrics.matthews_corrcoef)]:
+    for name in ['accuracy', 'balanced_accuracy', 'cohen_kappa', 'matthews_correlation_coefficient']:
         try:
-            dct[name] = func(y_true, y_pred)
+            dct[name] = getattr(metrics, name)(y_true, y_pred)
         except:  # noqa
             pass
-    for name, func in [('roc_auc_ovr', partial(sklearn.metrics.roc_auc_score, multi_class='ovr')),
-                       ('roc_auc_ovo', partial(sklearn.metrics.roc_auc_score, multi_class='ovo')),
-                       ('roc_auc_ovr_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovr', average='weighted')),
-                       ('roc_auc_ovo_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovo', average='weighted'))]:
+    for name in ['roc_auc_ovr', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc_ovo_weighted']:
         try:
-            dct[name] = func(y_true, y_hat)
+            dct[name] = getattr(metrics, name)(y_true, y_hat)
         except:  # noqa
             pass
     precision_micro, recall_micro, f1_micro, _ = \
-        sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average='micro', zero_division=0)
+        metrics.precision_recall_fscore_support(y_true, y_pred, average='micro', zero_division=0)
     dct.update(
         precision_micro=precision_micro,
         precision_macro=precision.mean(),
@@ -573,7 +561,7 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         f1_micro=f1_micro,
         f1_macro=f1.mean(),
         f1_weighted=f1.dot(support) / n,
-        jaccard_micro=sklearn.metrics.jaccard_score(y_true, y_pred, average='micro', zero_division=0),
+        jaccard_micro=metrics.jaccard(y_true, y_pred, average='micro', zero_division=0),
         jaccard_macro=jaccard.mean(),
         jaccard_weighted=jaccard.dot(support) / n,
         mean_average_precision=per_class['average_precision'].mean()
@@ -631,9 +619,9 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     dct = {}
     for i, lbl in enumerate(labels):
         dct_i = dict(n=mask[:, i].sum(), n_pos=n_positive[i])
-        for m, func in _BINARY_PROBA_METRICS:
+        for m in _BINARY_PROBA_METRICS:
             try:
-                dct_i[m] = func(y_true[mask[:, i], i], y_hat[mask[:, i], i])
+                dct_i[m] = getattr(metrics, m)(y_true[mask[:, i], i], y_hat[mask[:, i], i])
             except:  # noqa
                 pass
         dct[lbl] = dct_i
@@ -643,9 +631,9 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     y_hat_flat = y_hat.ravel()
     mask_flat = mask.ravel()
     dct_i = dict(n=mask.sum(), n_pos=(y_true > 0).sum())
-    for m, func in _BINARY_PROBA_METRICS:
+    for m in _BINARY_PROBA_METRICS:
         try:
-            dct_i[m] = func(y_true_flat[mask_flat], y_hat_flat[mask_flat])
+            dct_i[m] = getattr(metrics, m)(y_true_flat[mask_flat], y_hat_flat[mask_flat])
         except:  # noqa
             pass
     dct['__micro__'] = dct_i
@@ -661,29 +649,33 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             overall.loc['__weighted__', c] = (overall['n_pos'].iloc[:-3] * overall[c].iloc[:-3]).sum() / div
 
     if thresholds is None:
-        thresholds = _get_thresholds(y_hat.reshape(-1), n_max=100, add_half_one=None)
+        thresholds = metrics.get_thresholds(y_hat.reshape(-1), n_max=100, add_half_one=None)
 
     per_class = {}
     for j, lbl in enumerate(labels):
-        out = pd.DataFrame(data=dict(threshold=thresholds))
+        out = pd.DataFrame(data=dict(threshold=thresholds, true_negative=0, true_positive=0))
         y_true_j = y_true[mask[:, j], j]
         y_hat_j = y_hat[mask[:, j], j]
         for i, t in enumerate(thresholds):
-            y_pred = y_hat_j >= t
-            for m, func in _BINARY_CLASS_METRICS:
-                if i == 0:
-                    out[m] = np.nan
-                try:
-                    out[m].values[i] = func(y_true_j, y_pred)
-                except:  # noqa
-                    pass
-            if i == 0:
-                out['true_positive'] = 0
-                out['true_negative'] = 0
-            out['true_positive'].values[i] = ((y_true_j > 0) & (y_pred > 0)).sum()
-            out['true_negative'].values[i] = ((y_true_j < 1) & (y_pred < 1)).sum()
+            out['true_positive'].values[i] = ((y_true_j > 0) & (y_hat_j >= t)).sum()
+            out['true_negative'].values[i] = ((y_true_j < 1) & (y_hat_j < t)).sum()
         out['false_positive'] = n_negative[j] - out['true_negative']
         out['false_negative'] = n_positive[j] - out['true_positive']
+
+        for m in reversed(_BINARY_CLASS_METRICS):
+            func = getattr(metrics, m + '_cm', None)
+            if func is None:
+                s = np.full((len(out),), np.nan)
+                func = getattr(metrics, m)
+                for i, t in enumerate(thresholds):
+                    try:
+                        s[i] = func(y_true_j > 0, y_hat_j >= t)
+                    except:     # noqa
+                        pass
+            else:
+                s = func(tp=out['true_positive'], tn=out['true_negative'], fp=out['false_positive'],
+                         fn=out['false_negative'], average=None)
+            out.insert(1, m, s)
 
         if 'sensitivity' in out.columns and 'specificity' in out.columns:
             i = (out['sensitivity'] - out['specificity']).abs().idxmin()
@@ -696,13 +688,23 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         per_class[lbl] = out
 
     out = pd.DataFrame(data=dict(threshold=thresholds))
-    for m, func in _BINARY_CLASS_METRICS:
-        out[m + '_micro'] = np.nan
-        for i, t in enumerate(thresholds):
-            try:
-                out[m + '_micro'].values[i] = func(y_true_flat[mask_flat], y_hat_flat[mask_flat] >= t)
-            except:  # noqa
-                pass
+    tp = np.zeros((len(thresholds),), dtype=np.int32)
+    tn = np.zeros_like(tp)
+    for i, t in enumerate(thresholds):
+        tp[i] = ((y_true_flat[mask_flat] > 0) & (y_hat_flat[mask_flat] >= t)).sum()
+        tn[i] = ((y_true_flat[mask_flat] < 1) & (y_hat_flat[mask_flat] < t)).sum()
+    for m in _BINARY_CLASS_METRICS:
+        func = getattr(metrics, m + '_cm', None)
+        if func is None:
+            out[m + '_micro'] = np.nan
+            func = getattr(metrics, m)
+            for i, t in enumerate(thresholds):
+                try:
+                    out[m + '_micro'].values[i] = func(y_true_flat[mask_flat] > 0, y_hat_flat[mask_flat] >= t)
+                except:  # noqa
+                    pass
+        else:
+            out[m + '_micro'] = func(tp=tp, tn=tn, fp=n_negative.sum() - tn, fn=n_positive.sum() - tp, average=None)
         out[m + '_macro'] = sum(v[m] for v in per_class.values()) / len(per_class)
         out[m + '_weighted'] = sum(v[m] * overall.loc[k, 'n_pos'] for k, v in per_class.items()) / div
 
@@ -731,52 +733,6 @@ def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, interac
     return out
 
 
-def pr_auc_score(y_true, y_score, **kwargs) -> float:
-    precision, recall, _ = sklearn.metrics.precision_recall_curve(y_true, y_score, **kwargs)
-    return sklearn.metrics.auc(recall, precision)
-
-
-def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optional[np.ndarray] = None) \
-        -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Compute the calibration curve of a binary classification problem. The predicated class probabilities are binned and,
-    for each bin, the fraction of positive samples is determined. These fractions can then be plotted against the
-    midpoints of the respective bins. Ideally, the resulting curve will be monotonic increasing.
-    :param y_true: Ground truth, array of shape `(n,)` with values among 0 and 1. Values must not be NaN.
-    :param y_score: Predicated probabilities of the positive class, array of shape `(n,)` with arbitrary non-NaN values;
-    in particular, the values do not necessarily need to correspond to probabilities or confidences.
-    :param thresholds: The thresholds used for binning `y_score`. If None, suitable thresholds are determined
-    automatically.
-    :return: Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and
-    `fractions` is the corresponding array of fractions of positive samples in each bin, of shape `(m - 1,)`. Note that
-    the `i`-th bin ranges from `thresholds[i]` to `thresholds[i + 1]`.
-    """
-    assert y_true.shape == y_score.shape
-    if thresholds is None:
-        thresholds = _get_thresholds(y_score, n_max=40, add_half_one=False)
-    if len(thresholds) < 2:
-        return np.empty((0,), dtype=np.float32), thresholds
-    return \
-        np.array([y_true[(t1 <= y_score) & (y_score < t2)].mean() for t1, t2 in zip(thresholds[:-1], thresholds[1:])]),\
-        np.array(thresholds)
-
-
-def _get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None) -> list:
-    n = min(np.isfinite(y).sum(), n_max)
-    if n == 0:
-        thresholds = set()
-    elif n == 1:
-        thresholds = {np.nanmin(y)}
-    else:
-        thresholds = np.sort(y[np.isfinite(y)])
-        thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, n).round().astype(np.int32)])
-    if add_half_one is True or (add_half_one is None and not (y < 0).any() and not (1 < y).any()):
-        thresholds.update({0.5, 1.})
-    thresholds = list(thresholds)
-    thresholds.sort()
-    return thresholds
-
-
 def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: float = 0.5, neg_label: str = 'negative',
                                           pos_label: str = 'positive') -> Tuple[pd.DataFrame, float]:
     i = (thresholds['threshold'] - threshold).abs().idxmin()
@@ -788,20 +744,8 @@ def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: f
 
 
 # metrics for binary classification, which require probabilities of positive class
-_BINARY_PROBA_METRICS = [('roc_auc', sklearn.metrics.roc_auc_score),
-                         ('average_precision', sklearn.metrics.average_precision_score),
-                         ('pr_auc', pr_auc_score),
-                         ('brier_loss', sklearn.metrics.brier_score_loss),
-                         ('hinge_loss', sklearn.metrics.hinge_loss),
-                         ('log_loss', sklearn.metrics.log_loss)]
+_BINARY_PROBA_METRICS = ['roc_auc', 'average_precision', 'pr_auc', 'brier_loss', 'hinge_loss', 'log_loss']
 # metrics for binary classification, which require predicted classes
-_BINARY_CLASS_METRICS = [('accuracy', sklearn.metrics.accuracy_score),
-                         ('balanced_accuracy', sklearn.metrics.balanced_accuracy_score),
-                         ('f1', sklearn.metrics.f1_score),
-                         ('sensitivity', partial(sklearn.metrics.recall_score, zero_division=0)),
-                         ('specificity', partial(sklearn.metrics.recall_score, pos_label=0, zero_division=0)),
-                         ('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=1)),
-                         ('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=1)),
-                         ('cohen_kappa', sklearn.metrics.cohen_kappa_score),
-                         ('hamming_loss', sklearn.metrics.hamming_loss),
-                         ('jaccard', sklearn.metrics.jaccard_score)]
+_BINARY_CLASS_METRICS = ['accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity',
+                         'positive_predictive_value', 'negative_predictive_value', 'cohen_kappa', 'hamming_loss',
+                         'jaccard']
