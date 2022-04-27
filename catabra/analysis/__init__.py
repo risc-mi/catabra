@@ -210,18 +210,17 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             raise ValueError(
                 f'{len(obj_cols)} target columns have object data type: ' + cu.repr_list(obj_cols, brackets=False)
             )
-
         # train-test split
         if split is None:
             split_masks = {}
-            df_train = df
+            df_train = df.copy()
         else:
             split_masks, train_key = tu.train_test_split(df, split)
             train_mask = split_masks.get(train_key)
             if train_mask is None:
                 raise ValueError(f'Name and values of train-test-split column "{split}" are ambiguous.')
             elif train_mask.all():
-                df_train = df
+                df_train = df.copy()
             else:
                 df_train = df[train_mask].copy()
             del split_masks[train_key]
@@ -287,8 +286,12 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             logging.warn(plotting.PLOTLY_WARNING)
             interactive_plots = False
 
-        # descriptive statistics
-        statistics.save_descriptive_statistics(df, target, classify, split_masks, out / 'statistics')
+        # descriptive statistics for overall dataset
+        statistics.save_descriptive_statistics(df=df.drop(ignore, axis=1, errors='ignore'),
+                                               target=target, classify=classify, fn=out / 'statistics' / 'overall')
+
+        # _, _, _ = statistics.calc_descriptive_statistics(df=df.drop(ignore, axis=1, errors='ignore'),
+        #                                                     target=target, classify=classify)
 
         # encoder
         encoder = Encoder(classify=classify)

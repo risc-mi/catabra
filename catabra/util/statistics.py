@@ -2,16 +2,17 @@ import pandas as pd
 import numpy as np
 from ..util.io import Path, make_path, write_df, write_dfs
 from ..util import logging
-from typing import Union
+from typing import Union, Tuple
 
 
 def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
     """
-    Calculates descriptive statistics for numeric features
+    Calculate descriptive statistics for numeric features for a specific dataframe
     :param df: The main dataframe.
     :param target: The target labels; stored in list
     :param classify: Is true, if classification task. False for regression task
-    :return: Dictionary with statistics (for numeric features) for entire dataset and each train/test split.
+    :return: Dictionary with statistics (for numeric features) for entire dataset, each target and
+    (in case of classification) each label.
     """
     df_temp = df.copy()
     dict_stat = {'overall': df.describe().T}
@@ -27,11 +28,11 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
 
 def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '') -> pd.DataFrame:
     """
-    Calculate and save descriptive statistics including correlation information to disk.
+    Calculate descriptive statistics for non-numeric features for a specific dataframe
     :param df: The main dataframe.
     :param target: The target labels; stored in list
-    :param name_: Is true, if classification task. False for regression task
-    :return: Returns a dataframe with statistics (for non-numeric features) for a specific split or label
+    :param name_: Name of the label. Used for naming the columns
+    :return: Returns a dataframe with statistics (for non-numeric features)
     """
     df_stat_cat = pd.DataFrame()
     for col_ in target + [c for c in df.columns if c not in target]:
@@ -41,8 +42,7 @@ def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '
                 pd.DataFrame(df[col_].value_counts(normalize=True) * 100).rename(columns={col_: name_ + '%'}))
 
             arrays = [[col_ for s in list(temp.index)], list(temp.index)]
-            tuples = list(zip(*arrays))
-            index = pd.MultiIndex.from_tuples(tuples, names=["Feature", "Value"])
+            index = pd.MultiIndex.from_tuples(list(zip(*arrays)), names=["Feature", "Value"])
             temp = temp.set_index(index)
             df_stat_cat = pd.concat([df_stat_cat, temp])
 
@@ -52,11 +52,12 @@ def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '
 
 def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
     """
-    Calculate and save descriptive statistics including correlation information to disk.
+    Calculate non-numeric descriptive statistics
     :param df: The main dataframe.
     :param target: The target labels; stored in list
     :param classify: Is true, if classification task. False for regression task
-    :return: Dictionary with statistics (for non-numeric features) for entire dataset and each train/test split.
+    :return: Dictionary with descriptive statistics (for non-numeric features) for overall dataset,
+    each target and (in case of classification) each label.
     """
     dict_non_num_stat = {'overall': create_non_numeric_statistics(df, [t_ for t_ in target if classify])}
 
@@ -77,43 +78,52 @@ def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) 
     return dict_non_num_stat
 
 
-def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, split_masks: list,
-                                fn: Union[str, Path]):
+def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, fn: Union[str, Path]):
     """
     Calculate and save descriptive statistics including correlation information to disk.
     :param df: The main dataframe.
     :param target: The target labels; stored in list
     :param classify: Is true, if classification task. False for regression task
-    :param split_masks: Contains the mask information about the train/test splits
     :param fn: The directory where to save the statistics files
     """
     fn = make_path(fn)
+    if classify:
+        df[target] = df[target].astype('category')
 
-    # calculate and save descriptive statistics & correlations for overall dataset
+    # calculate and save descriptive statistics & correlations
     dict_stat = calc_numeric_statistics(df, target, classify)
+    dict_stat = convert_to_str(dict_stat)
     write_dfs(dict_stat, fn / 'statistics_numeric.xlsx')
-
-    write_df(df.corr(), fn / 'correlations.xlsx')
 
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
     write_dfs(dict_non_num_stat, fn / 'statistics_non_numeric.xlsx')
 
-    # calculate and save descriptive statistics & correlations for individual splits
-    if split_masks is not None:
-        for key_, mask_ in split_masks.items():
-            for value_ in np.unique(mask_):
-
-                mask_red = mask_ == value_
-                df_temp = df[mask_red].copy()
-
-                dict_stat = calc_numeric_statistics(df_temp, target, classify)
-                write_dfs(dict_stat, fn / (key_ + '_' + str(value_)) / 'statistics_numeric.xlsx')
-
-                write_df(df_temp.corr(),  fn / (key_ + '_' + str(value_)) / 'correlations.xlsx')
-
-                dict_non_num_stat = calc_non_numeric_statistics(df_temp, target, classify)
-                write_dfs(dict_non_num_stat, fn / (key_ + '_' + str(value_)) / 'statistics_non_numeric.xlsx')
+    write_df(df.corr(), fn / 'correlations.xlsx')
 
     # delete temp variables and end function
-    del df_temp, dict_stat, dict_non_num_stat, mask_red
+    del dict_stat, dict_non_num_stat
     logging.log(f'Saving descriptive statistics completed')
+
+
+def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) -> Tuple[dict, dict, pd.DataFrame]:
+    """
+    Calculate and return descriptive statistics including correlation information
+    :param df: The main dataframe.
+    :param target: The target labels; stored in list
+    :param classify: Is true, if classification task. False for regression task
+    :return: Tuple of numeric and non-numeric statistics (separate dictionaries) and correlation-DataFrame
+    """
+    if classify:
+        df[target] = df[target].astype('category')
+
+    # calculate descriptive statistics
+    dict_stat = calc_numeric_statistics(df, target, classify)
+    dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
+
+    return dict_stat, dict_non_num_stat, df.corr()
+
+
+def convert_to_str(d: dict) -> dict:
+    for key_ in list(d.keys()):
+        d[key_] = d[key_].astype(str)
+    return d

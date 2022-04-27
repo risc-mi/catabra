@@ -10,6 +10,7 @@ from ..util import logging
 from ..util import plotting
 from ..util.encoding import Encoder
 from ..util import metrics
+from ..util import statistics
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -137,6 +138,18 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             interactive_plots = False
 
         # TODO: Perform OOD checks.
+
+        # descriptive statistics for each train/test split
+        if encoder.task_ is not None and (folder / 'invocation.json').exists():
+            group_ = io.load(folder / 'invocation.json').get('group')
+            group_ = [] if group_ is None else [group_]
+            ignore_ = io.load(folder / 'invocation.json').get('ignore')
+            ignore_ = [] if ignore_ is None else ignore_
+            for mask, directory in _iter_splits():
+                statistics.save_descriptive_statistics(df=df[mask].drop(columns=[split]+group_+ignore_).copy(),
+                                                       target=list(y_test.columns),
+                                                       classify=encoder.task_ != 'regression',
+                                                       fn=folder / 'statistics' / directory.name)
 
         if encoder.task_ is not None and (folder / 'model.joblib').exists():
             model = io.load(folder / 'model.joblib')
