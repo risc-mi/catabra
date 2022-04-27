@@ -92,7 +92,8 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
 
     # calculate and save descriptive statistics & correlations
     dict_stat = calc_numeric_statistics(df, target, classify)
-    dict_stat = convert_to_str(dict_stat)
+    cols_to_str = list(df.select_dtypes(include=['timedelta64[ns]']).columns)
+    dict_stat = convert_to_str(dict_stat, cols_to_str)
     write_dfs(dict_stat, fn / 'statistics_numeric.xlsx')
 
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
@@ -123,7 +124,8 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) 
     return dict_stat, dict_non_num_stat, df.corr()
 
 
-def convert_to_str(d: dict) -> dict:
+def convert_to_str(d: dict, cols_to_str: list) -> dict:
     for key_ in list(d.keys()):
-        d[key_] = d[key_].astype(str)
+        for c_ in cols_to_str:
+            d[key_].iloc[d[key_].index == c_, 1:] = d[key_].iloc[d[key_].index == c_, 1:].astype(str)
     return d
