@@ -298,7 +298,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         x_train, y_train = encoder.fit_transform(df_train, y=y_train)
         encoder.dump(out / 'encoder.json')
 
-        if y_train is not None:
+        if y_train is not None and (config.get('time_limit') if time is None else time) != 0:
             automl = config.get('automl')
             if automl is not None:
                 backend = AutoMLBackend.get(automl, task=encoder.task_, config=config, tmp_folder=out / automl)

@@ -96,7 +96,7 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
     whether it should be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current
     working directory.
 * `--time TIME`: Time budget for model training, in minutes. Some AutoML backends require a fixed budget, others might
-    not. Overwrites the `"time_limit"` config param.
+    not. Overwrites the `"time_limit"` config param. `0` means that no prediction models are trained.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
 * `--config CONFIG`: Path to a JSON file containing an alternative config dict. Merged with the default config in
     `util/config.py`. See Section Configuration below for details.
