@@ -32,7 +32,7 @@ roc_auc_ovr_weighted = partial(skl_metrics.roc_auc_score, multi_class='ovr', ave
 roc_auc_ovo_weighted = partial(skl_metrics.roc_auc_score, multi_class='ovo', average='weighted')
 
 
-def pr_auc_score(y_true, y_score, **kwargs) -> float:
+def pr_auc(y_true, y_score, **kwargs) -> float:
     precision, recall, _ = skl_metrics.precision_recall_curve(y_true, y_score, **kwargs)
     return skl_metrics.auc(recall, precision)
 
