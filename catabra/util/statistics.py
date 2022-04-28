@@ -87,22 +87,19 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
     :param fn: The directory where to save the statistics files
     """
     fn = make_path(fn)
-    if classify:
-        df[target] = df[target].astype('category')
+
+    num_stats, non_num_stats, corr = calc_descriptive_statistics(df, target, classify)
 
     # calculate and save descriptive statistics & correlations
-    dict_stat = calc_numeric_statistics(df, target, classify)
     cols_to_str = list(df.select_dtypes(include=['timedelta64[ns]']).columns)
-    dict_stat = convert_to_str(dict_stat, cols_to_str)
-    write_dfs(dict_stat, fn / 'statistics_numeric.xlsx')
+    num_stats = convert_to_str(num_stats, cols_to_str)
 
-    dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
-    write_dfs(dict_non_num_stat, fn / 'statistics_non_numeric.xlsx')
-
-    write_df(df.corr(), fn / 'correlations.xlsx')
+    write_dfs(num_stats, fn / 'statistics_numeric.xlsx')
+    write_dfs(non_num_stats, fn / 'statistics_non_numeric.xlsx')
+    write_df(corr, fn / 'correlations.xlsx')
 
     # delete temp variables and end function
-    del dict_stat, dict_non_num_stat
+    del num_stats, non_num_stats
     logging.log(f'Saving descriptive statistics completed')
 
 
@@ -115,7 +112,10 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) 
     :return: Tuple of numeric and non-numeric statistics (separate dictionaries) and correlation-DataFrame
     """
     if classify:
-        df[target] = df[target].astype('category')
+        convert = [c for c in target if df[c].dtype.name != 'category']
+        if convert:
+            df = df.copy()
+            df[convert] = df[convert].astype('category')
 
     # calculate descriptive statistics
     dict_stat = calc_numeric_statistics(df, target, classify)

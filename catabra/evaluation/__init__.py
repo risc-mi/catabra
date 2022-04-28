@@ -140,16 +140,13 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         # TODO: Perform OOD checks.
 
         # descriptive statistics for each train/test split
-        if encoder.task_ is not None and (folder / 'invocation.json').exists():
-            group_ = io.load(folder / 'invocation.json').get('group')
-            group_ = [] if group_ is None else [group_]
-            ignore_ = io.load(folder / 'invocation.json').get('ignore')
-            ignore_ = [] if ignore_ is None else ignore_
+        if encoder.task_ is not None:
+            target = list(y_test.columns)
             for mask, directory in _iter_splits():
-                statistics.save_descriptive_statistics(df=df[mask].drop(columns=[split]+group_+ignore_).copy(),
-                                                       target=list(y_test.columns),
+                statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
+                                                       target=target,
                                                        classify=encoder.task_ != 'regression',
-                                                       fn=folder / 'statistics' / directory.name)
+                                                       fn=directory / 'statistics')
 
         if encoder.task_ is not None and (folder / 'model.joblib').exists():
             model = io.load(folder / 'model.joblib')

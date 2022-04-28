@@ -288,10 +288,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
         # descriptive statistics for overall dataset
         statistics.save_descriptive_statistics(df=df.drop(ignore, axis=1, errors='ignore'),
-                                               target=target, classify=classify, fn=out / 'statistics' / 'overall')
-
-        # _, _, _ = statistics.calc_descriptive_statistics(df=df.drop(ignore, axis=1, errors='ignore'),
-        #                                                     target=target, classify=classify)
+                                               target=target, classify=classify, fn=out / 'statistics')
 
         # encoder
         encoder = Encoder(classify=classify)
