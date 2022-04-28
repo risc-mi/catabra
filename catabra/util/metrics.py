@@ -37,6 +37,52 @@ def pr_auc_score(y_true, y_score, **kwargs) -> float:
     return skl_metrics.auc(recall, precision)
 
 
+def balance_score_threshold(y_true, y_score) -> Tuple[float, float]:
+    """
+    Compute the balance score and -threshold of a binary classification problem.
+    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
+    contain NaN.
+    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
+    to the positive class. Range is arbitrary.
+    :return: Pair `(balance_score, balance_threshold)`, where `balance_threshold` is the decision threshold that
+    minimizes the difference between sensitivity and specificity, i.e., it is defined as
+
+        arg min_t |sensitivity(y_true, y_score >= t) - specificity(y_true, y_score >= t)|
+
+    `balance_score` is the corresponding sensitivity value, which by definition is approximately equal to specificity
+    and can furthermore be shown to be approximately equal to accuracy and balanced accuracy, too.
+    """
+    if len(y_true) != len(y_score):
+        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+    elif len(y_true) == 0:
+        return 0., 0.
+    if isinstance(y_true, pd.Series):
+        y_true = y_true.values
+    if isinstance(y_score, pd.Series):
+        y_score = y_score.values
+    s = pd.DataFrame(data=dict(p=(y_true > 0), n=(y_true < 1)), index=y_score).groupby(level=0).sum()
+    s.sort_index(ascending=False, inplace=True)
+    n_pos = s['p'].sum()
+    n_neg = s['n'].sum()
+    tp = s['p'].cumsum().values
+    tn = n_neg - s['n'].cumsum().values
+    diff = tp * n_neg - tn * n_pos    # monotonically increasing; constant 0 if `n_pos == 0` or `n_neg == 0`
+    i = np.argmin(np.abs(diff))
+    th = s.index[i]
+    if i + 1 < len(s):      # take midpoint of `i`-th and nearest *smaller* threshold
+        th += s.index[i + 1]
+        th *= 0.5
+    return ((tn[i] / n_neg) if n_pos == 0 else (tp[i] / n_pos)), th
+
+
+def balance_score(y_true, y_score) -> float:
+    return balance_score_threshold(y_true, y_score)[0]
+
+
+def balance_threshold(y_true, y_score) -> float:
+    return balance_score_threshold(y_true, y_score)[1]
+
+
 def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optional[np.ndarray] = None) \
         -> Tuple[np.ndarray, np.ndarray]:
     """

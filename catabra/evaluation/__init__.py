@@ -396,6 +396,10 @@ def calc_binary_classification_metrics(
             dct[m] = getattr(metrics, m)(y_true, y_hat)
         except:     # noqa
             pass
+    try:
+        dct['balance_score'], dct['balance_threshold'] = metrics.balance_score_threshold(y_true, y_hat)
+    except:     # noqa
+        pass
 
     if thresholds is None:
         thresholds = metrics.get_thresholds(y_hat, n_max=100, add_half_one=None)
@@ -420,11 +424,6 @@ def calc_binary_classification_metrics(
             s = func(tp=out['true_positive'], tn=out['true_negative'], fp=out['false_positive'],
                      fn=out['false_negative'], average=None)
         out.insert(1, m, s)
-
-    if 'sensitivity' in out.columns and 'specificity' in out.columns:
-        i = (out['sensitivity'] - out['specificity']).abs().idxmin()
-        dct['balance_threshold'] = out.loc[i, 'threshold']
-        dct['balance_score'] = (out.loc[i, 'sensitivity'] + out.loc[i, 'specificity']) * 0.5
 
     fractions, th = metrics.calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
     calibration = pd.DataFrame(data=dict(threshold_lower=th[:-1], threshold_upper=th[1:], pos_fraction=fractions))
@@ -632,11 +631,17 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     dct = {}
     for i, lbl in enumerate(labels):
         dct_i = dict(n=mask[:, i].sum(), n_pos=n_positive[i])
+        y_true_i = y_true[mask[:, i], i]
+        y_hat_i = y_hat[mask[:, i], i]
         for m in _BINARY_PROBA_METRICS:
             try:
-                dct_i[m] = getattr(metrics, m)(y_true[mask[:, i], i], y_hat[mask[:, i], i])
+                dct_i[m] = getattr(metrics, m)(y_true_i, y_hat_i)
             except:  # noqa
                 pass
+        try:
+            dct_i['balance_score'], dct_i['balance_threshold'] = metrics.balance_score_threshold(y_true_i, y_hat_i)
+        except:     # noqa
+            pass
         dct[lbl] = dct_i
 
     # micro average
@@ -657,7 +662,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     overall = pd.DataFrame.from_dict(dct, orient='index')
     div = overall['n_pos'].sum() - overall.loc[['__micro__', '__macro__', '__weighted__'], 'n_pos'].sum()
     for c in overall.columns:
-        if c not in ('n', 'n_pos'):
+        if c not in ('n', 'n_pos', 'balance_score', 'balance_threshold'):
             overall.loc['__macro__', c] = overall[c].iloc[:-3].mean()
             overall.loc['__weighted__', c] = (overall['n_pos'].iloc[:-3] * overall[c].iloc[:-3]).sum() / div
 
@@ -689,14 +694,6 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                 s = func(tp=out['true_positive'], tn=out['true_negative'], fp=out['false_positive'],
                          fn=out['false_negative'], average=None)
             out.insert(1, m, s)
-
-        if 'sensitivity' in out.columns and 'specificity' in out.columns:
-            i = (out['sensitivity'] - out['specificity']).abs().idxmin()
-            if 'balance_threshold' not in overall.columns:
-                overall['balance_threshold'] = np.nan
-                overall['balance_score'] = np.nan
-            overall.loc[lbl, 'balance_threshold'] = out.loc[i, 'threshold']
-            overall.loc[lbl, 'balance_score'] = (out.loc[i, 'sensitivity'] + out.loc[i, 'specificity']) * 0.5
 
         per_class[lbl] = out
 
