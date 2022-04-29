@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from ..util.io import Path, make_path, write_df, write_dfs
+from ..util.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
 from ..util import logging
 from typing import Union, Tuple
 
@@ -14,15 +14,25 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
     :return: Dictionary with statistics (for numeric features) for entire dataset, each target and
     (in case of classification) each label.
     """
-    df_temp = df.copy()
+    df = df.copy()
     dict_stat = {'overall': df.describe().T}
     if classify:
         for label_ in target:
-            dict_stat[label_] = df.groupby(label_).describe().T
-            df_temp[label_] = 'Overall'
-            dict_stat[label_] = dict_stat[label_].join(df_temp.groupby(label_).describe().T)
+            df[label_] = df[label_].astype(str).fillna('NaN')
+            df_stat_cat = pd.DataFrame()
+            df_stat_temp = df.groupby(label_).describe()
 
-    del df_temp
+            for col_ in list(dict_stat['overall'].index):
+                temp = df_stat_temp.iloc[:, df_stat_temp.columns.get_level_values(0) == col_]
+                temp.columns = temp.columns.droplevel()
+                arrays = [[col_ for _ in list(temp.index)], list(temp.index)]
+                index = pd.MultiIndex.from_tuples(list(zip(*arrays)), names=["Feature", label_])
+                df_stat_cat = pd.concat([df_stat_cat, temp.set_index(index)])
+
+            df_stat_cat['count'] = df_stat_cat['count'].astype(int)
+            dict_stat[label_] = df_stat_cat
+
+    del df_stat_temp, temp
     return dict_stat
 
 
@@ -37,16 +47,17 @@ def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '
     df_stat_cat = pd.DataFrame()
     for col_ in target + [c for c in df.columns if c not in target]:
         if df[col_].dtype.name in ['bool', 'category'] or (col_ in target):
-            temp = pd.DataFrame(df[col_].value_counts()).rename(columns={col_: name_ + 'count'})
+            series = df[col_].astype(str).fillna('NaN')
+            temp = pd.DataFrame(series.value_counts()).rename(columns={col_: name_ + 'count'})
             temp = temp.join(
-                pd.DataFrame(df[col_].value_counts(normalize=True) * 100).rename(columns={col_: name_ + '%'}))
+                pd.DataFrame(series.value_counts(normalize=True) * 100).rename(columns={col_: name_ + '%'}))
 
-            arrays = [[col_ for s in list(temp.index)], list(temp.index)]
+            arrays = [[col_ for _ in list(temp.index)], list(temp.index)]
             index = pd.MultiIndex.from_tuples(list(zip(*arrays)), names=["Feature", "Value"])
             temp = temp.set_index(index)
             df_stat_cat = pd.concat([df_stat_cat, temp])
 
-    del temp
+    del temp, series
     return df_stat_cat
 
 
@@ -62,12 +73,11 @@ def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) 
     dict_non_num_stat = {'overall': create_non_numeric_statistics(df, [t_ for t_ in target if classify])}
 
     for label_ in target:
-        c_ = df[label_].notnull()
-        df_non_num_stat = create_non_numeric_statistics(df[c_], [l_ for l_ in [label_] if classify], 'Overall - ')
+        df_non_num_stat = create_non_numeric_statistics(df, [l_ for l_ in [label_] if classify], 'Overall - ')
 
         if classify:
             for value_ in df[label_].unique():
-                mask = df[label_] == value_
+                mask = df[label_] == value_ if ~np.isnan(value_) else df[label_].isnull()
                 df_non_num_stat = df_non_num_stat.join(create_non_numeric_statistics(df[mask],
                                                                                      [l_ for l_ in [label_] if classify],
                                                                                      str(value_) + ' - '))
@@ -89,10 +99,9 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
     fn = make_path(fn)
 
     num_stats, non_num_stats, corr = calc_descriptive_statistics(df, target, classify)
-
     # calculate and save descriptive statistics & correlations
     cols_to_str = list(df.select_dtypes(include=['timedelta64[ns]']).columns)
-    num_stats = convert_to_str(num_stats, cols_to_str)
+    convert_rows_to_str(num_stats, cols_to_str, inplace=True, skip=['count'])
 
     write_dfs(num_stats, fn / 'statistics_numeric.xlsx')
     write_dfs(non_num_stats, fn / 'statistics_non_numeric.xlsx')
@@ -122,10 +131,3 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) 
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
 
     return dict_stat, dict_non_num_stat, df.corr()
-
-
-def convert_to_str(d: dict, cols_to_str: list) -> dict:
-    for key_ in list(d.keys()):
-        for c_ in cols_to_str:
-            d[key_].iloc[d[key_].index == c_, 1:] = d[key_].iloc[d[key_].index == c_, 1:].astype(str)
-    return d

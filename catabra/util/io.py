@@ -190,3 +190,32 @@ def to_json(x):
         return to_json(x.to_dict())
     else:
         return x
+
+
+def convert_rows_to_str(d: [dict, pd.DataFrame], rowindex_to_convert: list,
+                        inplace: bool = True, skip: list = []) -> Union[dict, pd.DataFrame]:
+    """
+    Converts rows (indexed via rowindex_to_convert) to str, mainly used for saving dataframes (to avoid missing values
+    in .xlsx-files in case of e.g. timedelta datatype)
+    :param d: Single DataFrame or dictionary of dataframes
+    :param rowindex_to_convert: List of row indices (e.g., features), that should be converted to str
+    :param inplace: Determines if changes will be made to input data or a deep-copy of it
+    :param skip: List of column(s) that should not be converted to string
+    :return: Modified (str-converted rows) single DataFrame or dictionary of dataframes
+    """
+    if not inplace:
+        if isinstance(d, pd.DataFrame):
+            d = d.copy()
+        elif isinstance(d, dict):
+            import copy
+            d = copy.deepcopy(d)
+
+    if isinstance(d, pd.DataFrame):
+        d.loc[rowindex_to_convert, ~d.columns.isin(skip)] = d.loc[
+            rowindex_to_convert, ~d.columns.isin(skip)].astype(str)
+    elif isinstance(d, dict):
+        for key_ in list(d.keys()):
+            if isinstance(d[key_], pd.DataFrame):
+                d[key_].loc[rowindex_to_convert, ~d[key_].columns.isin(skip)] = d[key_].loc[
+                    rowindex_to_convert, ~d[key_].columns.isin(skip)].astype(str)
+    return d
