@@ -5,6 +5,57 @@ import pandas as pd
 from sklearn import metrics as skl_metrics
 
 
+def _micro_average(func):
+    def _out(y_true, y_pred, **kwargs):
+        y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
+        if y_true.ndim == 1:
+            classes = np.unique(y_true)
+            y_true_one_hot = y_true[..., np.newaxis] == classes
+            y_pred_one_hot = y_pred[..., np.newaxis] == classes
+            return func(y_true_one_hot.reshape(-1), y_pred_one_hot.reshape(-1), **kwargs)
+        else:
+            return func(y_true.reshape(-1), y_pred.reshape(-1), **kwargs)
+
+    return _out
+
+
+def _macro_average(func):
+    def _out(y_true, y_pred, **kwargs):
+        y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
+        if y_true.ndim == 1:
+            classes = np.unique(y_true)
+            return np.mean([func(y_true == c, y_pred == c, **kwargs) for c in classes])
+        else:
+            return np.mean([func(y_true[:, i], y_pred[:, i], **kwargs) for i in range(y_true.shape[1])])
+
+    return _out
+
+
+def _samples_average(func):
+    # only defined for multilabel problems
+
+    def _out(y_true, y_pred, **kwargs):
+        y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(2,))
+        return np.mean([func(y_true[i], y_pred[i], **kwargs) for i in range(y_true.shape[0])])
+
+    return _out
+
+
+def _weighted_average(func):
+    def _out(y_true, y_pred, **kwargs):
+        y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
+        if y_true.ndim == 1:
+            classes, weights = np.unique(y_true, return_counts=True)
+            return \
+                np.sum([w * func(y_true == c, y_pred == c, **kwargs) for c, w in zip(classes, weights)]) / len(y_true)
+        else:
+            weights = (y_true > 0).sum(axis=0)
+            return \
+                np.sum([w * func(y_true[:, i], y_pred[:, i], **kwargs) for i, w in enumerate(weights)]) / weights.sum()
+
+    return _out
+
+
 # regression
 r2 = skl_metrics.r2_score
 mean_absolute_error = skl_metrics.mean_absolute_error
@@ -22,14 +73,22 @@ mean_gamma_deviance = skl_metrics.mean_gamma_deviance
 
 # classification with probabilities
 roc_auc = skl_metrics.roc_auc_score
+roc_auc_micro = partial(roc_auc, average='micro')
+roc_auc_macro = partial(roc_auc, average='macro')
+roc_auc_samples = partial(roc_auc, average='samples')
+roc_auc_weighted = partial(roc_auc, average='weighted')
+roc_auc_ovr = partial(roc_auc, multi_class='ovr')
+roc_auc_ovo = partial(roc_auc, multi_class='ovo')
+roc_auc_ovr_weighted = partial(roc_auc, multi_class='ovr', average='weighted')
+roc_auc_ovo_weighted = partial(roc_auc, multi_class='ovo', average='weighted')
 average_precision = skl_metrics.average_precision_score
+average_precision_micro = partial(average_precision, average='micro')
+average_precision_macro = partial(average_precision, average='macro')
+average_precision_samples = partial(average_precision, average='samples')
+average_precision_weighted = partial(average_precision, average='weighted')
 brier_loss = skl_metrics.brier_score_loss
 hinge_loss = skl_metrics.hinge_loss
 log_loss = skl_metrics.log_loss
-roc_auc_ovr = partial(skl_metrics.roc_auc_score, multi_class='ovr')
-roc_auc_ovo = partial(skl_metrics.roc_auc_score, multi_class='ovo')
-roc_auc_ovr_weighted = partial(skl_metrics.roc_auc_score, multi_class='ovr', average='weighted')
-roc_auc_ovo_weighted = partial(skl_metrics.roc_auc_score, multi_class='ovo', average='weighted')
 
 
 def pr_auc(y_true, y_score, **kwargs) -> float:
@@ -128,21 +187,65 @@ def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool]
 confusion_matrix = skl_metrics.confusion_matrix
 precision_recall_fscore_support = skl_metrics.precision_recall_fscore_support
 accuracy = skl_metrics.accuracy_score
+accuracy_micro = _micro_average(accuracy)
+accuracy_macro = _macro_average(accuracy)
+accuracy_samples = _samples_average(accuracy)
+accuracy_weighted = _weighted_average(accuracy)
 balanced_accuracy = skl_metrics.balanced_accuracy_score
+balanced_accuracy_micro = _micro_average(balanced_accuracy)
+balanced_accuracy_macro = _macro_average(balanced_accuracy)
+balanced_accuracy_samples = _samples_average(balanced_accuracy)
+balanced_accuracy_weighted = _weighted_average(balanced_accuracy)
 f1 = skl_metrics.f1_score
+f1_micro = partial(f1, average='micro')
+f1_macro = partial(f1, average='macro')
+f1_samples = partial(f1, average='samples')
+f1_weighted = partial(f1, average='weighted')
 sensitivity = partial(skl_metrics.recall_score, zero_division=0)
+sensitivity_micro = partial(sensitivity, average='micro', pos_label=None)
+sensitivity_macro = partial(sensitivity, average='macro', pos_label=None)
+sensitivity_samples = partial(sensitivity, average='samples', pos_label=None)
+sensitivity_weighted = partial(sensitivity, average='weighted', pos_label=None)
 specificity = partial(skl_metrics.recall_score, pos_label=0, zero_division=0)
+specificity_micro = _micro_average(specificity)   # cannot use built-in version, because `pos_label=0` would be ignored
+specificity_macro = _macro_average(specificity)
+specificity_samples = _samples_average(specificity)
+specificity_weighted = _weighted_average(specificity)
 positive_predictive_value = partial(skl_metrics.precision_score, zero_division=1)
+positive_predictive_value_micro = partial(positive_predictive_value, average='micro')
+positive_predictive_value_macro = partial(positive_predictive_value, average='macro')
+positive_predictive_value_samples = partial(positive_predictive_value, average='samples')
+positive_predictive_value_weighted = partial(positive_predictive_value, average='weighted')
 negative_predictive_value = partial(skl_metrics.precision_score, pos_label=0, zero_division=1)
+negative_predictive_value_micro = _micro_average(negative_predictive_value)     # see comment at `specificity_micro`
+negative_predictive_value_macro = _macro_average(negative_predictive_value)
+negative_predictive_value_samples = _samples_average(negative_predictive_value)
+negative_predictive_value_weighted = _weighted_average(negative_predictive_value)
 cohen_kappa = skl_metrics.cohen_kappa_score
+cohen_kappa_micro = _micro_average(cohen_kappa)
+cohen_kappa_macro = _macro_average(cohen_kappa)
+cohen_kappa_samples = _samples_average(cohen_kappa)
+cohen_kappa_weighted = _weighted_average(cohen_kappa)
 matthews_correlation_coefficient = skl_metrics.matthews_corrcoef
-jaccard = skl_metrics.jaccard_score
+matthews_correlation_coefficient_micro = _micro_average(matthews_correlation_coefficient)
+matthews_correlation_coefficient_macro = _macro_average(matthews_correlation_coefficient)
+matthews_correlation_coefficient_samples = _samples_average(matthews_correlation_coefficient)
+matthews_correlation_coefficient_weighted = _weighted_average(matthews_correlation_coefficient)
+jaccard = partial(skl_metrics.jaccard_score, zero_division=1)
+jaccard_micro = partial(jaccard, average='micro')
+jaccard_macro = partial(jaccard, average='macro')
+jaccard_samples = partial(jaccard, average='samples')
+jaccard_weighted = partial(jaccard, average='weighted')
 hamming_loss = skl_metrics.hamming_loss
+hamming_loss_micro = _micro_average(hamming_loss)
+hamming_loss_macro = _macro_average(hamming_loss)
+hamming_loss_samples = _samples_average(hamming_loss)
+hamming_loss_weighted = _weighted_average(hamming_loss)
 
 
 def precision_recall_fscore_support_cm(*, tp=None, fp=None, tn=None, fn=None, beta: float = 1.0,
                                        average: Optional[str] = None, zero_division: Union[float, str] = 'warn'):
-    tp, fp, tn, fn = _to_int_arrays(tp, fp, tn, fn)
+    tp, fp, tn, fn = _to_num_arrays(tp, fp, tn, fn)
     if np.isscalar(tp):
         b2 = beta * beta
         pr = _precision_cm_aux(tp, fp, tn, fn, zero_division=zero_division)
@@ -198,7 +301,7 @@ def accuracy_cm(*, tp=None, fp=None, tn=None, fn=None, average: Optional[str] = 
         -> Union[float, int, np.ndarray]:
     """
     Calculate accuracy from a confusion matrix.
-    ATTENTION! In the multilabel case, this implementation differs from the scikit-learn implementation.
+    ATTENTION! In the multilabel case, this implementation actually corresponds to `accuracy_micro` etc.
     """
     return _calc_single_cm_metric(_accuracy_cm_aux, tp, fp, tn, fn, average=average, normalize=normalize)
 
@@ -213,6 +316,10 @@ def _accuracy_cm_aux(tp, fp, tn, fn, normalize: bool = True):
 
 def balanced_accuracy_cm(*, tp=None, fp=None, tn=None, fn=None, average: Optional[str] = 'binary',
                          adjusted: bool = False) -> Union[float, int, np.ndarray]:
+    """
+    Calculate accuracy from a confusion matrix.
+    ATTENTION! In the multilabel case, this implementation actually corresponds to `balanced_accuracy_micro` etc.
+    """
     return _calc_single_cm_metric(_balanced_accuracy_cm_aux, tp, fp, tn, fn, average=average, adjusted=adjusted)
 
 
@@ -277,7 +384,7 @@ negative_predictive_value_cm = partial(precision_cm, swap_pos_neg=True, zero_div
 
 
 def _calc_single_cm_metric(func, tp, fp, tn, fn, average=None, weighted_zero_division=1, **kwargs):
-    tp, fp, tn, fn = _to_int_arrays(tp, fp, tn, fn)
+    tp, fp, tn, fn = _to_num_arrays(tp, fp, tn, fn)
     if np.isscalar(tp):
         return func(tp, fp, tn, fn, **kwargs)
     elif average == 'binary':
@@ -296,21 +403,24 @@ def _calc_single_cm_metric(func, tp, fp, tn, fn, average=None, weighted_zero_div
             return value
 
 
-def _to_int_array(x):
+def _to_num_array(x, rank=(0, 1)):
     if isinstance(x, pd.Series):
-        assert x.dtype.kind in 'uib'
+        assert x.dtype.kind in 'uibf'
+        assert 1 in rank
         return x.values
-    elif isinstance(x, (int, bool)):
+    elif isinstance(x, (int, float, bool)):
+        assert 0 in rank
         return x
     else:
-        assert x.dtype.kind in 'uib'
-        assert x.ndim in (0, 1)
+        assert x.dtype.kind in 'uibf'
+        assert x.ndim in rank
         return x
 
 
-def _to_int_arrays(*args) -> tuple:
-    out = tuple(_to_int_array(a) for a in args)
-    assert all(np.isscalar(a) for a in out) or all(len(a) == len(out[0]) for a in out)
+def _to_num_arrays(*args, rank=(0, 1)) -> tuple:
+    out = tuple(_to_num_array(a, rank=rank) for a in args)
+    scalar = len(out) == 0 or np.isscalar(out[0])
+    assert all(np.isscalar(a) == scalar for a in out) and (scalar or all(a.shape == out[0].shape for a in out))
     return out
 
 

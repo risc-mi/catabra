@@ -174,8 +174,7 @@ See `util/config.py` for further information, including the default values of th
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*
-    suitable metrics are computed automatically. All built-in
-    [scikit-learn metrics](https://scikit-learn.org/stable/modules/model_evaluation.html) are supported.
+    suitable metrics are computed automatically. See `doc/metrics.md` for a list of supported metrics.
 * `"multiclass_classification_metrics"`: List of metrics to evaluate when training multiclass classification models.
     Has the same meaning as `"binary_classification_metrics"`.
 * `"multilabel_classification_metrics"`: List of metrics to evaluate when training multilabel classification models.

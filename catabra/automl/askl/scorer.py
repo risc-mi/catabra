@@ -1,35 +1,34 @@
-from functools import partial
-import sklearn
 from autosklearn import metrics
+from ...util import metrics as um
 
 
 # scorers not yet predefined in austosklearn
 _EXTRA_SCORERS = dict(
-    # classification
-    brier=metrics.make_scorer('brier', sklearn.metrics.brier_score_loss, greater_is_better=False, needs_threshold=True),
-    jaccard=metrics.make_scorer('jaccard', partial(sklearn.metrics.jaccard_score, pos_label=None, zero_division=0)),
-    jaccard_micro=metrics.make_scorer('jaccard_micro', partial(sklearn.metrics.jaccard_score, pos_label=None, average='micro', zero_division=0)),
-    jaccard_macro=metrics.make_scorer('jaccard_macro', partial(sklearn.metrics.jaccard_score, pos_label=None, average='macro', zero_division=0)),
-    jaccard_samples=metrics.make_scorer('jaccard_samples', partial(sklearn.metrics.jaccard_score, pos_label=None, average='samples', zero_division=0)),
-    jaccard_weighted=metrics.make_scorer('jaccard_weighted', partial(sklearn.metrics.jaccard_score, pos_label=None, average='weighted', zero_division=0)),
-    roc_auc_ovr=metrics.make_scorer('roc_auc_ovr', partial(sklearn.metrics.roc_auc_score, multi_class='ovr'), needs_threshold=True),
-    roc_auc_ovo=metrics.make_scorer('roc_auc_ovo', partial(sklearn.metrics.roc_auc_score, multi_class='ovo'), needs_threshold=True),
-    roc_auc_ovr_weighted=metrics.make_scorer('roc_auc_ovr_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovr', average='weighted'), needs_threshold=True),
-    roc_auc_ovo_weighted=metrics.make_scorer('roc_auc_ovo_weighted', partial(sklearn.metrics.roc_auc_score, multi_class='ovo', average='weighted'), needs_threshold=True),
-    positive_predictive_value=metrics.make_scorer('positive_predictive_value', partial(sklearn.metrics.precision_score, zero_division=1)),
-    negative_predictive_value=metrics.make_scorer('negative_predictive_value', partial(sklearn.metrics.precision_score, pos_label=0, zero_division=1)),
-    sensitivity=metrics.make_scorer('sensitivity', partial(sklearn.metrics.recall_score, zero_division=0)),
-    specificity=metrics.make_scorer('specificity', partial(sklearn.metrics.recall_score, pos_label=0, zero_division=0)),
-
     # regression
-    explained_variance=metrics.make_scorer('explained_variance', sklearn.metrics.explained_variance_score),
-    mean_absolute_percentage_error=metrics.make_scorer('mean_absolute_percentage_error', sklearn.metrics.mean_absolute_percentage_error, greater_is_better=False, optimum=0, worst_possible_result=metrics.MAXINT)
+    explained_variance=metrics.make_scorer('explained_variance', um.explained_variance),
+    mean_absolute_percentage_error=metrics.make_scorer('mean_absolute_percentage_error', um.mean_absolute_percentage_error, greater_is_better=False, optimum=0, worst_possible_result=metrics.MAXINT)
 )
 
-# aliases with prefix "neg_"
-for _n in ('mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error', 'mean_squared_log_error',
-           'median_absolute_error', 'mean_absolute_percentage_error'):
-    _EXTRA_SCORERS['neg_' + _n] = _EXTRA_SCORERS.get(_n) or getattr(metrics, _n)
+for _m in ('brier_loss', 'hinge_loss', 'log_loss', 'roc_auc', 'roc_auc_ovr', 'roc_auc_ovo',
+           'average_precision', 'pr_auc'):
+    _greater_is_better = not _m.endswith('_loss')
+    for _s in ('', '_micro', '_macro', '_samples', '_weighted'):
+        _n = _m + _s
+        _f = getattr(um, _n, None)
+        if _f is not None and getattr(metrics, _n, None) is None:
+            _EXTRA_SCORERS[_n] = metrics.make_scorer(_n, _f, needs_threshold=True, greater_is_better=_greater_is_better,
+                                                     worst_possible_result=0 if _greater_is_better else metrics.MAXINT,
+                                                     optimum=1 if _greater_is_better else 0)
+
+for _m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity', 'positive_predictive_value',
+           'negative_predictive_value', 'cohen_kappa', 'matthews_correlation_coefficient', 'jaccard', 'hamming_loss'):
+    _greater_is_better = not _m.endswith('_loss')
+    for _s in ('', '_micro', '_macro', '_samples', '_weighted'):
+        _n = _m + _s
+        _f = getattr(um, _n, None)
+        if _f is not None and getattr(metrics, _n, None) is None:
+            _EXTRA_SCORERS[_n] = metrics.make_scorer(_n, _f, greater_is_better=_greater_is_better,
+                                                     optimum=1 if _greater_is_better else 0)
 
 
 def get_scorer(name: str) -> metrics.Scorer:
