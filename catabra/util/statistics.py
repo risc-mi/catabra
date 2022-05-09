@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from ..util.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
 from ..util import logging
 from typing import Union, Tuple
@@ -32,7 +31,6 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
             df_stat_cat['count'] = df_stat_cat['count'].astype(int)
             dict_stat[label_] = df_stat_cat
 
-    del df_stat_temp, temp
     return dict_stat
 
 
@@ -57,7 +55,6 @@ def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '
             temp = temp.set_index(index)
             df_stat_cat = pd.concat([df_stat_cat, temp])
 
-    del temp, series
     return df_stat_cat
 
 
@@ -77,14 +74,13 @@ def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) 
 
         if classify:
             for value_ in df[label_].unique():
-                mask = df[label_] == value_ if ~np.isnan(value_) else df[label_].isnull()
+                mask = df[label_] == value_ if pd.notna(value_) else df[label_].isnull()
                 df_non_num_stat = df_non_num_stat.join(create_non_numeric_statistics(df[mask],
                                                                                      [l_ for l_ in [label_] if classify],
                                                                                      str(value_) + ' - '))
 
         dict_non_num_stat[label_] = df_non_num_stat
 
-    del df_non_num_stat
     return dict_non_num_stat
 
 
