@@ -176,9 +176,10 @@ class AutoSklearnBackend(AutoMLBackend):
         if 'regressor' in exclude:
             del exclude['regressor']
         for k in list(include):
-            ve = exclude.get(k, [])
-            include[k] = [v for v in include[k] if v not in ve]
-            del exclude[k]
+            ve = exclude.get(k)
+            if ve is not None:
+                include[k] = [v for v in include[k] if v not in ve]
+                del exclude[k]
         kwargs['include'] = include
         kwargs['exclude'] = exclude
 

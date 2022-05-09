@@ -239,7 +239,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             logging.log(f'Grouping by row index "{group}"')
         if group is not None:
             if group == df_train.index.name:
-                for k, m in split_masks:
+                for k, m in split_masks.items():
                     n = len(np.intersect1d(df_train.index, df[m].index))
                     if n > 0:
                         logging.warn(f'{n} groups in "{k}" overlap with training set')
