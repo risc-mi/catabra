@@ -308,6 +308,20 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 io.dump(io.to_json(backend.summary()), out / 'model_summary.json')
                 hist = backend.training_history()
                 io.write_df(hist, out / 'training_history.xlsx')
+                if hist.empty:
+                    sub = pd.Series([])
+                else:
+                    cols = [c for c in hist.columns if c.startswith('ensemble_val_')]
+                    if cols:
+                        if 'timestamp' in hist.columns:
+                            sub = hist[cols].iloc[np.argmax(hist['timestamp'].values)]
+                        else:
+                            sub = hist[cols].iloc[-1]
+                    else:
+                        sub = pd.Series([])
+                msg = ['Final training statistics:', '    n_models_trained: ' + str(len(hist))]
+                msg += ['    {}: {}'.format(sub.index[i], sub.iloc[i]) for i in range(len(sub))]
+                logging.log('\n'.join(msg))
                 if static_plots:
                     plotting.save(plot_training_history(hist, interactive=False), out)
                 if interactive_plots:

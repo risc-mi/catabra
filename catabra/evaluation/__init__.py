@@ -152,6 +152,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             model = io.load(folder / 'model.joblib')
             if model_id == '__ensemble__':
                 model_id = None
+            main_metrics = config.get(encoder.task_ + '_metrics', [])
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
 
@@ -162,7 +163,13 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
                 for mask, directory in _iter_splits():
                     directory.mkdir(exist_ok=True, parents=True)
-                    io.write_df(calc_regression_metrics(y_test[mask], y_hat[mask]), directory / 'metrics.xlsx')
+                    met = calc_regression_metrics(y_test[mask], y_hat[mask])
+                    io.write_df(met, directory / 'metrics.xlsx')
+                    if '__overall__' in met.index:
+                        msg = ['Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
+                        msg += ['    {}: {}'.format(m, met.loc['__overall__', m])
+                                for m in main_metrics if m in met.columns]
+                        logging.log('\n'.join(msg))
                     if static_plots:
                         plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=False),
                                       directory / 'static_plots')
@@ -204,6 +211,24 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         directory.mkdir(exist_ok=True, parents=True)
                         io.write_df(detailed[mask], directory / 'predictions.xlsx')
                         overall, thresh, thresh_per_class = calc_multilabel_metrics(y_test[mask], y_hat[mask])
+                        msg = ['Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
+                        for m in main_metrics:
+                            if m in thresh.columns:
+                                if 'threshold' in thresh.columns:
+                                    i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                                    msg.append('    {} @ {}: {}'
+                                               .format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
+                            elif m.endswith('_micro'):
+                                if '__micro__' in overall.index and m[:-6] in overall.columns:
+                                    msg.append('    {}: {}'.format(m, overall.loc['__micro__', m[:-6]]))
+                            elif m.endswith('_macro'):
+                                if '__macro__' in overall.index and m[:-6] in overall.columns:
+                                    msg.append('    {}: {}'.format(m, overall.loc['__macro__', m[:-6]]))
+                            elif m.endswith('_weighted'):
+                                if '__weighted__' in overall.index and m[:-9] in overall.columns:
+                                    msg.append('    {}: {}'.format(m, overall.loc['__weighted__', m[:-9]]))
+                        if len(msg) > 1:
+                            logging.log('\n'.join(msg))
                         if static_plots:
                             plotting.save(
                                 plot_multilabel(overall, thresh_per_class, interactive=False, labels=labels),
@@ -240,6 +265,20 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                             directory.mkdir(exist_ok=True, parents=True)
                             io.write_df(detailed[mask], directory / 'predictions.xlsx')
                             overall, thresh, calib = calc_binary_classification_metrics(y_test[mask], y_hat[mask])
+                            msg = [
+                                'Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
+                            for m in main_metrics:
+                                if m in thresh.columns:
+                                    if 'threshold' in thresh.columns:
+                                        i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                                        msg.append('    {} @ {}: {}'
+                                                   .format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
+                                else:
+                                    v = overall.get(m)
+                                    if v is not None:
+                                        msg.append('    {}: {}'.format(m, v))
+                            if len(msg) > 1:
+                                logging.log('\n'.join(msg))
                             if static_plots:
                                 plotting.save(
                                     plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
@@ -265,6 +304,14 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                 y_hat[mask],
                                 labels=labels
                             )
+                            msg = [
+                                'Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
+                            for m in main_metrics:
+                                v = overall.get(m)
+                                if v is not None:
+                                    msg.append('    {}: {}'.format(m, v))
+                            if len(msg) > 1:
+                                logging.log('\n'.join(msg))
                             overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
                             io.write_dfs(dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class),
                                          directory / 'metrics.xlsx')
