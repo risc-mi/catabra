@@ -1,7 +1,7 @@
 import pandas as pd
 from ..util.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
 from ..util import logging
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 
 def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
@@ -84,36 +84,41 @@ def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) 
     return dict_non_num_stat
 
 
-def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, fn: Union[str, Path]):
+def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, fn: Union[str, Path],
+                                corr_threshold: int = 200):
     """
     Calculate and save descriptive statistics including correlation information to disk.
     :param df: The main dataframe.
     :param target: The target labels; stored in list
     :param classify: Is true, if classification task. False for regression task
     :param fn: The directory where to save the statistics files
+    :param corr_threshold: Maximum number of columns for which a correlation-DataFrame is computed.
     """
     fn = make_path(fn)
 
-    num_stats, non_num_stats, corr = calc_descriptive_statistics(df, target, classify)
+    num_stats, non_num_stats, corr = calc_descriptive_statistics(df, target, classify, corr_threshold=corr_threshold)
     # calculate and save descriptive statistics & correlations
     cols_to_str = list(df.select_dtypes(include=['timedelta64[ns]']).columns)
     convert_rows_to_str(num_stats, cols_to_str, inplace=True, skip=['count'])
 
     write_dfs(num_stats, fn / 'statistics_numeric.xlsx')
     write_dfs(non_num_stats, fn / 'statistics_non_numeric.xlsx')
-    write_df(corr, fn / 'correlations.xlsx')
+    if corr is not None:
+        write_df(corr, fn / 'correlations.xlsx')
 
     # delete temp variables and end function
     del num_stats, non_num_stats
     logging.log(f'Saving descriptive statistics completed')
 
 
-def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) -> Tuple[dict, dict, pd.DataFrame]:
+def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, corr_threshold: int = 200) \
+        -> Tuple[dict, dict, Optional[pd.DataFrame]]:
     """
     Calculate and return descriptive statistics including correlation information
     :param df: The main dataframe.
     :param target: The target labels; stored in list
     :param classify: Is true, if classification task. False for regression task
+    :param corr_threshold: Maximum number of columns for which a correlation-DataFrame is computed.
     :return: Tuple of numeric and non-numeric statistics (separate dictionaries) and correlation-DataFrame
     """
     if classify:
@@ -126,4 +131,4 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool) 
     dict_stat = calc_numeric_statistics(df, target, classify)
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
 
-    return dict_stat, dict_non_num_stat, df.corr()
+    return dict_stat, dict_non_num_stat, (df.corr() if df.shape[1] <= corr_threshold else None)
