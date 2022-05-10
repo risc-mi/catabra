@@ -43,6 +43,7 @@ class AutoSklearnBackend(AutoMLBackend):
     def __init__(self, **kwargs):
         super(AutoSklearnBackend, self).__init__(**kwargs)
         self._multioutput = False
+        self.converted_bool_columns_ = None     # tuple of columns of bool dtype that must be converted to float
 
     @property
     def model_ids_(self) -> list:
@@ -183,6 +184,16 @@ class AutoSklearnBackend(AutoMLBackend):
         kwargs['include'] = include
         kwargs['exclude'] = exclude
 
+        bool_cols = [c for c in x_train.columns if x_train[c].dtype.kind == 'b']
+        if bool_cols and not any(x_train[c].dtype.name == 'category' for c in x_train.columns):
+            # autosklearn tries to impute missing values in bool columns using sklearn's SimpleImputer. This does not
+            # work if no categorical columns are present as well.
+            self.converted_bool_columns_ = tuple(bool_cols)
+            x_train = x_train.copy()
+            x_train[bool_cols] = x_train[bool_cols].astype(np.float32)
+        else:
+            self.converted_bool_columns_ = ()
+
         # unlabeled samples
         # TODO: Tweak autosklearn to handle unlabeled samples.
         mask = y_train.notna().all(axis=1).values
@@ -249,6 +260,7 @@ class AutoSklearnBackend(AutoMLBackend):
             -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
+        x = self._transform_before_predict(x)
         if model_id is None:
             return self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
@@ -258,6 +270,7 @@ class AutoSklearnBackend(AutoMLBackend):
                       model_id=None) -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
+        x = self._transform_before_predict(x)
         if model_id is None:
             return self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
@@ -267,13 +280,19 @@ class AutoSklearnBackend(AutoMLBackend):
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, False)
+        return self._predict_all(self._transform_before_predict(x), -1 if jobs is None else jobs, batch_size, False)
 
     def predict_proba_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, True)
+        return self._predict_all(self._transform_before_predict(x), -1 if jobs is None else jobs, batch_size, True)
+
+    def _transform_before_predict(self, x: pd.DataFrame) -> pd.DataFrame:
+        if self.converted_bool_columns_:
+            x = x.copy()
+            x[list(self.converted_bool_columns_)] = x[list(self.converted_bool_columns_)].astype(np.float32)
+        return x
 
     def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
         # get predictions of a single constituent model
