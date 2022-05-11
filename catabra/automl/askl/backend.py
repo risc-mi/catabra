@@ -289,7 +289,7 @@ class AutoSklearnBackend(AutoMLBackend):
         return self._predict_all(self._transform_before_predict(x), -1 if jobs is None else jobs, batch_size, True)
 
     def _transform_before_predict(self, x: pd.DataFrame) -> pd.DataFrame:
-        if self.converted_bool_columns_:
+        if getattr(self, 'converted_bool_columns_', ()):        # legacy; ensure backward compatibility
             x = x.copy()
             x[list(self.converted_bool_columns_)] = x[list(self.converted_bool_columns_)].astype(np.float32)
         return x
