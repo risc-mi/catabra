@@ -246,7 +246,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
                     detailed[detailed.columns[0] + '_pred'] = \
-                        encoder.inverse_transform(y=np.argmax(y_hat, axis=1)).iloc[:, 0]
+                        encoder.inverse_transform(y=np.argmax(y_hat, axis=1)).values[:, 0]      # don't use iloc here!
                     y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
                     y_hat_decoded.index = detailed.index
                     y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
@@ -423,7 +423,7 @@ def calc_binary_classification_metrics(
         y_hat = y_hat.values
     if y_hat.ndim == 2:
         assert y_hat.shape[1] in (1, 2)
-        y_hat = y_hat[:, 1]
+        y_hat = y_hat[:, -1]
     else:
         assert y_hat.ndim == 1
     y_true = y_true.values[:, 0]
