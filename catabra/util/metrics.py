@@ -183,6 +183,58 @@ def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool]
     return thresholds
 
 
+def thresholded(func, threshold: float = 0.5, **kwargs):
+    """
+    Convenience function for converting a classification metric that can only be applied to class predictions into a
+    metric that can be applied to probabilities. This proceeds by specifying a fixed decision threshold.
+    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
+    :param threshold: The decision threshold.
+    :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
+    :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)` in
+    case of binary- or multilabel classification, and `func(y_true, argmax(y_score))` in case of multiclass
+    classification.
+    """
+    def fn(y_true, y_score, **kwargs2):
+        kwargs2.update(kwargs)
+        if y_score.ndim == 2 and y_score.shape[1] > 1 and (y_true.ndim == 1 or y_true.shape[1] == 1):
+            # multiclass classification => `threshold` is not needed
+            return func(y_true, np.argmax(y_score, axis=1), **kwargs2)
+        else:
+            # binary- or multilabel classification
+            return func(y_true, y_score >= threshold, **kwargs2)
+
+    return fn
+
+
+def maybe_thresholded(func, threshold: float = 0.5, **kwargs):
+    """
+    Convenience function for converting a classification metric into its "thresholded" version IF NECESSARY.
+    That means, if the given metric can be applied to class probabilities, it is returned unchanged. Otherwise,
+    `thresholded(func, threshold)` is returned.
+    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
+    :param threshold: The decision threshold.
+    :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
+    :return: Either `func` itself or `thresholded(func, threshold)`.
+    """
+    try:
+        # apply `func` to see whether it can be applied to probabilities
+        # apply it to one positive and one negative sample, because some metrics like `roc_auc` raise an exception if
+        # only one class is present
+        func(np.arange(2, dtype=np.float32), 0.3 * np.arange(1, 3, dtype=np.float32), **kwargs)
+    except:     # noqa
+        try:
+            # check whether `func` can be applied to multiclass problems
+            func(np.arange(3, dtype=np.float32),
+                 np.array([[0.1, 0.3, 0.6], [0.9, 0.1, 0], [0.2, 0.7, 0.1]], dtype=np.float32), **kwargs)
+        except:     # noqa
+            return thresholded(func, threshold=threshold, **kwargs)
+
+    if kwargs:
+        return partial(func, **kwargs)
+    else:
+        return func
+
+
 # classification with thresholds
 confusion_matrix = skl_metrics.confusion_matrix
 precision_recall_fscore_support = skl_metrics.precision_recall_fscore_support
