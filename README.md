@@ -171,6 +171,11 @@ See `util/config.py` for further information, including the default values of th
 * `"interactive_plots"`: Whether to create interactive plots of the training history, evaluation results, etc., using
     the optional [plotly](https://plotly.com/python/) backend. These plots are saved as HTML files. **Note**: plotly
     is not installed by default, but must be installed separately!
+* `"bootstrapping_repetitions"`: Number of repetitions to perform for calculating
+    [bootstrapped performance metrics](https://en.wikipedia.org/wiki/Bootstrapping_(statistics)).
+    If `0`, bootstrapping is disabled; otherwise, the main performance metrics specified by config params
+    `"binary_classification_metrics"` etc. are evaluated as many times on randomly drawn (with replacement) resamples
+    of the final prediction results, to obtain summary statistics like mean, standard deviation, etc.
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*

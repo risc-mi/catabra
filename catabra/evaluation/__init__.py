@@ -11,6 +11,7 @@ from ..util import plotting
 from ..util.encoding import Encoder
 from ..util import metrics
 from ..util import statistics
+from ..util.bootstrapping import Bootstrapping
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -153,8 +154,14 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             if model_id == '__ensemble__':
                 model_id = None
             main_metrics = config.get(encoder.task_ + '_metrics', [])
+            bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
+            if bootstrapping_repetitions > 0:
+                bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in main_metrics}
+            else:
+                bootstrapping_fn = {}
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                na_mask = ~np.isnan(y_hat).any(axis=1) & y_test.notna().all(axis=1)
 
                 # decoded ground truth and predictions for each target
                 y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
@@ -176,6 +183,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     if interactive_plots:
                         plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=True),
                                       directory / 'interactive_plots')
+                    if bootstrapping_repetitions > 0:
+                        bs = Bootstrapping(y_test[mask & na_mask], y_hat[mask & na_mask], fn=bootstrapping_fn)
+                        bs.run(bootstrapping_repetitions)
+                        io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
 
                 y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
                 detailed = y_test_decoded.join(y_hat_decoded)
@@ -190,6 +201,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     io.write_df(detailed[mask], directory / 'predictions.xlsx')
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                na_mask = ~np.isnan(y_hat).any(axis=1) & y_test.notna().all(axis=1)
                 if encoder.task_ == 'multilabel_classification':
                     # decoded ground truth and predictions for each target
                     y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
@@ -242,6 +254,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
                         io.write_dfs(dict(overall=overall, thresholded=thresh, **thresh_per_class),
                                      directory / 'metrics.xlsx')
+                        if bootstrapping_repetitions > 0:
+                            bs = Bootstrapping(y_test[mask & na_mask], y_hat[mask & na_mask], fn=bootstrapping_fn)
+                            bs.run(bootstrapping_repetitions)
+                            io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
                 else:
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
@@ -295,6 +311,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                             overall.insert(0, 'pos_label', labels[1])
                             io.write_dfs(dict(overall=overall, thresholded=thresh, calibration=calib),
                                          directory / 'metrics.xlsx')
+                            if bootstrapping_repetitions > 0:
+                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask, -1],
+                                                   fn=bootstrapping_fn)
+                                bs.run(bootstrapping_repetitions)
+                                io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
                     else:
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
@@ -321,6 +342,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                             if interactive_plots:
                                 plotting.save(plot_multiclass(conf_mat, interactive=True),
                                               directory / 'interactive_plots')
+                            if bootstrapping_repetitions > 0:
+                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask],
+                                                   fn=bootstrapping_fn)
+                                bs.run(bootstrapping_repetitions)
+                                io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')

@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "copy_evaluation_data": False,  # whether to copy test data into output folder; same possible values as for "copy_analysis_data"
     "static_plots": True,           # whether to create static plots in PDF format using Matplotlib
     "interactive_plots": False,     # whether to create interactive plots in HTML format using plotly; if True, plotly must be installed separately
+    "bootstrapping_repetitions": 0,  # number of bootstrapping repetitions when evaluating models; 0 means bootstrapping is disabled
 
     # binary classification performance metrics; see https://scikit-learn.org/stable/modules/model_evaluation.html
     # first element is main metric used for choosing best model
