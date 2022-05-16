@@ -1,5 +1,6 @@
 from typing import Union, Optional, Tuple
 from functools import partial
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn import metrics as skl_metrics
@@ -165,6 +166,75 @@ def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optio
     return \
         np.array([y_true[(t1 <= y_score) & (y_score < t2)].mean() for t1, t2 in zip(thresholds[:-1], thresholds[1:])]),\
         np.array(thresholds)
+
+
+def roc_pr_curve(y_true: np.ndarray, y_score: np.ndarray, *, pos_label: Union[int, str, None] = None,
+                 sample_weight: Optional[np.ndarray] = None, drop_intermediate: bool = True) \
+        -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convenience function for computing ROC- and precision-recall curves simultaneously, with only one call to
+    function `_binary_clf_curve()`.
+    :param y_true: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    :param y_score: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    :param pos_label: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    :param sample_weight: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    :param drop_intermediate: Same as in `sklearn.metrics.roc_curve()`.
+    :return: 6-tuple `(fpr, tpr, thresholds_roc, precision, recall, thresholds_pr)`, i.e., the concatenation of the
+    return values of functions `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    """
+
+    fps, tps, thresholds = skl_metrics._ranking._binary_clf_curve(
+        y_true, y_score, pos_label=pos_label, sample_weight=sample_weight
+    )
+
+    # ROC
+    if drop_intermediate and len(fps) > 2:
+        optimal_idxs = np.where(
+            np.r_[True, np.logical_or(np.diff(fps, 2), np.diff(tps, 2)), True]
+        )[0]
+        fps_roc = fps[optimal_idxs]
+        tps_roc = tps[optimal_idxs]
+        thresholds_roc = thresholds[optimal_idxs]
+    else:
+        fps_roc = fps
+        tps_roc = tps
+        thresholds_roc = thresholds
+
+    # Add an extra threshold position to make sure that the curve starts at (0, 0)
+    tps_roc = np.r_[0, tps_roc]
+    fps_roc = np.r_[0, fps_roc]
+
+    if fps[-1] <= 0:
+        warnings.warn(
+            "No negative samples in y_true, false positive value should be meaningless",
+            skl_metrics._ranking.UndefinedMetricWarning,
+        )
+        fpr = np.repeat(np.nan, fps_roc.shape)
+    else:
+        fpr = fps_roc / fps[-1]
+
+    if tps[-1] <= 0:
+        warnings.warn(
+            "No positive samples in y_true,"
+            " true positive value should be meaningless and recall is set to 1 for all thresholds",
+            skl_metrics._ranking.UndefinedMetricWarning,
+        )
+        tpr = np.repeat(np.nan, tps_roc.shape)
+        recall = np.ones_like(tps)
+    else:
+        tpr = tps_roc / tps[-1]
+        recall = tps / tps[-1]
+
+    # PR
+    ps = tps + fps
+    precision = np.divide(tps, ps, where=(ps != 0))
+
+    # stop when full recall attained and reverse the outputs so recall is decreasing
+    last_ind = tps.searchsorted(tps[-1])
+    sl = slice(last_ind, None, -1)
+
+    return fpr, tpr, np.r_[thresholds_roc[0] + 1, thresholds_roc], \
+        np.hstack((precision[sl], 1)), np.hstack((recall[sl], 0)), thresholds[sl]
 
 
 def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None) -> list:
