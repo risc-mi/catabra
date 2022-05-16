@@ -129,7 +129,7 @@ class Bootstrapping:
     def sum(self):
         return Bootstrapping._aggregate(self._results, np.sum)
 
-    def describe(self) -> Union[pd.Series, pd.DataFrame]:
+    def describe(self, keys=None) -> Union[pd.Series, pd.DataFrame]:
         """
         Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
         `describe()` method. Only works for (dicts/tuples of) scalar values.
@@ -146,8 +146,15 @@ class Bootstrapping:
             res = self._results
         else:
             res = {}
-        res = {k: v for k, v in res.items() if isinstance(v, list) and all(np.isscalar(x) for x in v)}
-        return pd.DataFrame(res).describe()
+        if keys is None:
+            keys = res.keys()
+        elif not isinstance(keys, (list, set, tuple)):
+            keys = [keys]
+        res = {k: v for k, v in res.items() if k in keys and isinstance(v, list) and all(np.isscalar(x) for x in v)}
+        if res:
+            return pd.DataFrame(res).describe()
+        else:
+            return pd.DataFrame(index=['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max'])
 
     @staticmethod
     def _apply_function(fn, args: list):
