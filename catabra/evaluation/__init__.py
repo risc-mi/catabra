@@ -155,13 +155,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 model_id = None
             main_metrics = config.get(encoder.task_ + '_metrics', [])
             bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
-            if bootstrapping_repetitions > 0:
-                bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in main_metrics}
-            else:
-                bootstrapping_fn = {}
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                na_mask = ~np.isnan(y_hat).any(axis=1) & y_test.notna().all(axis=1)
 
                 # decoded ground truth and predictions for each target
                 y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
@@ -169,24 +164,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 y_hat_decoded.index = y_test_decoded.index
 
                 for mask, directory in _iter_splits():
-                    directory.mkdir(exist_ok=True, parents=True)
-                    met = calc_regression_metrics(y_test[mask], y_hat[mask])
-                    io.write_df(met, directory / 'metrics.xlsx')
-                    if '__overall__' in met.index:
-                        msg = ['Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
-                        msg += ['    {}: {}'.format(m, met.loc['__overall__', m])
-                                for m in main_metrics if m in met.columns]
-                        logging.log('\n'.join(msg))
-                    if static_plots:
-                        plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=False),
-                                      directory / 'static_plots')
-                    if interactive_plots:
-                        plotting.save(plot_regression(y_test_decoded[mask], y_hat_decoded[mask], interactive=True),
-                                      directory / 'interactive_plots')
-                    if bootstrapping_repetitions > 0:
-                        bs = Bootstrapping(y_test[mask & na_mask], y_hat[mask & na_mask], fn=bootstrapping_fn)
-                        bs.run(bootstrapping_repetitions)
-                        io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
+                    evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory, y_hat_decoded=y_hat_decoded,
+                                   y_true_decoded=y_test_decoded, main_metrics=main_metrics, static_plots=static_plots,
+                                   interactive_plots=interactive_plots,
+                                   bootstrapping_repetitions=bootstrapping_repetitions,
+                                   split=(None if directory == out else directory.stem), verbose=True)
 
                 y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
                 detailed = y_test_decoded.join(y_hat_decoded)
@@ -201,7 +183,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     io.write_df(detailed[mask], directory / 'predictions.xlsx')
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                na_mask = ~np.isnan(y_hat).any(axis=1) & y_test.notna().all(axis=1)
                 if encoder.task_ == 'multilabel_classification':
                     # decoded ground truth and predictions for each target
                     y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
@@ -216,51 +197,14 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     del y_test_decoded
                     del y_hat_decoded
 
-                    labels = encoder.inverse_transform(
-                        y=np.vstack([np.zeros((len(y_test.columns),)), np.ones((len(y_test.columns),))])
-                    )
                     for mask, directory in _iter_splits():
                         directory.mkdir(exist_ok=True, parents=True)
                         io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                        overall, thresh, thresh_per_class, roc_curves, pr_curves = \
-                            calc_multilabel_metrics(y_test[mask], y_hat[mask])
-                        msg = ['Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
-                        for m in main_metrics:
-                            if m in thresh.columns:
-                                if 'threshold' in thresh.columns:
-                                    i = np.argmin((thresh['threshold'] - 0.5).abs().values)
-                                    msg.append('    {} @ {}: {}'
-                                               .format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
-                            elif m.endswith('_micro'):
-                                if '__micro__' in overall.index and m[:-6] in overall.columns:
-                                    msg.append('    {}: {}'.format(m, overall.loc['__micro__', m[:-6]]))
-                            elif m.endswith('_macro'):
-                                if '__macro__' in overall.index and m[:-6] in overall.columns:
-                                    msg.append('    {}: {}'.format(m, overall.loc['__macro__', m[:-6]]))
-                            elif m.endswith('_weighted'):
-                                if '__weighted__' in overall.index and m[:-9] in overall.columns:
-                                    msg.append('    {}: {}'.format(m, overall.loc['__weighted__', m[:-9]]))
-                        if len(msg) > 1:
-                            logging.log('\n'.join(msg))
-                        if static_plots:
-                            plotting.save(
-                                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
-                                                interactive=False, labels=labels),
-                                directory / 'static_plots'
-                            )
-                        if interactive_plots:
-                            plotting.save(
-                                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
-                                                interactive=True, labels=labels),
-                                directory / 'interactive_plots'
-                            )
-                        overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
-                        io.write_dfs(dict(overall=overall, thresholded=thresh, **thresh_per_class),
-                                     directory / 'metrics.xlsx')
-                        if bootstrapping_repetitions > 0:
-                            bs = Bootstrapping(y_test[mask & na_mask], y_hat[mask & na_mask], fn=bootstrapping_fn)
-                            bs.run(bootstrapping_repetitions)
-                            io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
+                        evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                                       main_metrics=main_metrics, static_plots=static_plots,
+                                       interactive_plots=interactive_plots,
+                                       bootstrapping_repetitions=bootstrapping_repetitions,
+                                       split=(None if directory == out else directory.stem), verbose=True)
                 else:
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
@@ -278,117 +222,230 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     detailed['__true_rank'] = (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1
                     detailed.loc[~mask, '__true_rank'] = -1
 
-                    labels = list(encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0])
-                    if encoder.task_ == 'binary_classification':
-                        for mask, directory in _iter_splits():
-                            directory.mkdir(exist_ok=True, parents=True)
-                            io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                            overall, thresh, calib, roc_curve, pr_curve = \
-                                calc_binary_classification_metrics(y_test[mask], y_hat[mask])
-                            msg = [
-                                'Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
-                            for m in main_metrics:
-                                if m in thresh.columns:
-                                    if 'threshold' in thresh.columns:
-                                        i = np.argmin((thresh['threshold'] - 0.5).abs().values)
-                                        msg.append('    {} @ {}: {}'
-                                                   .format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
-                                else:
-                                    v = overall.get(m)
-                                    if v is not None:
-                                        msg.append('    {}: {}'.format(m, v))
-                            if len(msg) > 1:
-                                logging.log('\n'.join(msg))
-                            overall_df = pd.DataFrame(data=overall, index=[y_test.columns[0]])
-                            overall_df.insert(0, 'pos_label', labels[1])
-                            io.write_dfs(dict(overall=overall_df, thresholded=thresh, calibration=calib),
-                                         directory / 'metrics.xlsx')
-                            if bootstrapping_repetitions > 0:
-                                if static_plots or interactive_plots:
-                                    fn = dict(
-                                        bootstrapping_fn,
-                                        roc_pr_curve=metrics.roc_pr_curve,
-                                        calibration_curve=metrics.partial(
-                                            metrics.calibration_curve,
-                                            thresholds=np.r_[calib['threshold_lower'].values[0],
-                                                             calib['threshold_upper'].values]
-                                        )
-                                    )
-                                else:
-                                    fn = bootstrapping_fn
-                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask, -1], fn=fn)
-                                bs.run(bootstrapping_repetitions)
-                                roc_pr_curve = bs.results.pop('roc_pr_curve', None)
-                                calibration_curve = bs.results.pop('calibration_curve', None)
-                                io.write_df(bs.describe(),
-                                            directory / 'bootstrapping.xlsx')
-                            else:
-                                roc_pr_curve = None
-                                calibration_curve = None
-                            if roc_pr_curve is None:
-                                roc_curve_bs = None
-                                pr_curve_bs = None
-                            else:
-                                roc_curve_bs = roc_pr_curve[:2]
-                                pr_curve_bs = roc_pr_curve[3:5]
-                            if calibration_curve is None:
-                                calibration_curve_bs = None
-                            else:
-                                calibration_curve_bs = np.stack(calibration_curve[0])
-                            if static_plots:
-                                plotting.save(
-                                    plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
-                                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
-                                                               roc_curve=roc_curve, pr_curve=pr_curve,
-                                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
-                                                               calibration_curve_bs=calibration_curve_bs),
-                                    directory / 'static_plots'
-                                )
-                            if interactive_plots:
-                                plotting.save(
-                                    plot_binary_classification(overall, thresh, calibration=calib, interactive=True,
-                                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
-                                                               roc_curve=roc_curve, pr_curve=pr_curve,
-                                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
-                                                               calibration_curve_bs=calibration_curve_bs),
-                                    directory / 'interactive_plots'
-                                )
-                    else:
-                        for mask, directory in _iter_splits():
-                            directory.mkdir(exist_ok=True, parents=True)
-                            io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                            overall, conf_mat, per_class = calc_multiclass_metrics(
-                                y_test[mask],
-                                y_hat[mask],
-                                labels=labels
-                            )
-                            msg = [
-                                'Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
-                            for m in main_metrics:
-                                v = overall.get(m)
-                                if v is not None:
-                                    msg.append('    {}: {}'.format(m, v))
-                            if len(msg) > 1:
-                                logging.log('\n'.join(msg))
-                            overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
-                            io.write_dfs(dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class),
-                                         directory / 'metrics.xlsx')
-                            if static_plots:
-                                plotting.save(plot_multiclass(conf_mat, interactive=False),
-                                              directory / 'static_plots')
-                            if interactive_plots:
-                                plotting.save(plot_multiclass(conf_mat, interactive=True),
-                                              directory / 'interactive_plots')
-                            if bootstrapping_repetitions > 0:
-                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask],
-                                                   fn=bootstrapping_fn)
-                                bs.run(bootstrapping_repetitions)
-                                io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
+                    for mask, directory in _iter_splits():
+                        directory.mkdir(exist_ok=True, parents=True)
+                        io.write_df(detailed[mask], directory / 'predictions.xlsx')
+                        evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                                       main_metrics=main_metrics, static_plots=static_plots,
+                                       interactive_plots=interactive_plots,
+                                       bootstrapping_repetitions=bootstrapping_repetitions,
+                                       split=(None if directory == out else directory.stem), verbose=True)
 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')
         logging.log(f'### Elapsed time: {end - start}')
         logging.log(f'### Output saved in {out.as_posix()}')
+
+
+def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,
+                   y_true_decoded=None, y_hat_decoded=None, static_plots: bool = True, interactive_plots: bool = False,
+                   bootstrapping_repetitions: int = 0, split: Optional[str] = None,
+                   verbose: bool = False) -> Optional[dict]:
+    """
+    Evaluate a single split, given by ground truth and predictions.
+    :param y_true: Ground truth, encoded DataFrame.
+    :param y_hat: Predictions array.
+    :param encoder: Encoder used for encoding and decoding.
+    :param directory: Directory where to save the evaluation results. If None, results are returned in a dict.
+    :param main_metrics: Main evaluation metrics. None defaults to the metrics specified in the default config.
+    :param y_true_decoded: Decoded ground truth for creating regression plots. If None, `encoder` is applied to decode
+    `y_true`.
+    :param y_hat_decoded: Decoded predictions for creating regression plots. If None, `encoder` is applied to decode
+    `y_hat`.
+    :param static_plots: Whether to create static plots.
+    :param interactive_plots: Whether to create interactive plots.
+    :param bootstrapping_repetitions: Number of bootstrapping repetitions.
+    :param split: Name of the current split, or None. Only used for logging.
+    :param verbose: Whether to log key performance metrics.
+    :return: None if `directory` is given, else dict with evaluation results.
+    """
+
+    if directory is None:
+        out = {}
+
+        def _save(_obj, _name: str):
+            out[_name] = _obj
+
+        _save_plots = _save
+    else:
+        out = None
+        directory = io.make_path(directory)
+        directory.mkdir(exist_ok=True, parents=True)
+
+        def _save(_obj, _name: str):
+            if isinstance(_obj, pd.DataFrame):
+                io.write_df(_obj, directory / (_name + '.xlsx'))
+            elif isinstance(_obj, dict):
+                io.write_dfs(_obj, directory / (_name + '.xlsx'))
+
+        def _save_plots(_obj, _name: str):
+            plotting.save(_obj, directory / _name)
+
+    if main_metrics is None:
+        from ..util.config import DEFAULT_CONFIG
+        main_metrics = DEFAULT_CONFIG.get(encoder.task_, [])
+
+    if bootstrapping_repetitions > 0:
+        bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in main_metrics}
+        na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
+    else:
+        bootstrapping_fn = {}
+        na_mask = None
+
+    if encoder.task_ == 'regression':
+        met = calc_regression_metrics(y_true, y_hat)
+        _save(met, 'metrics')
+        if verbose and '__overall__' in met.index:
+            msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
+            msg += ['    {}: {}'.format(m, met.loc['__overall__', m])
+                    for m in main_metrics if m in met.columns]
+            logging.log('\n'.join(msg))
+        if static_plots:
+            if y_true_decoded is None:
+                y_true_decoded = encoder.inverse_transform(y=y_true, inplace=False)
+            if y_hat_decoded is None:
+                y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+                y_hat_decoded.index = y_true_decoded.index
+            _save_plots(plot_regression(y_true_decoded, y_hat_decoded, interactive=False), 'static_plots')
+        if interactive_plots:
+            if y_true_decoded is None:
+                y_true_decoded = encoder.inverse_transform(y=y_true, inplace=False)
+            if y_hat_decoded is None:
+                y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+                y_hat_decoded.index = y_true_decoded.index
+            _save_plots(plot_regression(y_true_decoded, y_hat_decoded, interactive=True), 'interactive_plots')
+        if bootstrapping_repetitions > 0:
+            bs = Bootstrapping(y_true[na_mask], y_hat[na_mask], fn=bootstrapping_fn)
+            bs.run(bootstrapping_repetitions)
+            _save(bs.describe(), 'bootstrapping')
+    elif encoder.task_ == 'multilabel_classification':
+        labels = encoder.inverse_transform(
+            y=np.vstack([np.zeros((len(y_true.columns),)), np.ones((len(y_true.columns),))])
+        )
+        overall, thresh, thresh_per_class, roc_curves, pr_curves = calc_multilabel_metrics(y_true, y_hat)
+        if verbose:
+            msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
+            for m in main_metrics:
+                if m in thresh.columns:
+                    if 'threshold' in thresh.columns:
+                        i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                        msg.append('    {} @ {}: {}'.format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
+                elif m.endswith('_micro'):
+                    if '__micro__' in overall.index and m[:-6] in overall.columns:
+                        msg.append('    {}: {}'.format(m, overall.loc['__micro__', m[:-6]]))
+                elif m.endswith('_macro'):
+                    if '__macro__' in overall.index and m[:-6] in overall.columns:
+                        msg.append('    {}: {}'.format(m, overall.loc['__macro__', m[:-6]]))
+                elif m.endswith('_weighted'):
+                    if '__weighted__' in overall.index and m[:-9] in overall.columns:
+                        msg.append('    {}: {}'.format(m, overall.loc['__weighted__', m[:-9]]))
+            if len(msg) > 1:
+                logging.log('\n'.join(msg))
+        if static_plots:
+            _save_plots(
+                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
+                                interactive=False, labels=labels),
+                'static_plots'
+            )
+        if interactive_plots:
+            _save_plots(
+                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
+                                interactive=True, labels=labels),
+                'interactive_plots'
+            )
+        overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
+        _save(dict(overall=overall, thresholded=thresh, **thresh_per_class), 'metrics')
+        if bootstrapping_repetitions > 0:
+            bs = Bootstrapping(y_true[na_mask], y_hat[na_mask], fn=bootstrapping_fn)
+            bs.run(bootstrapping_repetitions)
+            _save(bs.describe(), 'bootstrapping')
+    else:
+        labels = list(encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0])
+        if encoder.task_ == 'binary_classification':
+            overall, thresh, calib, roc_curve, pr_curve = calc_binary_classification_metrics(y_true, y_hat)
+            if verbose:
+                msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
+                for m in main_metrics:
+                    if m in thresh.columns:
+                        if 'threshold' in thresh.columns:
+                            i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                            msg.append('    {} @ {}: {}'.format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
+                    else:
+                        v = overall.get(m)
+                        if v is not None:
+                            msg.append('    {}: {}'.format(m, v))
+                if len(msg) > 1:
+                    logging.log('\n'.join(msg))
+            overall_df = pd.DataFrame(data=overall, index=[y_true.columns[0]])
+            overall_df.insert(0, 'pos_label', labels[1])
+            _save(dict(overall=overall_df, thresholded=thresh, calibration=calib), 'metrics')
+            if bootstrapping_repetitions > 0:
+                if static_plots or interactive_plots:
+                    bootstrapping_fn.update(
+                        roc_pr_curve=metrics.roc_pr_curve,
+                        calibration_curve=metrics.partial(
+                            metrics.calibration_curve,
+                            thresholds=np.r_[calib['threshold_lower'].values[0], calib['threshold_upper'].values]
+                        )
+                    )
+                bs = Bootstrapping(y_true[na_mask].iloc[:, 0], y_hat[na_mask, -1], fn=bootstrapping_fn)
+                bs.run(bootstrapping_repetitions)
+                roc_pr_curve = bs.results.pop('roc_pr_curve', None)
+                calibration_curve = bs.results.pop('calibration_curve', None)
+                _save(bs.describe(), 'bootstrapping')
+            else:
+                roc_pr_curve = None
+                calibration_curve = None
+            if roc_pr_curve is None:
+                roc_curve_bs = None
+                pr_curve_bs = None
+            else:
+                roc_curve_bs = roc_pr_curve[:2]
+                pr_curve_bs = roc_pr_curve[3:5]
+            if calibration_curve is None:
+                calibration_curve_bs = None
+            else:
+                calibration_curve_bs = np.stack(calibration_curve[0])
+            if static_plots:
+                _save_plots(
+                    plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
+                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
+                                               roc_curve=roc_curve, pr_curve=pr_curve,
+                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
+                                               calibration_curve_bs=calibration_curve_bs),
+                    'static_plots'
+                )
+            if interactive_plots:
+                _save_plots(
+                    plot_binary_classification(overall, thresh, calibration=calib, interactive=True,
+                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
+                                               roc_curve=roc_curve, pr_curve=pr_curve,
+                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
+                                               calibration_curve_bs=calibration_curve_bs),
+                    'interactive_plots'
+                )
+        else:
+            overall, conf_mat, per_class = calc_multiclass_metrics(y_true, y_hat, labels=labels)
+            if verbose:
+                msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
+                for m in main_metrics:
+                    v = overall.get(m)
+                    if v is not None:
+                        msg.append('    {}: {}'.format(m, v))
+                if len(msg) > 1:
+                    logging.log('\n'.join(msg))
+            overall = pd.DataFrame(data=overall, index=[y_true.columns[0]])
+            _save(dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class), 'metrics')
+            if static_plots:
+                _save_plots(plot_multiclass(conf_mat, interactive=False), 'static_plots')
+            if interactive_plots:
+                _save_plots(plot_multiclass(conf_mat, interactive=True), 'interactive_plots')
+            if bootstrapping_repetitions > 0:
+                bs = Bootstrapping(y_true[na_mask].iloc[:, 0], y_hat[na_mask], fn=bootstrapping_fn)
+                bs.run(bootstrapping_repetitions)
+                _save(bs.describe(), 'bootstrapping')
+
+    return out
 
 
 def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray]) -> pd.DataFrame:
