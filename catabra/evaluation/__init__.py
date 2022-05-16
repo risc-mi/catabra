@@ -222,7 +222,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     for mask, directory in _iter_splits():
                         directory.mkdir(exist_ok=True, parents=True)
                         io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                        overall, thresh, thresh_per_class = calc_multilabel_metrics(y_test[mask], y_hat[mask])
+                        overall, thresh, thresh_per_class, roc_curves, pr_curves = \
+                            calc_multilabel_metrics(y_test[mask], y_hat[mask])
                         msg = ['Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
                         for m in main_metrics:
                             if m in thresh.columns:
@@ -243,12 +244,14 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                             logging.log('\n'.join(msg))
                         if static_plots:
                             plotting.save(
-                                plot_multilabel(overall, thresh_per_class, interactive=False, labels=labels),
+                                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
+                                                interactive=False, labels=labels),
                                 directory / 'static_plots'
                             )
                         if interactive_plots:
                             plotting.save(
-                                plot_multilabel(overall, thresh_per_class, interactive=True, labels=labels),
+                                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
+                                                interactive=True, labels=labels),
                                 directory / 'interactive_plots'
                             )
                         overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
@@ -280,7 +283,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
                             io.write_df(detailed[mask], directory / 'predictions.xlsx')
-                            overall, thresh, calib = calc_binary_classification_metrics(y_test[mask], y_hat[mask])
+                            overall, thresh, calib, roc_curve, pr_curve = \
+                                calc_binary_classification_metrics(y_test[mask], y_hat[mask])
                             msg = [
                                 'Evaluation results' + (':' if directory == out else ' for {}:'.format(directory.stem))]
                             for m in main_metrics:
@@ -295,27 +299,60 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                         msg.append('    {}: {}'.format(m, v))
                             if len(msg) > 1:
                                 logging.log('\n'.join(msg))
+                            overall_df = pd.DataFrame(data=overall, index=[y_test.columns[0]])
+                            overall_df.insert(0, 'pos_label', labels[1])
+                            io.write_dfs(dict(overall=overall_df, thresholded=thresh, calibration=calib),
+                                         directory / 'metrics.xlsx')
+                            if bootstrapping_repetitions > 0:
+                                if static_plots or interactive_plots:
+                                    fn = dict(
+                                        bootstrapping_fn,
+                                        roc_pr_curve=metrics.roc_pr_curve,
+                                        calibration_curve=metrics.partial(
+                                            metrics.calibration_curve,
+                                            thresholds=np.r_[calib['threshold_lower'].values[0],
+                                                             calib['threshold_upper'].values]
+                                        )
+                                    )
+                                else:
+                                    fn = bootstrapping_fn
+                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask, -1], fn=fn)
+                                bs.run(bootstrapping_repetitions)
+                                roc_pr_curve = bs.results.pop('roc_pr_curve', None)
+                                calibration_curve = bs.results.pop('calibration_curve', None)
+                                io.write_df(bs.describe(),
+                                            directory / 'bootstrapping.xlsx')
+                            else:
+                                roc_pr_curve = None
+                                calibration_curve = None
+                            if roc_pr_curve is None:
+                                roc_curve_bs = None
+                                pr_curve_bs = None
+                            else:
+                                roc_curve_bs = roc_pr_curve[:2]
+                                pr_curve_bs = roc_pr_curve[3:5]
+                            if calibration_curve is None:
+                                calibration_curve_bs = None
+                            else:
+                                calibration_curve_bs = np.stack(calibration_curve[0])
                             if static_plots:
                                 plotting.save(
                                     plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
-                                                               neg_label=str(labels[0]), pos_label=str(labels[1])),
+                                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
+                                                               roc_curve=roc_curve, pr_curve=pr_curve,
+                                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
+                                                               calibration_curve_bs=calibration_curve_bs),
                                     directory / 'static_plots'
                                 )
                             if interactive_plots:
                                 plotting.save(
                                     plot_binary_classification(overall, thresh, calibration=calib, interactive=True,
-                                                               neg_label=str(labels[0]), pos_label=str(labels[1])),
+                                                               neg_label=str(labels[0]), pos_label=str(labels[1]),
+                                                               roc_curve=roc_curve, pr_curve=pr_curve,
+                                                               roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
+                                                               calibration_curve_bs=calibration_curve_bs),
                                     directory / 'interactive_plots'
                                 )
-                            overall = pd.DataFrame(data=overall, index=[y_test.columns[0]])
-                            overall.insert(0, 'pos_label', labels[1])
-                            io.write_dfs(dict(overall=overall, thresholded=thresh, calibration=calib),
-                                         directory / 'metrics.xlsx')
-                            if bootstrapping_repetitions > 0:
-                                bs = Bootstrapping(y_test[mask & na_mask].iloc[:, 0], y_hat[mask & na_mask, -1],
-                                                   fn=bootstrapping_fn)
-                                bs.run(bootstrapping_repetitions)
-                                io.write_df(bs.describe(), directory / 'bootstrapping.xlsx')
                     else:
                         for mask, directory in _iter_splits():
                             directory.mkdir(exist_ok=True, parents=True)
@@ -427,7 +464,9 @@ def calc_binary_classification_metrics(
         y_true: pd.DataFrame,
         y_hat: Union[pd.DataFrame, np.ndarray],
         thresholds: Optional[list] = None,
-        calibration_thresholds: Optional[np.ndarray] = None) -> Tuple[dict, pd.DataFrame, pd.DataFrame]:
+        calibration_thresholds: Optional[np.ndarray] = None) \
+        -> Tuple[dict, pd.DataFrame, pd.DataFrame, Tuple[np.ndarray, np.ndarray, np.ndarray],
+                 Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
     Calculate all metrics suitable for binary classification tasks.
     :param y_true: Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
@@ -436,12 +475,18 @@ def calc_binary_classification_metrics(
     depending on the values of `y_hat` is constructed.
     :param calibration_thresholds: Thresholds to use for calibration curves. If None, a default list depending on the
     values of `y_hat` is constructed.
-    :return: Triple `(overall, threshold, calibration)`:
+    :return: 5-tuple `(overall, threshold, calibration, roc_curve, pr_curve)`:
     * `overall` is a dict containing the scores of threshold-independent metrics (e.g., ROC-AUC).
     * `threshold` is a DataFrame with one column for each threshold-dependent metric, and one row for each decision
         threshold.
     * `calibration` is a DataFrame with one row for each threshold-bin and three columns with information about the
         corresponding bin ranges and fraction of positive samples.
+    * `roc_curve` is the receiver operating characteristic curve, as returned by `sklearn.metrics.roc_curve()`.
+        Although similar information is already contained in `threshold["specificity"]` and `threshold["sensitivity"]`,
+        `roc_curve` is more fine-grained and better suited for plotting.
+    * `pr_curve` is the precision-recall curve, as returned by `sklearn.metrics.precision_recall_curve()`.
+        Although similar information is already contained in `threshold["sensitivity"]` and
+        `threshold["positive_predictive_value"]`, `pr_curve` is more fine-grained and better suited for plotting.
     """
     assert y_true.shape[1] == 1
     assert len(y_true) == len(y_hat)
@@ -498,14 +543,17 @@ def calc_binary_classification_metrics(
     fractions, th = metrics.calibration_curve(y_true, y_hat, thresholds=calibration_thresholds)
     calibration = pd.DataFrame(data=dict(threshold_lower=th[:-1], threshold_upper=th[1:], pos_fraction=fractions))
 
+    roc_pr_curve = metrics.roc_pr_curve(y_true, y_hat)
+
     # drop all-NaN columns
     out.dropna(axis=1, how='all', inplace=True)
-    return dct, out, calibration
+    return dct, out, calibration, roc_pr_curve[:3], roc_pr_curve[3:]
 
 
 def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibration: Optional[pd.DataFrame] = None,
                                name: Optional[str] = None, neg_label: str = 'negative', pos_label: str = 'positive',
-                               interactive: bool = False) -> dict:
+                               roc_curve=None, pr_curve=None, roc_curve_bs=None, pr_curve_bs=None,
+                               calibration_curve_bs=None, interactive: bool = False) -> dict:
     """
     Plot evaluation results of binary classification tasks.
     :param overall: Overall, non-thresholded performance metrics, as returned by function
@@ -515,13 +563,21 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
     :param name: Name of the classified variable.
     :param neg_label: Name of the negative class.
     :param pos_label: Name of the positive class.
+    :param roc_curve: ROC-curve, triple `(fpr, tpr, thresholds)` or None.
+    :param pr_curve: Precision-recall-curve, triple `(precision, recall, thresholds)` or None.
+    :param roc_curve_bs: ROC-curves obtained via bootstrapping. None or a pair `(fpr, tpr)`, where both components are
+    equal-length lists of arrays of shape `(n_thresholds,)`.
+    :param pr_curve_bs: Precision-recall-curves obtained via bootstrapping. None or a pair `(precision, recall)`, where
+    both components are equal-length lists of arrays of shape `(n_thresholds,)`.
+    :param calibration_curve_bs: Calibration curves obtained via bootstrapping. None or a single array of shape
+    `(n_thresholds, n_repetitions)`; the thresholds must agree with those in `calibration`.
     :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
     Matplotlib backend.
     :return: Dict mapping names to figures.
     """
     pos_prevalence = overall.get('n_pos', 0) / overall.get('n', 1)
-    metrics = [m for m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity',
-                           'positive_predictive_value', 'negative_predictive_value') if m in threshold.columns]
+    th_metrics = [m for m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity',
+                              'positive_predictive_value', 'negative_predictive_value') if m in threshold.columns]
     cm, th = _get_confusion_matrix_from_thresholds(threshold, neg_label=neg_label, pos_label=pos_label)
     if interactive:
         if plotting.plotly_backend is None:
@@ -532,19 +588,57 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
     else:
         backend = plotting.mpl_backend
 
+    if roc_curve is None:
+        roc_curve = (1 - threshold['specificity'].values, threshold['sensitivity'].values)
+    else:
+        roc_curve = roc_curve[:2]
+    if roc_curve_bs is None:
+        deviation_roc = None
+        deviation_legend_roc = None
+    else:
+        auc = np.nanquantile([metrics.skl_metrics.auc(x, y) for x, y in zip(*roc_curve_bs)], q=[0.025, 0.975])
+        deviation_roc = np.stack([np.interp(roc_curve[0], x, y) for x, y in zip(*roc_curve_bs)])
+        np.clip(deviation_roc, 0, 1, out=deviation_roc)
+        deviation_roc = np.nanquantile(deviation_roc, q=[0.025, 0.975], axis=0)
+        deviation_legend_roc = '95% CI=[{:.4f}, {:.4f}]'.format(auc[0], auc[1])
+
+    if pr_curve is None:
+        pr_curve = (threshold['sensitivity'].values, threshold['positive_predictive_value'].values)
+    else:
+        pr_curve = pr_curve[1::-1]
+    if pr_curve_bs is None:
+        deviation_pr = None
+        deviation_legend_pr = None
+    else:
+        auc = np.nanquantile([metrics.skl_metrics.auc(x, y) for y, x in zip(*pr_curve_bs)], q=[0.025, 0.975])
+        deviation_pr = np.stack([np.interp(pr_curve[0], x[::-1], y[::-1]) for y, x in zip(*pr_curve_bs)])
+        np.clip(deviation_pr, 0, 1, out=deviation_pr)
+        deviation_pr = np.nanquantile(deviation_pr, q=[0.025, 0.975], axis=0)
+        deviation_legend_pr = '95% CI=[{:.4f}, {:.4f}]'.format(auc[0], auc[1])
+
     out = dict(
-        roc_curve=backend.roc_pr_curve(1 - threshold['specificity'], threshold['sensitivity'], roc=True,
-                                       legend='AUC={:.4f}'.format(overall.get('roc_auc', 0.5)), name=name),
-        pr_curve=backend.roc_pr_curve(threshold['sensitivity'], threshold['positive_predictive_value'], roc=False,
+        roc_curve=backend.roc_pr_curve(*roc_curve, deviation=deviation_roc, roc=True,
+                                       legend='AUC={:.4f}'.format(overall.get('roc_auc', 0.5)),
+                                       deviation_legend=deviation_legend_roc, name=name),
+        pr_curve=backend.roc_pr_curve(*pr_curve, deviation=deviation_pr, roc=False, name=name,
                                       legend='AUC={:.4f}'.format(overall.get('pr_auc', pos_prevalence)),
-                                      positive_prevalence=pos_prevalence, name=name),
-        threshold=backend.threshold_metric_curve(threshold['threshold'], [threshold[m] for m in metrics],
-                                                 legend=metrics, name=name),
+                                      deviation_legend=deviation_legend_pr, positive_prevalence=pos_prevalence),
+        threshold=backend.threshold_metric_curve(threshold['threshold'], [threshold[m] for m in th_metrics],
+                                                 legend=th_metrics, name=name),
         confusion_matrix=backend.confusion_matrix(cm, title='Confusion Matrix @ {:.2f}'.format(th), name=name)
     )
     if calibration is not None:
+        if calibration_curve_bs is None:
+            deviation = None
+            legend = None
+            deviation_legend = None
+        else:
+            deviation = np.nanquantile(calibration_curve_bs, q=[0.025, 0.975], axis=0)
+            legend = 'curve' if interactive else None
+            deviation_legend = '95% CI'
         out['calibration'] = backend.calibration_curve(calibration['threshold_lower'], calibration['threshold_upper'],
-                                                       calibration['pos_fraction'], name=name)
+                                                       calibration['pos_fraction'], name=name, deviation=deviation,
+                                                       legend=legend, deviation_legend=deviation_legend)
     return out
 
 
@@ -673,18 +767,24 @@ def plot_multiclass(confusion_matrix: pd.DataFrame, interactive: bool = False) -
 
 
 def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
-                            thresholds: Optional[list] = None) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
+                            thresholds: Optional[list] = None) -> Tuple[pd.DataFrame, pd.DataFrame, dict, dict, dict]:
     """
     Calculate all metrics suitable for multilabel classification.
     :param y_true: Ground truth. Must have `n_classes` columns with float data type and values among 0, 1 and NaN.
     :param y_hat: Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
     :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
     depending on the values of `y_hat` is constructed.
-    :return: Triple `(overall, threshold, threshold_per_class)`:
+    :return: 5-tuple `(overall, threshold, threshold_per_class, roc_curves, pr_curves)`:
     * `overall` is a DataFrame containing non-thresholded metrics per class and for all classes combined
         ("__micro__", "__macro__" and "__weighted__"). Weights are the number of positive samples per class.
     * `threshold` is a DataFrame containing thresholded metrics for different thresholds for all classes combined.
     * `threshold_per_class` is a dict mapping classes to per-class thresholded metrics.
+    * `roc_curves` is a dict mapping classes to receiver operating characteristic curves, as returned by
+        `sklearn.metrics.roc_curve()`. Although similar information is already contained in `threshold_per_class`,
+        `roc_curves` is more fine-grained and better suited for plotting.
+    * `pr_curve` is a dict mapping classes to precision-recall curves, as returned by
+        `sklearn.metrics.precision_recall_curve()`. Although similar information is already contained in
+        `threshold_per_class`, `pr_curves` is more fine-grained and better suited for plotting.
     """
     assert len(y_true) == len(y_hat)
     if isinstance(y_hat, pd.DataFrame):
@@ -740,6 +840,8 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         thresholds = metrics.get_thresholds(y_hat.reshape(-1), n_max=100, add_half_one=None)
 
     per_class = {}
+    roc_curves = {}
+    pr_curves = {}
     for j, lbl in enumerate(labels):
         out = pd.DataFrame(data=dict(threshold=thresholds, true_negative=0, true_positive=0))
         y_true_j = y_true[mask[:, j], j]
@@ -765,7 +867,10 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                          fn=out['false_negative'], average=None)
             out.insert(1, m, s)
 
+        roc_pr_curve = metrics.roc_pr_curve(y_true_j, y_hat_j)
         per_class[lbl] = out
+        roc_curves[lbl] = roc_pr_curve[:3]
+        pr_curves[lbl] = roc_pr_curve[3:]
 
     out = pd.DataFrame(data=dict(threshold=thresholds))
     tp = np.zeros((len(thresholds),), dtype=np.int32)
@@ -790,26 +895,35 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
 
     # drop all-NaN columns
     out.dropna(axis=1, how='all', inplace=True)
-    return overall, out, per_class
+    return overall, out, per_class, roc_curves, pr_curves
 
 
-def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, interactive: bool = False) -> dict:
+def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, roc_curves=None, pr_curves=None,
+                    interactive: bool = False) -> dict:
     """
     Plot evaluation results of binary classification tasks.
     :param overall: Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
     :param threshold: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
     :param labels: Class names. None or a DataFrame with `n_class` columns and 2 rows.
+    :param roc_curves: ROC-curves, dict mapping classes to triples `(fpr, tpr, thresholds)` or None.
+    :param pr_curves: Precision-recall-curves, dict mapping classes to triples `(precision, recall, thresholds)` or
+    None.
     :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
     Matplotlib backend.
     :return: Dict mapping names to figures.
     """
     out = {}
     kwargs = {}
+    if roc_curves is None:
+        roc_curves = {}
+    if pr_curves is None:
+        pr_curves = {}
     for name, th in threshold.items():
         if labels is not None:
             kwargs = dict(neg_label=str(labels[name].iloc[0]), pos_label=str(labels[name].iloc[1]))
         out[name] = \
-            plot_binary_classification(overall.loc[name].to_dict(), th, name=name, interactive=interactive, **kwargs)
+            plot_binary_classification(overall.loc[name].to_dict(), th, name=name, roc_curve=roc_curves.get(name),
+                                       pr_curve=pr_curves.get(name), interactive=interactive, **kwargs)
     return out
 
 
