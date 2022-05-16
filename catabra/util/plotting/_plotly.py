@@ -2,9 +2,15 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from plotly import express as px
+from plotly import io as pio
 from plotly import graph_objects as go
 
 from . import _common
+
+
+def _get_color(i: int, template: Optional[str] = None) -> str:
+    colorway = pio.templates[template or pio.templates.default]['layout']['colorway']
+    return ','.join([str(c) for c in px.colors.hex_to_rgb(colorway[i % len(colorway)])])
 
 
 def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History', legend=None, text=None):
@@ -278,19 +284,22 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     return fig
 
 
-def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'auto', roc: bool = True,
-                 legend=None, positive_prevalence: float = -1.):
+def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', roc: bool = True,
+                 legend=None, deviation_legend=None, positive_prevalence: float = -1.):
     """
     Plot ROC or PR curve(s).
     :param xs: The x-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
     they correspond to the false positive rates, in the case of PR curves they correspond to recall.
     :param ys: The y-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
     they correspond to the true positive rates, in the case of PR curves they correspond to precision.
+    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
+    intervals, and the like. None or a list of arrays of shape `(2, n)`.
     :param name: Name of the target variable.
     :param title: The title of the figure. If "auto", the title is either "Receiver Operating Characteristic" or
     "Precision-Recall Curve" depending on the value of `roc`.
     :param roc: Whether ROC- or PR curves are plotted.
     :param legend: Names of the individual curves. None or a list of string with the same length as `xs` and `ys`.
+    :param deviation_legend: Names of the deviation curves. None or a list of strings with the same length as `ys`.
     :param positive_prevalence: Prevalence of the positive class. Only relevant for PR curves.
     :return: plotly figure object.
     """
@@ -306,6 +315,16 @@ def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'aut
             legend = [None] * len(ys)
         elif isinstance(legend, str):
             legend = [legend]
+        if deviation is None:
+            deviation = [None] * len(ys)
+        elif not isinstance(deviation, list):
+            deviation = [deviation]
+        if deviation_legend is None:
+            deviation_legend = [None] * len(ys)
+        elif isinstance(deviation_legend, str):
+            deviation_legend = [deviation_legend]
+        assert len(deviation) == len(ys)
+        assert len(deviation_legend) == len(ys)
         assert len(legend) == len(ys)
         assert all(x.dtype.kind == xs[0].dtype.kind for x in xs)
         assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
@@ -319,8 +338,18 @@ def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'aut
             # unfortunately, we cannot rely on `ys[0][0]` being the positive prevalence
             fig.add_shape(type='line', line=dict(dash='dash', width=0.5), x0=0, y0=positive_prevalence, x1=1,
                           y1=positive_prevalence)
-        for x, y, lbl in zip(xs, ys, legend):
-            fig.add_trace(go.Scatter(x=x, y=y, name=lbl, mode='lines'))
+        for i, (x, y, dv, lbl, dv_lbl) in enumerate(zip(xs, ys, deviation, legend, deviation_legend)):
+            color = _get_color(i)
+            if dv is not None:
+                fig.add_trace(go.Scatter(
+                    x=np.concatenate([x, x[::-1]]),
+                    y=np.concatenate([dv[1], dv[0, ::-1]]),
+                    fill='toself',
+                    fillcolor='rgba(' + color + ',0.2)',
+                    line_color='rgba(255,255,255,0)',
+                    name=dv_lbl
+                ))
+            fig.add_trace(go.Scatter(x=x, y=y, name=lbl, mode='lines', line=dict(color='rgb(' + color + ')')))
     else:
         x_min = x_max = y_min = y_max = 0
 
@@ -332,7 +361,7 @@ def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'aut
         yaxis=dict(title='True positive rate' if roc else 'Precision', scaleanchor='x',
                    range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(xs) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(xs) > 1 or any(lbl is not None for lbl in legend) or any(lbl is not None for lbl in deviation_legend)
     )
     return fig
 
@@ -380,16 +409,19 @@ def threshold_metric_curve(th: np.ndarray, ys, name: Optional[str] = None,
     return fig
 
 
-def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Optional[str] = None,
-                      title: Optional[str] = 'Calibration Curve', legend=None):
+def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Optional[str] = None, deviation=None,
+                      title: Optional[str] = 'Calibration Curve', legend=None, deviation_legend=None):
     """
     Plot calibration curves.
     :param th_lower: Lower/left ends of threshold bins, array of shape `(n,)`.
     :param th_upper: Upper/right ends of threshold bins, array of shape `(n,)`.
     :param ys: y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
+    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
+    intervals, and the like. None or a list of arrays of shape `(2, n)`.
     :param name: Name of the target variable.
     :param title: The title of the figure.
-    :param legend: Names of the individual curves. None or a list of string with the same length as `ys`.
+    :param legend: Names of the individual curves. None or a list of strings with the same length as `ys`.
+    :param deviation_legend: Names of the deviation curves. None or a list of strings with the same length as `ys`.
     :return: plotly figure object.
     """
     if not isinstance(ys, list):
@@ -402,13 +434,33 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
             legend = [None] * len(ys)
         elif isinstance(legend, str):
             legend = [legend]
+        if deviation is None:
+            deviation = [None] * len(ys)
+        elif not isinstance(deviation, list):
+            deviation = [deviation]
+        if deviation_legend is None:
+            deviation_legend = [None] * len(ys)
+        elif isinstance(deviation_legend, str):
+            deviation_legend = [deviation_legend]
+        assert len(deviation) == len(ys)
+        assert len(deviation_legend) == len(ys)
         assert len(legend) == len(ys)
         assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
         x = (th_lower + th_upper) * 0.5
         y_min = min(y.min() for y in ys)
         y_max = max(y.max() for y in ys)
-        for y, lbl in zip(ys, legend):
-            fig.add_trace(go.Scatter(x=x, y=y, name=lbl, mode='lines+markers'))
+        for i, (y, dv, lbl, dv_lbl) in enumerate(zip(ys, deviation, legend, deviation_legend)):
+            color = _get_color(i)
+            if dv is not None:
+                fig.add_trace(go.Scatter(
+                    x=np.concatenate([x, x[::-1]]),
+                    y=np.concatenate([dv[1], dv[0, ::-1]]),
+                    fill='toself',
+                    fillcolor='rgba(' + color + ',0.2)',
+                    line_color='rgba(255,255,255,0)',
+                    name=dv_lbl
+                ))
+            fig.add_trace(go.Scatter(x=x, y=y, name=lbl, mode='lines+markers', line=dict(color='rgb(' + color + ')')))
     else:
         y_min = y_max = 0
 
@@ -416,6 +468,6 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         xaxis=dict(title='Threshold', constrain='domain'),
         yaxis=dict(title='Fraction of positive class', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend) or any(lbl is not None for lbl in deviation_legend)
     )
     return fig

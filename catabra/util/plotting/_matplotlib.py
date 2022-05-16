@@ -170,14 +170,16 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     return ax.figure
 
 
-def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None, figsize=(5, 5),
-                 roc: bool = True, legend=None, positive_prevalence: float = -1.):
+def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None, figsize=(5, 5),
+                 roc: bool = True, legend=None, positive_prevalence: float = -1., **kwargs):
     """
     Plot ROC or PR curve(s).
     :param xs: The x-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
     they correspond to the false positive rates, in the case of PR curves they correspond to recall.
     :param ys: The y-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
     they correspond to the true positive rates, in the case of PR curves they correspond to precision.
+    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
+    intervals, and the like. None or a list of arrays of shape `(2, n)`.
     :param name: Name of the target variable.
     :param title: The title of the figure. If "auto", the title is either "Receiver Operating Characteristic" or
     "Precision-Recall Curve" depending on the value of `roc`.
@@ -201,6 +203,11 @@ def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'aut
             legend = [None] * len(ys)
         elif isinstance(legend, str):
             legend = [legend]
+        if deviation is None:
+            deviation = [None] * len(ys)
+        elif not isinstance(deviation, list):
+            deviation = [deviation]
+        assert len(deviation) == len(ys)
         assert len(legend) == len(ys)
         assert all(x.dtype.kind == xs[0].dtype.kind for x in xs)
         assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
@@ -216,8 +223,10 @@ def roc_pr_curve(xs, ys, name: Optional[str] = None, title: Optional[str] = 'aut
         elif positive_prevalence >= 0.:
             # unfortunately, we cannot rely on `ys[0][0]` being the positive prevalence
             ax.plot([0, 1], [positive_prevalence, positive_prevalence], ls='--', c='gray', lw=1.)
-        for x, y, lbl in zip(xs, ys, legend):
-            ax.plot(x, y, label=lbl)
+        for x, y, dv, lbl in zip(xs, ys, deviation, legend):
+            line = ax.plot(x, y, label=lbl)[0]
+            if dv is not None:
+                ax.fill_between(x, dv[0], dv[1], alpha=0.2, facecolor=line.get_color())
         if any(lbl is not None for lbl in legend):
             ax.legend(loc='lower right' if roc else 'best')
 
@@ -279,18 +288,20 @@ def threshold_metric_curve(th: np.ndarray, ys, name: Optional[str] = None,
     return ax.figure
 
 
-def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Optional[str] = None,
-                      title: Optional[str] = 'Calibration Curve', ax=None, figsize=(5, 5), legend=None):
+def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Optional[str] = None, deviation=None,
+                      title: Optional[str] = 'Calibration Curve', ax=None, figsize=(5, 5), legend=None, **kwargs):
     """
     Plot calibration curves.
     :param th_lower: Lower/left ends of threshold bins, array of shape `(n,)`.
     :param th_upper: Upper/right ends of threshold bins, array of shape `(n,)`.
     :param ys: y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
+    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
+    intervals, and the like. None or a list of arrays of shape `(2, n)`.
     :param name: Name of the target variable.
     :param title: The title of the figure.
     :param ax: An existing axis, or None.
     :param figsize: Figure size.
-    :param legend: Names of the individual curves. None or a list of string with the same length as `ys`.
+    :param legend: Names of the individual curves. None or a list of strings with the same length as `ys`.
     :return: Matplotlib figure object.
     """
     if not isinstance(ys, list):
@@ -304,14 +315,21 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
             legend = [None] * len(ys)
         elif isinstance(legend, str):
             legend = [legend]
+        if deviation is None:
+            deviation = [None] * len(ys)
+        elif not isinstance(deviation, list):
+            deviation = [deviation]
+        assert len(deviation) == len(ys)
         assert len(legend) == len(ys)
         assert all(y.dtype.kind == ys[0].dtype.kind for y in ys)
         x = (th_lower + th_upper) * 0.5
         y_min = min(y.min() for y in ys)
         y_max = max(y.max() for y in ys)
         ax.set_ylim(min(-0.05, y_min), max(1.05, y_max))
-        for y, lbl in zip(ys, legend):
-            ax.plot(x, y, label=lbl, marker='.')
+        for y, dv, lbl in zip(ys, deviation, legend):
+            line = ax.plot(x, y, label=lbl, marker='.')[0]
+            if dv is not None:
+                ax.fill_between(x, dv[0], dv[1], alpha=0.2, facecolor=line.get_color())
         if any(lbl is not None for lbl in legend):
             ax.legend(loc='best')
 
