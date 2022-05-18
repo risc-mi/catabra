@@ -11,14 +11,18 @@ from ..base import AutoMLBackend
 from .scorer import get_scorer
 
 
-def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = False, copy: bool = False,
-                   multioutput_regression: bool = False) -> np.ndarray:
-    # copied from autosklearn.automl._model_predict()
+def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = False, copy: bool = False) -> np.ndarray:
+    # copied and adapted from autosklearn.automl._model_predict()
 
     if copy:
         x = x.copy()
-    if multioutput_regression and isinstance(model, sklearn.ensemble.VotingRegressor):
-        prediction = np.average(model.transform(x), axis=2).T
+    if isinstance(model, sklearn.ensemble.VotingRegressor):
+        # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
+        # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
+        # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
+        prediction = np.average(model.transform(x), axis=-1, weights=model._weights_not_none)
+        if prediction.ndim == 2:
+            prediction = prediction.T
     else:
         predict_func = model.predict_proba if proba else model.predict
         if batch_size is not None and hasattr(model, 'batch_size'):
@@ -42,7 +46,6 @@ class AutoSklearnBackend(AutoMLBackend):
 
     def __init__(self, **kwargs):
         super(AutoSklearnBackend, self).__init__(**kwargs)
-        self._multioutput = False
         self.converted_bool_columns_ = None     # tuple of columns of bool dtype that must be converted to float
 
     @property
@@ -238,7 +241,6 @@ class AutoSklearnBackend(AutoMLBackend):
             if len(metrics) > 1:
                 kwargs['scoring_functions'] = [get_scorer(m) for m in metrics[1:]]
 
-        self._multioutput = y_train.shape[1] > 1
         if self.task == 'regression':
             from autosklearn.regression import AutoSklearnRegressor as Estimator
         elif groups is None and resampling_strategy is None and len(include) == len(exclude) == 0:
@@ -304,8 +306,7 @@ class AutoSklearnBackend(AutoMLBackend):
         # copied from autosklearn.automl.AutoML.predict()
         x = self.model_.automl_.InputValidator.feature_validator.transform(x.copy())
         model = self._get_fitted_model_by_id(model_id)
-        return _model_predict(model, x, batch_size=batch_size, proba=proba, copy=False,
-                              multioutput_regression=(self.task == 'regression' and self._multioutput))
+        return _model_predict(model, x, batch_size=batch_size, proba=proba, copy=False)
 
     def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], proba: bool) -> Dict[Any, np.ndarray]:
         # get predictions of all constituent models and entire ensemble
@@ -325,8 +326,7 @@ class AutoSklearnBackend(AutoMLBackend):
                 x,
                 batch_size=batch_size,
                 proba=proba,
-                copy=True,
-                multioutput_regression=(self.task == 'regression' and self._multioutput)
+                copy=True
             )
             for key in model_ids
         )
