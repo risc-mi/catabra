@@ -191,6 +191,7 @@ class AutoSklearnBackend(AutoMLBackend):
         if bool_cols and not any(x_train[c].dtype.name == 'category' for c in x_train.columns):
             # autosklearn tries to impute missing values in bool columns using sklearn's SimpleImputer. This does not
             # work if no categorical columns are present as well.
+            # There is no need to convert dtypes when applying the model, as this happens automatically under the hood.
             self.converted_bool_columns_ = tuple(bool_cols)
             x_train = x_train.copy()
             x_train[bool_cols] = x_train[bool_cols].astype(np.float32)
@@ -262,7 +263,6 @@ class AutoSklearnBackend(AutoMLBackend):
             -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
-        x = self._transform_before_predict(x)
         if model_id is None:
             return self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
@@ -272,7 +272,6 @@ class AutoSklearnBackend(AutoMLBackend):
                       model_id=None) -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
-        x = self._transform_before_predict(x)
         if model_id is None:
             return self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
@@ -282,19 +281,13 @@ class AutoSklearnBackend(AutoMLBackend):
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(self._transform_before_predict(x), -1 if jobs is None else jobs, batch_size, False)
+        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, False)
 
     def predict_proba_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(self._transform_before_predict(x), -1 if jobs is None else jobs, batch_size, True)
-
-    def _transform_before_predict(self, x: pd.DataFrame) -> pd.DataFrame:
-        if getattr(self, 'converted_bool_columns_', ()):        # legacy; ensure backward compatibility
-            x = x.copy()
-            x[list(self.converted_bool_columns_)] = x[list(self.converted_bool_columns_)].astype(np.float32)
-        return x
+        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, True)
 
     def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
         # get predictions of a single constituent model
@@ -304,6 +297,7 @@ class AutoSklearnBackend(AutoMLBackend):
         self._ensure_models()
 
         # copied from autosklearn.automl.AutoML.predict()
+        # in fact, there is no need to call `feature_validator.transform()`, so we do not include it in FittedEnsemble
         x = self.model_.automl_.InputValidator.feature_validator.transform(x.copy())
         model = self._get_fitted_model_by_id(model_id)
         return _model_predict(model, x, batch_size=batch_size, proba=proba, copy=False)
@@ -316,6 +310,7 @@ class AutoSklearnBackend(AutoMLBackend):
         self._ensure_models()
 
         # copied from autosklearn.automl.AutoML.predict()
+        # in fact, there is no need to call `feature_validator.transform()`, so we do not include it in FittedEnsemble
         x = self.model_.automl_.InputValidator.feature_validator.transform(x.copy())
         models = self._get_fitted_models()
         model_ids = self._get_model_keys(ensemble_only=True)
