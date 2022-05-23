@@ -1,5 +1,7 @@
 from typing import Optional, Dict, Any
 import shutil
+import inspect
+import re
 import numpy as np
 import pandas as pd
 import sklearn
@@ -7,7 +9,7 @@ import joblib
 
 from ...util import logging
 from ...analysis import grouped_split
-from ..base import AutoMLBackend
+from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
 
 
@@ -36,6 +38,109 @@ def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = Fal
         f'Prediction shape {model} is {prediction.shape} while X_ has shape {x.shape}'
 
     return prediction
+
+
+def strip_autosklearn(obj):
+    """
+    Strip all autosklearn components from a given object. That means, if the given object contains an instance of an
+    autosklearn class, which is a mere wrapper for an sklearn class, only the corresponding sklearn object is retained.
+    :param obj: The object to process.
+    :return: The processed object, which may be `obj` itself if `obj` does not contain any autosklearn components.
+    Note that there is no guarantee that all autosklearn components occurring in `obj` are found, meaning some could
+    still remain in the output.
+    """
+    if isinstance(obj, (list, tuple)):
+        new = [strip_autosklearn(v) for v in obj]
+        if all(o is n for o, n in zip(obj, new)):
+            # avoid creating a new instance if possible
+            return obj
+        elif isinstance(obj, tuple):
+            return tuple(new)
+        else:
+            return new
+    elif isinstance(obj, set):
+        aux = list(obj)
+        new = [strip_autosklearn(v) for v in aux]
+        if all(o is n for o, n in zip(aux, new)):
+            # avoid creating a new instance if possible
+            return obj
+        else:
+            return set(new)
+    elif isinstance(obj, dict):
+        new = {k: strip_autosklearn(v) for k, v in obj.items()}
+        if all(old is new[k] for k, old in obj.items()):
+            # avoid creating a new instance if possible
+            return obj
+        else:
+            return new
+    else:
+        try:
+            if obj.__class__.__module__.startswith('sklearn.'):
+                dct = obj.__dict__
+                # If `obj` has an attribute with and without trailing "_", only process the "_"-version and set the
+                # result to the non-"_"-version as well. Reason: the non-"_"-version usually represents an unfitted
+                # transformer/estimator, which, if it is an autosklearn object, may still lack the required
+                # `estimator`/`transformer`/`preprocessor` attribute.
+                special_attrs = {k for k in dct if not k.endswith('_') and k + '_' in dct}
+                dct_new = {k: strip_autosklearn(v) for k, v in dct.items() if k not in special_attrs}
+                if all(new is dct[k] for k, new in dct_new.items()):
+                    # avoid creating a new instance if possible
+                    return obj
+                else:
+                    new = obj.__class__.__new__(obj.__class__)
+                    new.__dict__.update(dct_new)
+                    new.__dict__.update({k: dct_new[k + '_'] for k in special_attrs})
+                    return new
+            elif obj.__class__.__module__.startswith('autosklearn.'):
+                # special classes that MUST be returned unchanged, because although they have attributes like
+                # `estimator`/`transformer`/`preprocessor` etc., their `transform()`/`predict()`/`predict_proba()`
+                # method does not simply apply these objects :(
+                if obj.__class__.__name__ in ('OrdinalEncoding', 'Nystroem', 'SelectPercentileClassification',
+                                              'SelectClassificationRates'):
+                    return obj
+
+                # special classes whose `transform()` method is the identity function, but which are not detected by
+                # the code below
+                if obj.__class__.__name__ in ('NoPreprocessing',):
+                    return 'passthrough'
+
+                # try to find out whether `obj.transform()` is the identity function
+                try:
+                    lines = inspect.getsource(obj.transform).split('\n')
+                    # strip whitespace at beginning and end
+                    lines = [ln.strip() for ln in lines]
+                    # drop empty lines and comments
+                    lines = [ln for ln in lines if ln and not ln.startswith('#')]
+                    if len(lines) == 2:
+                        args = re.findall('def[ ]*transform[ ]*\(self,[ ]*([a-zA-Z_0-9]+)[:,)= ].+', lines[0])
+                        if len(args) == 1 and args[0] and re.match('return[ ]+' + args[0], lines[1]) is not None:
+                            return 'passthrough'
+                except:     # noqa
+                    pass
+
+                for attr in ('choice', 'estimator', 'transformer', 'preprocessor', 'column_transformer'):
+                    sub = getattr(obj, attr, None)
+                    if sub == 'passthrough':
+                        return 'passthrough'
+                    elif sub is not None:
+                        return strip_autosklearn(sub)
+
+                steps = getattr(obj, 'steps', None)
+                if isinstance(steps, list):
+                    assert all(isinstance(s, tuple) for s in steps)
+                    steps = [(s[0], strip_autosklearn(s[1])) for s in steps]
+                    steps = [(n, t) for n, t in steps if t not in (None, 'passthrough')]
+                    if steps:
+                        if len(steps) == 1:
+                            return steps[0][1]
+                        else:
+                            steps.append(('dummy', 'passthrough'))
+                            return sklearn.pipeline.Pipeline(steps)
+                    else:
+                        return 'passthrough'
+        except:     # noqa
+            pass
+        return obj
 
 
 class AutoSklearnBackend(AutoMLBackend):
@@ -138,6 +243,22 @@ class AutoSklearnBackend(AutoMLBackend):
 
         result.sort_values('timestamp', inplace=True, ascending=True)
         return result
+
+    def fitted_ensemble(self, ensemble_only: bool = True) -> FittedEnsemble:
+        keys = self._get_model_keys(ensemble_only=ensemble_only)
+        if ensemble_only:
+            voting_keys = keys
+        else:
+            voting_keys = self._get_model_keys(ensemble_only=True)
+        return FittedEnsemble(
+            name=self.name(),
+            task=self.task,
+            models={k[1]: self._get_pipeline(k) for k in keys},
+            voting_input=[_id for _, _id, _ in voting_keys],
+            voting_estimator=
+            [self.model_.automl_.ensemble_.weights_[self.model_.automl_.ensemble_.identifiers_.index(k)]
+             for k in voting_keys]
+        )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
             time: Optional[int] = None, jobs: Optional[int] = None,
@@ -378,6 +499,24 @@ class AutoSklearnBackend(AutoMLBackend):
                 except:     # noqa
                     out[key] = obj.__class__.__name__ + '(<unknown params>)'
         return out
+
+    def _get_pipeline(self, key) -> dict:
+        pipeline = self.model_.automl_.models_.get(key)
+        if pipeline is None:
+            # cv => rely on `self.model_.automl_.cv_models_.get(key)`
+            return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+        else:
+            estimator = pipeline.steps[-1][1].choice.estimator
+            if estimator is None:
+                # cv => rely on `self.model_.automl_.cv_models_.get(key)`
+                return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+            else:
+                steps = [strip_autosklearn(obj[1]) for obj in pipeline.steps[:-1]]
+                steps = [s for s in steps if s != 'passthrough']
+                return dict(
+                    preprocessing=steps,
+                    estimator=estimator
+                )
 
     def _get_fitted_model_by_id(self, model_id):
         models = [v for (_, _id, _), v in self._get_fitted_models().items() if _id == model_id]

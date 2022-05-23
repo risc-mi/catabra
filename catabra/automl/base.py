@@ -4,6 +4,8 @@ import importlib
 import numpy as np
 import pandas as pd
 
+from .fitted_ensemble import FittedEnsemble
+
 
 class AutoMLBackend:
     """
@@ -60,6 +62,9 @@ class AutoMLBackend:
     def training_history(self) -> pd.DataFrame:
         """Summary of the model training. Contains at least the final training- and validation scores, and, depending
         on the backend, also their temporal evolution."""
+        raise NotImplementedError()
+
+    def fitted_ensemble(self, ensemble_only: bool = True) -> FittedEnsemble:
         raise NotImplementedError()
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
