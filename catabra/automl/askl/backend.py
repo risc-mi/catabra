@@ -11,6 +11,11 @@ from ...util import logging
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
+from . import explanation
+
+
+explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
+                                                     errors='ignore')
 
 
 def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = False, copy: bool = False) -> np.ndarray:
