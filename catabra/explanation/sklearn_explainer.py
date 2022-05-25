@@ -438,7 +438,7 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
             out = np.zeros(s.shape[:-1] + (len(self._transformer.labels_),), dtype=s.dtype)
             for i, lbl in enumerate(self._clusters):
                 mask = self._transformer.labels_ == lbl
-                out[..., mask] = s[..., i]      # normalization happens below
+                out[..., mask] = s[..., [i]]      # normalization happens below
             out *= self._weights.reshape(tuple([1] * (len(s.shape) - 2)) + self._weights.shape)
 
             return out
@@ -454,7 +454,7 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
         out = np.zeros(s.shape[:-1] + (len(self._transformer.labels_),), dtype=s.dtype)
         for i, lbl in enumerate(self._clusters):
             mask = self._transformer.labels_ == lbl
-            out[..., mask] = s[..., i] / mask.sum()
+            out[..., mask] = s[..., [i]] / mask.sum()
 
         return out
 
