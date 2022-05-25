@@ -14,16 +14,20 @@ def _preprocess(x, pp: list):
     return x
 
 
-def _model_predict(model: dict, x, batch_size: Optional[int] = None, proba: bool = False,
+def _model_predict(model: Union[dict, 'FittedModel'], x, batch_size: Optional[int] = None, proba: bool = False,
                    copy: bool = False) -> np.ndarray:
     # copied and adapted from autosklearn.automl._model_predict()
     if copy:
         x = x.copy()
-    pp = model.get('preprocessing') or []
-    if not isinstance(pp, (list, tuple)):
-        pp = [pp]
+    if isinstance(model, dict):
+        pp = model.get('preprocessing') or []
+        if not isinstance(pp, (list, tuple)):
+            pp = [pp]
+        estimator = model['estimator']
+    else:
+        pp = model.preprocessing
+        estimator = model.estimator
     x = _preprocess(x, pp)
-    estimator = model['estimator']
     if isinstance(estimator, sklearn.ensemble.VotingRegressor):
         # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
         # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
@@ -64,6 +68,113 @@ def _model_predict(model: dict, x, batch_size: Optional[int] = None, proba: bool
     return prediction
 
 
+class FittedModel:
+
+    def __init__(self, preprocessing=None, estimator=None):
+        """
+        Canonical, uniform representation of fitted prediction models, independent of the method and backend used for
+        fitting them. Ideally, the preprocessing transformations and estimator passed as arguments should be plain
+        sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
+
+        Note that the name "FittedModel" was chosen to be consistent with auto-sklearn's terminology. Strictly speaking,
+        this class represents whole pipelines rather than just prediction models.
+
+        :param preprocessing: Optional, single preprocessing transformation or list of such transformations. Each step
+        must implement the `transform()` method. None defaults to the empty list.
+        :param estimator: Final estimator, must implement the `predict()` and, in case of classification, the
+        `predict_proba()` method.
+        Note that there is no clear definition of what constitutes a preprocessing step and what the final estimator.
+        As a rule of thumb, try to set `estimator` to an atomic sklearn/XGBoost/TensorFlow/... model that cannot be
+        decomposed into individual parts any more, and put everything else into `preprocessing`.
+        """
+
+        if estimator is None:
+            raise ValueError('The estimator of a FittedModel cannot be None.')
+        if preprocessing is None:
+            preprocessing = []
+        elif not isinstance(preprocessing, (list, tuple)):
+            preprocessing = [preprocessing]
+        self.preprocessing: list = preprocessing
+        self.estimator = estimator
+
+    def fit(self, x, y=None):
+        # only to implement the standard sklearn API, which is required by functions like
+        # `sklearn.metrics.check_scoring()`
+        raise RuntimeError(f'Method fit() of class {self.__class__.__name__} cannot be called.')
+
+    def transform(self, x: pd.DataFrame, batch_size: Optional[int] = None):
+        """
+        Transform given data by applying the preprocessing steps of this FittedModel object.
+        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        :param batch_size: Batch size, i.e., number of samples processed in parallel.
+        :return: Transformed data, array-like of shape `(n_samples, n_features)`.
+        """
+        if batch_size is None or len(x) <= batch_size:
+            return _preprocess(x, self.preprocessing)
+        else:
+            out = [_preprocess(x0, self.preprocessing) for x0 in FittedModel._batch_iter(x, batch_size)]
+            if isinstance(out[0], np.ndarray):
+                return np.concatenate(out)
+            elif isinstance(out[0], (pd.DataFrame, pd.Series)):
+                return pd.concat(out, axis=0, sort=False)
+            else:
+                raise ValueError(f'Cannot concatenate preprocessed data of type {type(out[0])}')
+
+    def predict(self, x: pd.DataFrame, batch_size: Optional[int] = None) -> np.ndarray:
+        """
+        Apply this FittedModel object to given data.
+        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        :param batch_size: Batch size, i.e., number of samples processed in parallel.
+        :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
+        """
+        return _model_predict(self, x, batch_size=batch_size, proba=False, copy=False)
+
+    def predict_proba(self, x: pd.DataFrame, batch_size: Optional[int] = None) -> np.ndarray:
+        """
+        Apply this FittedModel object to given data. In contrast to method `predict()`, this method returns class
+        probabilities in case of classification tasks. Does not work for regression tasks.
+        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        :param batch_size: Batch size, i.e., number of samples processed in parallel.
+        :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
+        """
+        return _model_predict(self, x, batch_size=batch_size, proba=True, copy=False)
+
+    def to_dict(self):
+        return dict(preprocessing=self.preprocessing, estimator=self.estimator)
+
+    def dump(self, fn: Union[Path, str], as_dict: bool = False):
+        """
+        Dump this FittedModel object to disk.
+        :param fn: File name.
+        :param as_dict: Whether to convert this object into a dict before dumping it.
+        Set to True for maximum portability.
+        """
+        io.dump(self.to_dict() if as_dict else self, fn)
+
+    @classmethod
+    def load(cls, fn: Union[Path, str]) -> 'FittedModel':
+        """
+        Load a dumped FittedModel from disk. The value of parameter `as_dict` upon dumping does not matter.
+        :param fn: File name.
+        :return: FittedModel object.
+        """
+        obj = io.load(fn)
+        if isinstance(obj, dict):
+            return cls(**obj)
+        return obj
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(\n    preprocessing={self.preprocessing},\n    estimator={self.estimator})'
+
+    @staticmethod
+    def _batch_iter(x: pd.DataFrame, batch_size: int):
+        assert batch_size > 0
+        i = 0
+        while i < len(x):
+            yield x.iloc[i:i + batch_size]
+            i += batch_size
+
+
 class FittedEnsemble:
 
     def __init__(self, name: Optional[str] = None, task: str = None, models: dict = None, voting_input: list = None,
@@ -76,20 +187,15 @@ class FittedEnsemble:
         :param name: Optional, name of this ensemble (e.g., name of the AutoML-backend used for generating it).
         :param task: Prediction task, one of "regression", "binary_classification", "multiclass_classification" or
         "multilabel_classification".
-        :param models: Constituent models of the ensemble, a non-empty dict. Each element must be a dict of the form
+        :param models: Constituent models of the ensemble, a non-empty dict. Each element must be a FittedModel or a
+        dict of the form
 
             {
                 "preprocessing": preprocessing,
                 "estimator": estimator
             }
 
-        where `preprocessing` is an optional (list of) preprocessing step(s) and `estimator` is the final estimator.
-        The preprocessing steps must implement the `transform()` method, and the final estimator must implement the
-        `predict()` method and, in case of classification, the `predict_proba()` method.
-        Strictly speaking, there is no clear definition of what constitutes a preprocessing step and what the final
-        estimator. As a rule of thumb, try to set `estimator` to an atomic sklearn/XGBoost/TensorFlow/... model that
-        cannot be decomposed into individual parts any more, and put everything else into `preprocessing`.
-        The keys of the dict serve as unique model-IDs.
+        which is used to initialize a FittedModel object. The keys of the dict serve as unique model-IDs.
 
         :param voting_input: List of model-IDs that serve as the input to the voting estimator (must be a subset of the
         keys of `models`). None defaults to all model-IDs, in the same order as in `models`.
@@ -123,7 +229,7 @@ class FittedEnsemble:
                 raise ValueError('Voting estimator weights must not be < 0')
         self.name: Optional[str] = name
         self.task: str = task
-        self.models_: dict = models
+        self.models_: dict = {k: FittedModel(**m) if isinstance(m, dict) else m for k, m in models.items()}
         self.voting_input_: list = voting_input
         self.voting_estimator_ = voting_estimator
 
@@ -132,27 +238,10 @@ class FittedEnsemble:
         """List of IDs for accessing individual (constituent) models of the final ensemble."""
         return list(self.models_)
 
-    def transform(self, x: pd.DataFrame, model_id, batch_size: Optional[int] = None):
-        """
-        Transform given data by applying the preprocessing steps of a single model.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
-        :param model_id: The ID of the model whose preprocessing steps to apply, as in `model_ids_`.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Transformed data, array-like of shape `(n_samples, n_features)`.
-        """
-        pp = self.models_[model_id].get('preprocessing') or []
-        if not isinstance(pp, (list, tuple)):
-            pp = [pp]
-        if batch_size is None or len(x) <= batch_size:
-            return _preprocess(x, pp)
-        else:
-            out = [_preprocess(x0, pp) for x0 in FittedEnsemble._batch_iter(x, batch_size)]
-            if isinstance(out[0], np.ndarray):
-                return np.concatenate(out)
-            elif isinstance(out[0], (pd.DataFrame, pd.Series)):
-                return pd.concat(out, axis=0, sort=False)
-            else:
-                raise ValueError(f'Cannot concatenate preprocessed data of type {type(out[0])}')
+    def fit(self, x, y=None):
+        # only to implement the standard sklearn API, which is required by functions like
+        # `sklearn.metrics.check_scoring()`
+        raise RuntimeError(f'Method fit() of class {self.__class__.__name__} cannot be called.')
 
     def predict(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None) -> np.ndarray:
         """
@@ -166,7 +255,7 @@ class FittedEnsemble:
         if model_id is None:
             return self._predict_all(x, jobs, batch_size, False)['__ensemble__']
         else:
-            return self._predict_single(x, model_id, batch_size, False)
+            return self.models_[model_id].predict(x, batch_size=batch_size)
 
     def predict_proba(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None,
                       model_id=None) -> np.ndarray:
@@ -182,7 +271,7 @@ class FittedEnsemble:
         if model_id is None:
             return self._predict_all(x, jobs, batch_size, True)['__ensemble__']
         else:
-            return self._predict_single(x, model_id, batch_size, True)
+            return self.models_[model_id].predict_proba(x, batch_size=batch_size)
 
     def predict_all(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None) -> Dict[Any, np.ndarray]:
         """
@@ -212,7 +301,7 @@ class FittedEnsemble:
         return dict(
             name=self.name,
             task=self.task,
-            models=self.models_,
+            models={k: m.to_dict() for k, m in self.models_.items()},
             voting_input=self.voting_input_,
             voting_estimator=self.voting_estimator_
         )
@@ -238,9 +327,8 @@ class FittedEnsemble:
             return cls(**obj)
         return obj
 
-    def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
-        # get predictions of a single constituent model
-        return _model_predict(self.models_[model_id], x, batch_size=batch_size, proba=proba, copy=False)
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(model_ids={self.model_ids_}, task="{self.task}")'
 
     def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], proba: bool) -> Dict[Any, np.ndarray]:
         # get predictions of all constituent models and entire ensemble
@@ -272,11 +360,3 @@ class FittedEnsemble:
         out['__ensemble__'] = pred
 
         return out
-
-    @staticmethod
-    def _batch_iter(x: pd.DataFrame, batch_size: int):
-        assert batch_size > 0
-        i = 0
-        while i < len(x):
-            yield x.iloc[i:i + batch_size]
-            i += batch_size
