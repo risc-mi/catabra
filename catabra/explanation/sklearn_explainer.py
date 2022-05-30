@@ -500,6 +500,22 @@ class FastICAExplainer(_LinearTransformationExplainer):
         super(FastICAExplainer, self).__init__(transformer, transformer.components_.T)
 
 
+class TruncatedSVDExplainer(_LinearTransformationExplainer):
+
+    def __init__(self, transformer: sklearn.decomposition.TruncatedSVD):
+        super(TruncatedSVDExplainer, self).__init__(transformer, transformer.components_.T)
+
+
+class RBFSamplerExplainer(_LinearTransformationExplainer):
+
+    def __init__(self, transformer: sklearn.kernel_approximation.RBFSampler):
+        # RBFSampler does not implement a linear transformation, but instead returns
+        #   X_hat = cos(X @ A + offset) * c
+        # Adding a component-wise offset, taking the cosine and multiplying by a constant factor have no influence on
+        # feature importance, and can hence be ignored.
+        super(RBFSamplerExplainer, self).__init__(transformer, transformer.random_weights_)
+
+
 def _fit_forward_one(explainer, x, y, weight):
     res = explainer.fit_forward(x, y)
     if weight is None:

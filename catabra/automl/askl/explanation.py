@@ -4,7 +4,7 @@ from ...explanation.sklearn_explainer import TransformationExplainer, IdentityTr
 
 def askl_explainer_factory(obj):
     if obj.__class__.__module__.startswith('autosklearn.'):
-        if obj.__class__.__name__ in ('OrdinalEncoding', 'CategoryShift', 'MinorityCoalescer'):
+        if obj.__class__.__name__ in ('OrdinalEncoding', 'CategoryShift', 'MinorityCoalescer', 'Densifier'):
             return IdentityTransformationExplainer(transformer=obj)
         elif obj.__class__.__name__ == 'SelectPercentileClassification':
             return SelectPercentileClassificationExplainer(obj)
