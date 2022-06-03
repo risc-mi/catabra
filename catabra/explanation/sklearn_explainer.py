@@ -54,6 +54,15 @@ class PipelineExplainer(TransformationExplainer):
         super(PipelineExplainer, self).__init__()
         self._explainers = [TransformationExplainer.make(t) for t in steps]
 
+    @property
+    def params_(self) -> dict:
+        return dict(steps=[e.params_ for e in self._explainers])
+
+    def set_params(self, steps=(), **params):
+        assert len(steps) == len(self._explainers)
+        for p, e in zip(steps, self._explainers):
+            e.set_params(**p)
+
     def fit(self, x, y=None):
         raise RuntimeError(f'Method fit() of class {self.__class__.__name__} cannot be called.')
 
@@ -94,6 +103,16 @@ class ColumnTransformerExplainer(TransformationExplainer):
         # list of pairs `(columns, n_out)`, where `columns` is a list of column-indices and `n_out` is the number of
         # output features originating from `columns`
         self.mapping_: Optional[dict] = None
+
+    @property
+    def params_(self) -> dict:
+        return dict(transformers=[e.params_ for e in self._explainers], mapping=self.mapping_)
+
+    def set_params(self, transformers=(), mapping=None, **params):
+        assert len(transformers) == len(self._explainers)
+        for p, e in zip(transformers, self._explainers):
+            e.set_params(**p)
+        self.mapping_ = mapping
 
     def fit_forward(self, x, y):
         self._validate_input(x, fitting=True)
@@ -231,6 +250,13 @@ class OneHotEncoderExplainer(TransformationExplainer):
         else:
             self._n_features_out = [len(cats) for cats in self._transformer.categories_]
 
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
+
     def fit_forward(self, x, y):
         return self.forward(x)
 
@@ -267,6 +293,13 @@ class SimpleImputerExplainer(TransformationExplainer):
             self._indicator_features = []
         else:
             self._indicator_features = list(self._transformer.indicator_.features_)
+
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -306,17 +339,24 @@ class _BaseFilterExplainer(TransformationExplainer):
         super(_BaseFilterExplainer, self).__init__(transformer=transformer)
         mask = self._transformer._get_support_mask()  # noqa
         self._features = np.where(mask)[0]
-        self._n_features_in = None
+        self.n_features_in_ = None
+
+    @property
+    def params_(self) -> dict:
+        return dict(n_features_in=self.n_features_in_)
+
+    def set_params(self, n_features_in=None, **params):
+        self.n_features_in_ = n_features_in
 
     def fit_forward(self, x, y):
-        self._n_features_in = x.shape[1]        # not all subclasses have an `n_features_in_` attribute
+        self.n_features_in_ = x.shape[1]        # not all subclasses have an `n_features_in_` attribute
         return self.forward(x)
 
     def forward(self, x):
         return self.transform(x)
 
     def backward(self, s: np.ndarray) -> np.ndarray:
-        return self.static_backward(s, self._features, self._n_features_in, self.__class__.__name__)
+        return self.static_backward(s, self._features, self.n_features_in_, self.__class__.__name__)
 
     def backward_global(self, s: np.ndarray) -> np.ndarray:
         return self.backward(s)
@@ -340,6 +380,13 @@ class MissingIndicatorExplainer(TransformationExplainer):
 
     def __init__(self, transformer: sklearn.impute.MissingIndicator):
         super(MissingIndicatorExplainer, self).__init__(transformer=transformer)
+
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -407,6 +454,13 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
         self._clusters = np.unique(self._transformer.labels_)
         self._weights = None
 
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
+
     def fit_forward(self, x, y):
         return self.forward(x)
 
@@ -467,6 +521,13 @@ class _LinearTransformationExplainer(TransformationExplainer):
         super(_LinearTransformationExplainer, self).__init__(transformer=transformer)
         assert matrix.ndim == 2
         self._matrix = matrix / np.maximum(np.abs(matrix).sum(axis=0, keepdims=True), 1e-7)
+
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)

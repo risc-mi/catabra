@@ -97,6 +97,23 @@ class TransformationExplainer:
     def transformer(self):
         return self._transformer
 
+    @property
+    def params_(self) -> dict:
+        """
+        Get all params obtained from fitting the explainer to data in method `fit_forward()`, and which can be passed
+        to method `set_params()`.
+        """
+        raise NotImplementedError()
+
+    def set_params(self, **params):
+        """
+        Set pre-computed params of this explainer, which are normally obtained through fitting it to data in method
+        `fit_forward()`.
+        """
+        # Implementation note: this method is intentionally _not_ implemented as the setter of property `params_`,
+        # because statements like `explainer.params_ = ...` would look odd.
+        raise NotImplementedError()
+
     def fit(self, x, y=None):
         # only to implement the standard sklearn API, which makes it possible to combine individual explainers in
         # pipelines and similar compound transformations
@@ -157,6 +174,13 @@ class IdentityTransformationExplainer(TransformationExplainer):
     def __init__(self, transformer=None):
         super(IdentityTransformationExplainer, self).__init__(transformer=transformer)
         self._transform_func = getattr(self._transformer, 'transform', None)
+
+    @property
+    def params_(self) -> dict:
+        return {}
+
+    def set_params(self, **params):
+        pass
 
     def transform(self, x):
         return x if self._transform_func is None else self._transform_func(x)
