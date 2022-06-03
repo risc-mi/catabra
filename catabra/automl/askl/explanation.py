@@ -47,11 +47,11 @@ class SelectClassificationRatesExplainer(GenericUnivariateSelectExplainer):
 
 class SparseOneHotEncoderExplainer(OneHotEncoderExplainer):
 
-    def fit_forward(self, x, y):
+    def __init__(self, transformer=None):
+        TransformationExplainer.__init__(self, transformer=transformer)
         self._n_features_out = []
         cumsum = 0
         for n in self._transformer.n_values_:
             mask = (self._transformer.active_features_ >= cumsum) & (self._transformer.active_features_ < cumsum + n)
             self._n_features_out.append(mask.sum())
             cumsum += n
-        return self.forward(x)

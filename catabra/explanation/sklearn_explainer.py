@@ -242,7 +242,7 @@ class OneHotEncoderExplainer(TransformationExplainer):
             raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__,
                                                           sum(self._n_features_out)))
 
-        out = np.zeros(s.shape[:-1] + (len(self._transformer.categories_),), dtype=s.dtype)
+        out = np.zeros(s.shape[:-1] + (len(self._n_features_out),), dtype=s.dtype)
         j = 0
         for i, n in enumerate(self._n_features_out):
             out[..., i] = s[..., j:j + n].sum(axis=-1)
