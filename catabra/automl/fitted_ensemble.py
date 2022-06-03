@@ -177,11 +177,11 @@ class FittedModel:
 
 class FittedEnsemble:
 
-    def __init__(self, name: Optional[str] = None, task: str = None, models: dict = None, voting_input: list = None,
-                 voting_estimator=None):
+    def __init__(self, name: Optional[str] = None, task: str = None, models: dict = None, meta_input: list = None,
+                 meta_estimator=None):
         """
         Canonical, uniform representation of fitted ensembles of prediction models, independent of the method and
-        backend used for fitting them. Ideally, the constituent models and voting estimators passed as arguments should
+        backend used for fitting them. Ideally, the constituent models and meta estimators passed as arguments should
         be plain sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
 
         :param name: Optional, name of this ensemble (e.g., name of the AutoML-backend used for generating it).
@@ -197,12 +197,13 @@ class FittedEnsemble:
 
         which is used to initialize a FittedModel object. The keys of the dict serve as unique model-IDs.
 
-        :param voting_input: List of model-IDs that serve as the input to the voting estimator (must be a subset of the
+        :param meta_input: List of model-IDs that serve as the input to the meta estimator (must be a subset of the
         keys of `models`). None defaults to all model-IDs, in the same order as in `models`.
-        :param voting_estimator: Voting estimator that combines the outputs of the individual models into a final
+        :param meta_estimator: Meta estimator that combines the outputs of the individual models into a final
         prediction. Must implement the `predict()` method and, in case of classification, the `predict_proba()` method.
-        Alternatively, `estimator` can also be a list of weights with the same length as `voting_input`, in which case
-        soft voting with the specified weights is employed.
+        Alternatively, `estimator` can also be a list of weights with the same length as `meta_input`, in which case
+        soft voting with the specified weights is employed. The weights are completely arbitrary, i.e., they can be
+        negative and do not need to sum to 1.
         None defaults to a soft voting estimator with uniform weights.
         """
 
@@ -211,27 +212,21 @@ class FittedEnsemble:
         if task not in ('regression', 'binary_classification', 'multiclass_classification',
                         'multilabel_classification'):
             raise ValueError(f'Unknown prediction task: {task}')
-        if voting_input is None:
-            voting_input = list(models)
-        elif any(k not in models for k in voting_input):
-            raise ValueError('Inputs of voting estimator must be models listed in `models`.')
-        if voting_estimator is None:
-            voting_estimator = [1] * len(voting_input)
-        elif isinstance(voting_estimator, (list, tuple)):
-            if len(voting_estimator) != len(voting_input):
-                raise ValueError(f'List of voting estimator weights ({len(voting_estimator)})'
-                                 f' differs from number of inputs ({len(voting_input)})')
-            elif sum(voting_estimator) <= 0:
-                raise ValueError(
-                    'Sum of voting estimator weights must be > 0, but is {:.4f}'.format(sum(voting_estimator))
-                )
-            elif any(w < 0 for w in voting_estimator):
-                raise ValueError('Voting estimator weights must not be < 0')
+        if meta_input is None:
+            meta_input = list(models)
+        elif any(k not in models for k in meta_input):
+            raise ValueError('Inputs of meta estimator must be models listed in `models`.')
+        if meta_estimator is None:
+            meta_estimator = [1 / len(meta_input)] * len(meta_input)
+        elif isinstance(meta_estimator, (list, tuple)):
+            if len(meta_estimator) != len(meta_input):
+                raise ValueError(f'List of meta estimator weights ({len(meta_estimator)})'
+                                 f' differs from number of inputs ({len(meta_input)})')
         self.name: Optional[str] = name
         self.task: str = task
         self.models_: dict = {k: FittedModel(**m) if isinstance(m, dict) else m for k, m in models.items()}
-        self.voting_input_: list = voting_input
-        self.voting_estimator_ = voting_estimator
+        self.meta_input_: list = meta_input
+        self.meta_estimator_ = meta_estimator
 
     @property
     def model_ids_(self) -> list:
@@ -302,8 +297,8 @@ class FittedEnsemble:
             name=self.name,
             task=self.task,
             models={k: m.to_dict() for k, m in self.models_.items()},
-            voting_input=self.voting_input_,
-            voting_estimator=self.voting_estimator_
+            meta_input=self.meta_input_,
+            meta_estimator=self.meta_estimator_
         )
 
     def dump(self, fn: Union[Path, str], as_dict: bool = False):
@@ -337,15 +332,15 @@ class FittedEnsemble:
                 self.models_[key],
                 x,
                 batch_size=batch_size,
-                # always return class probabilities, because that's what the voting estimator expects
+                # always return class probabilities, because that's what the meta estimator expects
                 proba=self.task != 'regression',
                 copy=True
             )
-            for key in self.voting_input_
+            for key in self.meta_input_
         )
-        out = {k: v for k, v in zip(self.voting_input_, all_predictions)}
-        if isinstance(self.voting_estimator_, (list, tuple)):
-            pred = sum(w * p for w, p in zip(self.voting_estimator_, all_predictions)) / sum(self.voting_estimator_)
+        out = {k: v for k, v in zip(self.meta_input_, all_predictions)}
+        if isinstance(self.meta_estimator_, (list, tuple)):
+            pred = sum(w * p for w, p in zip(self.meta_estimator_, all_predictions))
             if proba:
                 np.clip(pred, 0., 1., out=pred)
             elif self.task == 'multilabel_classification':
@@ -353,10 +348,10 @@ class FittedEnsemble:
             else:
                 pred = np.argmax(pred, axis=1)
         elif proba:
-            pred = self.voting_estimator_.predict_proba(all_predictions)
+            pred = self.meta_estimator_.predict_proba(all_predictions)
             np.clip(pred, 0., 1., out=pred)
         else:
-            pred = self.voting_estimator_.predict(all_predictions)
+            pred = self.meta_estimator_.predict(all_predictions)
         out['__ensemble__'] = pred
 
         return out

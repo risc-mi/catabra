@@ -259,8 +259,8 @@ class AutoSklearnBackend(AutoMLBackend):
             name=self.name(),
             task=self.task,
             models={k[1]: self._get_pipeline(k) for k in keys},
-            voting_input=[_id for _, _id, _ in voting_keys],
-            voting_estimator=
+            meta_input=[_id for _, _id, _ in voting_keys],
+            meta_estimator=
             [self.model_.automl_.ensemble_.weights_[self.model_.automl_.ensemble_.identifiers_.index(k)]
              for k in voting_keys]
         )
