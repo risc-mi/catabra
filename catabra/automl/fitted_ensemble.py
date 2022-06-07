@@ -14,34 +14,12 @@ def _preprocess(x, pp: list):
     return x
 
 
-def _model_predict(model: Union[dict, 'FittedModel'], x, batch_size: Optional[int] = None, proba: bool = False,
-                   copy: bool = False) -> np.ndarray:
-    # copied and adapted from autosklearn.automl._model_predict()
-    if copy:
-        x = x.copy()
-    if isinstance(model, dict):
-        pp = model.get('preprocessing') or []
-        if not isinstance(pp, (list, tuple)):
-            pp = [pp]
-        estimator = model['estimator']
-    else:
-        pp = model.preprocessing
-        estimator = model.estimator
-    x = _preprocess(x, pp)
-    if isinstance(estimator, sklearn.ensemble.VotingRegressor):
-        # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
-        # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
-        # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
-        prediction = np.average(estimator.transform(x), axis=-1, weights=estimator._weights_not_none)       # noqa
-        if prediction.ndim == 2:
-            prediction = prediction.T
-    else:
-        predict_func = estimator.predict_proba if proba else estimator.predict
-        if batch_size is not None and len(x) > batch_size and hasattr(estimator, 'batch_size'):
-            prediction = predict_func(x, batch_size=batch_size)
-        else:
-            prediction = predict_func(x)
-        if proba:
+def get_prediction_function(estimator, proba: bool = False):
+    if isinstance(estimator, FittedModel):
+        return estimator.predict_proba if proba else estimator.predict
+    elif proba:
+        def _predict(x, **kwargs):
+            prediction = estimator.predict_proba(x, **kwargs)
             # multilabel output might be a list => convert into array
             # copied from autosklearn.pipeline.implementations.util.convert_multioutput_multiclass_to_multilabel()
             if isinstance(prediction, list):
@@ -64,8 +42,43 @@ def _model_predict(model: Union[dict, 'FittedModel'], x, batch_size: Optional[in
                     prediction = np.empty((len(x), 0), dtype=np.float32)
 
             np.clip(prediction, 0., 1., out=prediction)
+            return prediction
 
-    return prediction
+        return _predict
+    elif isinstance(estimator, sklearn.ensemble.VotingRegressor):
+        # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
+        # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
+        # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
+        def _predict(x, **kwargs):
+            prediction = np.average(estimator.transform(x, **kwargs), axis=-1, weights=estimator._weights_not_none)
+            if prediction.ndim == 2:
+                prediction = prediction.T
+            return prediction
+
+        return _predict
+    else:
+        return estimator.predict
+
+
+def _model_predict(model: Union[dict, 'FittedModel'], x, batch_size: Optional[int] = None, proba: bool = False,
+                   copy: bool = False) -> np.ndarray:
+    # copied and adapted from autosklearn.automl._model_predict()
+    if copy:
+        x = x.copy()
+    if isinstance(model, dict):
+        pp = model.get('preprocessing') or []
+        if not isinstance(pp, (list, tuple)):
+            pp = [pp]
+        estimator = model['estimator']
+    else:
+        pp = model.preprocessing
+        estimator = model.estimator
+    x = _preprocess(x, pp)
+    predict_func = get_prediction_function(estimator, proba=proba)
+    if batch_size is not None and len(x) > batch_size and hasattr(estimator, 'batch_size'):
+        return predict_func(x, batch_size=batch_size)
+    else:
+        return predict_func(x)
 
 
 class FittedModel:
