@@ -301,10 +301,16 @@ class AutoSklearnBackend(AutoMLBackend):
             exclude = {}
         else:
             exclude = exclude.copy()
-        if 'regressor' in include:
-            del include['regressor']
-        if 'regressor' in exclude:
-            del exclude['regressor']
+        if self.task == 'regression':
+            if 'classifier' in include:
+                del include['classifier']
+            if 'classifier' in exclude:
+                del exclude['classifier']
+        else:
+            if 'regressor' in include:
+                del include['regressor']
+            if 'regressor' in exclude:
+                del exclude['regressor']
         for k in list(include):
             ve = exclude.get(k)
             if ve is not None:
