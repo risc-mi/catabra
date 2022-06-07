@@ -78,19 +78,21 @@ class TransformationExplainer:
             TransformationExplainer._factories.insert(0, (name, func))
 
     @staticmethod
-    def make(obj):
+    def make(obj, params=None) -> Optional['TransformationExplainer']:
         if all(hasattr(obj, attr)
                for attr in ('fit', 'transform', 'fit_forward', 'forward', 'backward', 'backward_global')):
             return obj
 
         for _, func in TransformationExplainer._factories:
-            out = func(obj)
+            out = func(obj, params=params)
             if out is not obj:
                 return out
 
         raise RuntimeError(f'Object of type {type(obj)} cannot be converted into a transformation explainer.')
 
-    def __init__(self, transformer=None):
+    def __init__(self, transformer=None, params=None):
+        if params is not None:
+            assert params.get('class_name', self.__class__.__name__) == self.__class__.__name__
         self._transformer = transformer
 
     @property
@@ -101,18 +103,9 @@ class TransformationExplainer:
     def params_(self) -> dict:
         """
         Get all params obtained from fitting the explainer to data in method `fit_forward()`, and which can be passed
-        to method `set_params()`.
+        to `__init__()`.
         """
-        raise NotImplementedError()
-
-    def set_params(self, **params):
-        """
-        Set pre-computed params of this explainer, which are normally obtained through fitting it to data in method
-        `fit_forward()`.
-        """
-        # Implementation note: this method is intentionally _not_ implemented as the setter of property `params_`,
-        # because statements like `explainer.params_ = ...` would look odd.
-        raise NotImplementedError()
+        return dict(class_name=self.__class__.__name__)
 
     def fit(self, x, y=None):
         # only to implement the standard sklearn API, which makes it possible to combine individual explainers in
@@ -171,16 +164,9 @@ class TransformationExplainer:
 
 class IdentityTransformationExplainer(TransformationExplainer):
 
-    def __init__(self, transformer=None):
-        super(IdentityTransformationExplainer, self).__init__(transformer=transformer)
+    def __init__(self, transformer=None, params=None):
+        super(IdentityTransformationExplainer, self).__init__(transformer=transformer, params=params)
         self._transform_func = getattr(self._transformer, 'transform', None)
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
 
     def transform(self, x):
         return x if self._transform_func is None else self._transform_func(x)

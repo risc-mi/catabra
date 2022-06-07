@@ -18,7 +18,7 @@ import sys
 from catabra.explanation.base import TransformationExplainer, IdentityTransformationExplainer
 
 
-def sklearn_explainer_factory(obj):
+def sklearn_explainer_factory(obj, params=None):
     if obj is None:
         obj = []
     if isinstance(obj, sklearn.pipeline.Pipeline):
@@ -26,15 +26,15 @@ def sklearn_explainer_factory(obj):
         obj = [t[1] for t in obj.steps[:-1]]
 
     if isinstance(obj, list):
-        return PipelineExplainer(obj)
+        return PipelineExplainer(obj, params=params)
     elif isinstance(obj, (sklearn.preprocessing.RobustScaler, sklearn.preprocessing.StandardScaler,
                           sklearn.preprocessing.QuantileTransformer, sklearn.preprocessing.PowerTransformer,
                           sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.Normalizer,
                           sklearn.preprocessing.OrdinalEncoder)):
-        return IdentityTransformationExplainer(transformer=obj)
+        return IdentityTransformationExplainer(transformer=obj, params=params)
     elif isinstance(obj, str):
         if obj == 'passthrough':
-            return IdentityTransformationExplainer(transformer=obj)
+            return IdentityTransformationExplainer(transformer=obj, params=params)
         else:
             return obj
 
@@ -42,7 +42,7 @@ def sklearn_explainer_factory(obj):
     if cls is None:
         return obj
     else:
-        return cls(obj)
+        return cls(obj, params=params)
 
 
 _BACKWARD_INPUT_SHAPE = 'S has {} features, but {} returns output with {} features.'
@@ -50,18 +50,20 @@ _BACKWARD_INPUT_SHAPE = 'S has {} features, but {} returns output with {} featur
 
 class PipelineExplainer(TransformationExplainer):
 
-    def __init__(self, steps: list):
-        super(PipelineExplainer, self).__init__()
-        self._explainers = [TransformationExplainer.make(t) for t in steps]
+    def __init__(self, steps: list, params=None):
+        super(PipelineExplainer, self).__init__(params=params)
+        if params is None:
+            self._explainers = [TransformationExplainer.make(t) for t in steps]
+        else:
+            step_params = params.get('steps', ())
+            assert len(step_params) == len(steps)
+            self._explainers = [TransformationExplainer.make(t, params=p) for t, p in zip(steps, step_params)]
 
     @property
     def params_(self) -> dict:
-        return dict(steps=[e.params_ for e in self._explainers])
-
-    def set_params(self, steps=(), **params):
-        assert len(steps) == len(self._explainers)
-        for p, e in zip(steps, self._explainers):
-            e.set_params(**p)
+        out = super(PipelineExplainer, self).params_
+        out['steps'] = [e.params_ for e in self._explainers]
+        return out
 
     def fit(self, x, y=None):
         raise RuntimeError(f'Method fit() of class {self.__class__.__name__} cannot be called.')
@@ -94,25 +96,27 @@ class PipelineExplainer(TransformationExplainer):
 
 class ColumnTransformerExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: sklearn.compose.ColumnTransformer):
-        super(ColumnTransformerExplainer, self).__init__(transformer=transformer)
-        self._explainers = [t if t == 'drop' else TransformationExplainer.make(t)
-                            for _, t, _ in self._transformer.transformers_]
+    def __init__(self, transformer: sklearn.compose.ColumnTransformer, params=None):
+        super(ColumnTransformerExplainer, self).__init__(transformer=transformer, params=params)
+        if params is None:
+            self._explainers = [t if t == 'drop' else TransformationExplainer.make(t)
+                                for _, t, _ in self._transformer.transformers_]
+            # list of pairs `(columns, n_out)`, where `columns` is a list of column-indices and `n_out` is the number
+            # of output features originating from `columns`
+            self.mapping_: Optional[dict] = None
+        else:
+            transformer_params = params.get('transformers', ())
+            assert len(transformer_params) == len(self._transformer.transformers_)
+            self._explainers = [t if t == 'drop' else TransformationExplainer.make(t, params=p)
+                                for (_, t, _), p in zip(self._transformer.transformers_, transformer_params)]
+            self.mapping_ = params.get('mapping')
         self._feature_names_in = getattr(self._transformer, '_feature_names_in', None)
-
-        # list of pairs `(columns, n_out)`, where `columns` is a list of column-indices and `n_out` is the number of
-        # output features originating from `columns`
-        self.mapping_: Optional[dict] = None
 
     @property
     def params_(self) -> dict:
-        return dict(transformers=[e.params_ for e in self._explainers], mapping=self.mapping_)
-
-    def set_params(self, transformers=(), mapping=None, **params):
-        assert len(transformers) == len(self._explainers)
-        for p, e in zip(transformers, self._explainers):
-            e.set_params(**p)
-        self.mapping_ = mapping
+        out = super(ColumnTransformerExplainer, self).params_
+        out.update(transformers=[{} if e == 'drop' else e.params_ for e in self._explainers], mapping=self.mapping_)
+        return out
 
     def fit_forward(self, x, y):
         self._validate_input(x, fitting=True)
@@ -237,8 +241,8 @@ class ColumnTransformerExplainer(TransformationExplainer):
 
 class OneHotEncoderExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: sklearn.preprocessing.OneHotEncoder):
-        super(OneHotEncoderExplainer, self).__init__(transformer=transformer)
+    def __init__(self, transformer: sklearn.preprocessing.OneHotEncoder, params=None):
+        super(OneHotEncoderExplainer, self).__init__(transformer=transformer, params=params)
         if self._transformer.drop_idx_ is not None:
             self._n_features_out = []
             for i, cats in enumerate(self._transformer.categories_):
@@ -249,13 +253,6 @@ class OneHotEncoderExplainer(TransformationExplainer):
                     self._n_features_out.append(n_cats - 1)
         else:
             self._n_features_out = [len(cats) for cats in self._transformer.categories_]
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -282,8 +279,8 @@ class OneHotEncoderExplainer(TransformationExplainer):
 
 class SimpleImputerExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: sklearn.impute.SimpleImputer):
-        super(SimpleImputerExplainer, self).__init__(transformer=transformer)
+    def __init__(self, transformer: sklearn.impute.SimpleImputer, params=None):
+        super(SimpleImputerExplainer, self).__init__(transformer=transformer, params=params)
         if self._transformer.strategy == 'constant':
             self._features = list(range(self._transformer.n_features_in_))
         else:
@@ -293,13 +290,6 @@ class SimpleImputerExplainer(TransformationExplainer):
             self._indicator_features = []
         else:
             self._indicator_features = list(self._transformer.indicator_.features_)
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -335,18 +325,17 @@ class SimpleImputerExplainer(TransformationExplainer):
 
 class _BaseFilterExplainer(TransformationExplainer):
 
-    def __init__(self, transformer):
-        super(_BaseFilterExplainer, self).__init__(transformer=transformer)
+    def __init__(self, transformer, params=None):
+        super(_BaseFilterExplainer, self).__init__(transformer=transformer, params=params)
         mask = self._transformer._get_support_mask()  # noqa
         self._features = np.where(mask)[0]
-        self.n_features_in_ = None
+        self.n_features_in_ = None if params is None else params.get('n_features_in')
 
     @property
     def params_(self) -> dict:
-        return dict(n_features_in=self.n_features_in_)
-
-    def set_params(self, n_features_in=None, **params):
-        self.n_features_in_ = n_features_in
+        out = super(_BaseFilterExplainer, self).params_
+        out['n_features_in'] = self.n_features_in_
+        return out
 
     def fit_forward(self, x, y):
         self.n_features_in_ = x.shape[1]        # not all subclasses have an `n_features_in_` attribute
@@ -378,15 +367,8 @@ class _BaseFilterExplainer(TransformationExplainer):
 
 class MissingIndicatorExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: sklearn.impute.MissingIndicator):
-        super(MissingIndicatorExplainer, self).__init__(transformer=transformer)
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
+    def __init__(self, transformer: sklearn.impute.MissingIndicator, params=None):
+        super(MissingIndicatorExplainer, self).__init__(transformer=transformer, params=params)
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -449,17 +431,10 @@ class RFECV(_BaseFilterExplainer):
 
 class FeatureAgglomerationExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: sklearn.cluster.FeatureAgglomeration):
-        super(FeatureAgglomerationExplainer, self).__init__(transformer=transformer)
+    def __init__(self, transformer: sklearn.cluster.FeatureAgglomeration, params=None):
+        super(FeatureAgglomerationExplainer, self).__init__(transformer=transformer, params=params)
         self._clusters = np.unique(self._transformer.labels_)
         self._weights = None
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -515,19 +490,12 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
 
 class _LinearTransformationExplainer(TransformationExplainer):
 
-    def __init__(self, transformer, matrix: np.ndarray):
+    def __init__(self, transformer, matrix: np.ndarray, params=None):
         # `matrix` must be array of shape `(n_features_in, n_features_out)`, such that `transform()` approximately
         # returns `np.dot(x, matrix)`
-        super(_LinearTransformationExplainer, self).__init__(transformer=transformer)
+        super(_LinearTransformationExplainer, self).__init__(transformer=transformer, params=params)
         assert matrix.ndim == 2
         self._matrix = matrix / np.maximum(np.abs(matrix).sum(axis=0, keepdims=True), 1e-7)
-
-    @property
-    def params_(self) -> dict:
-        return {}
-
-    def set_params(self, **params):
-        pass
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -551,30 +519,30 @@ class _LinearTransformationExplainer(TransformationExplainer):
 
 class PCAExplainer(_LinearTransformationExplainer):
 
-    def __init__(self, transformer: sklearn.decomposition.PCA):
-        super(PCAExplainer, self).__init__(transformer, transformer.components_.T)
+    def __init__(self, transformer: sklearn.decomposition.PCA, params=None):
+        super(PCAExplainer, self).__init__(transformer, transformer.components_.T, params=params)
 
 
 class FastICAExplainer(_LinearTransformationExplainer):
 
-    def __init__(self, transformer: sklearn.decomposition.FastICA):
-        super(FastICAExplainer, self).__init__(transformer, transformer.components_.T)
+    def __init__(self, transformer: sklearn.decomposition.FastICA, params=None):
+        super(FastICAExplainer, self).__init__(transformer, transformer.components_.T, params=params)
 
 
 class TruncatedSVDExplainer(_LinearTransformationExplainer):
 
-    def __init__(self, transformer: sklearn.decomposition.TruncatedSVD):
-        super(TruncatedSVDExplainer, self).__init__(transformer, transformer.components_.T)
+    def __init__(self, transformer: sklearn.decomposition.TruncatedSVD, params=None):
+        super(TruncatedSVDExplainer, self).__init__(transformer, transformer.components_.T, params=params)
 
 
 class RBFSamplerExplainer(_LinearTransformationExplainer):
 
-    def __init__(self, transformer: sklearn.kernel_approximation.RBFSampler):
+    def __init__(self, transformer: sklearn.kernel_approximation.RBFSampler, params=None):
         # RBFSampler does not implement a linear transformation, but instead returns
         #   X_hat = cos(X @ A + offset) * c
         # Adding a component-wise offset, taking the cosine and multiplying by a constant factor have no influence on
         # feature importance, and can hence be ignored.
-        super(RBFSamplerExplainer, self).__init__(transformer, transformer.random_weights_)
+        super(RBFSamplerExplainer, self).__init__(transformer, transformer.random_weights_, params=params)
 
 
 def _fit_forward_one(explainer, x, y, weight):
