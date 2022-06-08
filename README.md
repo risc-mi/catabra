@@ -153,7 +153,8 @@ Config files should be JSON files with a single top-level object. The possible p
 See `util/config.py` for further information, including the default values of the parameters.
 
 ### General Configuration Parameters
-* `"automl"`: AutoML backend to use. Currently, the only available option is `"auto-sklearn"`.
+* `"automl"`: AutoML backend to use. Currently, the only available option is `"auto-sklearn"`, but new backends can be
+    added by subclassing `catabra.automl.base.AutoMLBackend`.
 * `"ensemble_size"`: Maximum size of the final ensemble of prediction models. Passed to the AutoML backend.
 * `"ensemble_nbest"`: Maximum number of best single models to use in the final ensemble. Passed to the AutoML
     backend.
@@ -176,6 +177,8 @@ See `util/config.py` for further information, including the default values of th
     If `0`, bootstrapping is disabled; otherwise, the main performance metrics specified by config params
     `"binary_classification_metrics"` etc. are evaluated as many times on randomly drawn (with replacement) resamples
     of the final prediction results, to obtain summary statistics like mean, standard deviation, etc.
+* `"explainer"`: Explanation backend to use. Currently, the only available option is `"shap"`, but new backends can be
+    added by subclassing `catabra.explanation.base.EnsembleExplainer`.
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*
