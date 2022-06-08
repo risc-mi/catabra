@@ -1,4 +1,8 @@
+from typing import Optional, Callable
+from pathlib import Path
+import importlib
 import numpy as np
+import pandas as pd
 
 
 class DataExplainer:
@@ -24,35 +28,37 @@ class DataExplainer:
 
 class ModelExplainer:
 
-    def __init__(self, model=None):
-        self._model = model
-
-    @property
-    def model(self):
-        return self._model
-
-    def fit(self, x, y) -> 'ModelExplainer':
+    @classmethod
+    def global_behavior(cls) -> dict:
         """
-        Fit this explainer to training data.
-        :param x: Features, array-like of shape `(n_samples, n_features)`. Does not need to be the data the underlying
-        prediction model was trained on!
-        :param y: Labels, array-like of shape `(n_samples, n_labels)` or `(n_samples,)`.
-        :return: This `ModelExplainer` instance.
+        Description of the behavior of method `explain_global()`, especially w.r.t. parameter `x`. Dict with keys
+        * "accepts_x": True if `x` can be provided.
+        * "requires_x": True if `x` must be provided. If False but "accepts_x" is True, the global behavior differs
+            depending on whether `x` is provided. "requires_x" can only be True if "accepts_x" is True as well.
+        * "mean_of_local": True if global explanations are the mean of the individual local explanations, if `x` is
+            provided. If True, it might be better to call method `explain()` instead of `explain_global()`.
+        :return: Dict, as described above.
         """
-        return self
+        raise NotImplementedError()
 
-    def explain(self, x) -> np.ndarray:
+    def explain(self, x, jobs: int = 1, batch_size: Optional[int] = None) -> np.ndarray:
         """
         Explain data locally by transforming it into an array of explanations.
         :param x: Features, array-like of shape `(n_samples, n_features)`. `n_features` must be the same as in the data
         this explainer instance was fitted on.
+        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
+        :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :return: Explanations, array of shape `(*dims, n_samples, n_features)`.
         """
         raise NotImplementedError()
 
-    def explain_global(self) -> np.ndarray:
+    def explain_global(self, x=None, jobs: int = 1, batch_size: Optional[int] = None) -> np.ndarray:
         """
         Explain the model globally.
+        :param x: Data used for explaining the model, optional, array-like of shape `(n_samples, n_features)`.
+        Since global explanations are computed, some explainers might not require this parameter.
+        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
+        :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :return: Explanations, array of shape `(*dims, n_features)`, where `n_features` are as in the data this
         explainer instance was fitted on.
         """
@@ -184,13 +190,82 @@ class IdentityTransformationExplainer(TransformationExplainer):
         return s
 
 
+class EnsembleExplainer:
+    __registered = {}
+
+    @staticmethod
+    def register(name: str, factory: Callable[..., 'EnsembleExplainer']):
+        """
+        Register a new ensemble explainer factory.
+        :param name: The name of the ensemble explainer.
+        :param factory: The factory, a function mapping argument-dicts to instances of class `EnsembleExplainer` (or
+        subclasses thereof).
+        """
+        EnsembleExplainer.__registered[name] = factory
+
+    @staticmethod
+    def get(name: str, **kwargs) -> Optional['EnsembleExplainer']:
+        factory = EnsembleExplainer.__registered.get(name)
+        return factory if factory is None else factory(**kwargs)
+
+    @classmethod
+    def name(cls) -> str:
+        raise NotImplementedError()
+
+    @classmethod
+    def global_behavior(cls) -> dict:
+        """
+        Description of the behavior of method `explain_global()`, especially w.r.t. parameter `x`. Dict with keys
+        * "accepts_x": True if `x` can be provided.
+        * "requires_x": True if `x` must be provided. If False but "accepts_x" is True, the global behavior differs
+            depending on whether `x` is provided. "requires_x" can only be True if "accepts_x" is True as well.
+        * "mean_of_local": True if global explanations are the mean of the individual local explanations, if `x` is
+            provided. If True, it might be better to call method `explain()` instead of `explain_global()`, since the
+            computational effort is identical.
+        :return: Dict, as described above.
+        """
+        raise NotImplementedError()
+
+    def __init__(self, ensemble: 'FittedEnsemble' = None, x: Optional[pd.DataFrame] = None, y=None, params=None):
+        """
+        Initialize an EnsembleExplainer for explaining the given ensemble, or constituents of it.
+        :param ensemble: The ensemble to explain, an instance of FittedEnsemble.
+        :param x: Training data, which is required by some explanation methods (e.g., SHAP).
+        :param y: Labels of `x`, optional.
+        :param params: Params obtained from a previous instantiation of an ensemble explainer of this type on
+        `ensemble`. If given, neither `x` nor `y` may be provided.
+        """
+        if not (params is None or (x is None and y is None)):
+            raise ValueError('If params is given, x and y must be None.')
+
+    @property
+    def params_(self) -> dict:
+        """
+        Get all params necessary for instantiating this EnsembleExplainer via parameter `params`.
+        """
+        raise NotImplementedError()
+
+    def explain(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
+                show_progress: bool = False) -> dict:
+        raise NotImplementedError()
+
+    def explain_global(self, x: Optional[pd.DataFrame] = None, jobs: int = 1, batch_size: Optional[int] = None,
+                       model_id=None, show_progress: bool = False) -> dict:
+        raise NotImplementedError()
+
+
+# load explanation backends
+for _d in Path(__file__).parent.iterdir():
+    if _d.is_dir() and (_d / '__init__.py').exists():
+        importlib.import_module('.' + _d.stem, package=__package__)
+
+
 # Paradigm for explaining a pipeline `model` of a FittedEnsemble
 #
 # setup:
-# >>> preprocessing_explainer = TransformationExplainer(transformation=model['preprocessing'])
-# >>> estimator_explainer = ModelExplainer(model=model['estimator'])
+# >>> preprocessing_explainer = TransformationExplainer.make(transformation=model.preprocessing)
 # >>> x_train = preprocessing_explainer.fit_forward(x_train, y_train)
-# >>> estimator_explainer.fit(x_train, y_train)
+# >>> estimator_explainer = ModelExplainer(model.estimator, x_train, ...)
 #
 # local explanations for `x_test`:
 # >>> x_test_pp = preprocessing_estimator.forward(x_test)
@@ -203,7 +278,7 @@ class IdentityTransformationExplainer(TransformationExplainer):
 
 
 # Paradigm for explaining data `(x, y)` after applying some preprocessing steps `preprocessing`:
-# >>> preprocessing_explainer = TransformationExplainer(transformation=preprocessing)
+# >>> preprocessing_explainer = TransformationExplainer.make(transformation=preprocessing)
 # >>> data_explainer = DataExplainer()
 # >>> x_pp = preprocessing_explainer.fit_forward(x, y)`
 # >>> explanation = data_explainer.explain(x_pp, y)                     # or `explain_global(x_pp, y)`

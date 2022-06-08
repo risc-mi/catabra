@@ -1,4 +1,5 @@
-from .base import DataExplainer, ModelExplainer, TransformationExplainer, IdentityTransformationExplainer
+from .base import DataExplainer, ModelExplainer, TransformationExplainer, IdentityTransformationExplainer, \
+    EnsembleExplainer
 from . import sklearn_explainer
 
 try:
@@ -12,4 +13,4 @@ TransformationExplainer.register_factory('sklearn', sklearn_explainer.sklearn_ex
 
 
 __all__ = ['DataExplainer', 'ModelExplainer', 'TransformationExplainer', 'IdentityTransformationExplainer',
-           'sklearn_explainer']
+           'EnsembleExplainer', 'sklearn_explainer']
