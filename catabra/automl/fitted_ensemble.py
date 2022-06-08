@@ -336,7 +336,8 @@ class FittedEnsemble:
         return obj
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(model_ids={self.model_ids_}, task="{self.task}")'
+        dct = {k: v.estimator.__class__.__name__ for k, v in self.models_.items()}
+        return f'{self.__class__.__name__}(models={dct}, task="{self.task}")'
 
     def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], proba: bool) -> Dict[Any, np.ndarray]:
         # get predictions of all constituent models and entire ensemble
