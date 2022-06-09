@@ -300,9 +300,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             if automl is not None:
                 backend = AutoMLBackend.get(automl, task=encoder.task_, config=config, tmp_folder=out / automl)
                 if backend is None:
-                    raise ValueError(f'Unknown AutoML backend: {automl}.')
+                    raise ValueError(f'Unknown AutoML backend: {automl}')
                 logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
-                # return x_train, y_train, group, encoder
                 backend.fit(x_train, y_train, groups=group, time=time, jobs=jobs, dataset_name=dataset_name)
                 io.dump(backend, out / 'model.joblib')
                 io.dump(io.to_json(backend.summary()), out / 'model_summary.json')
@@ -327,6 +326,28 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 if interactive_plots:
                     plotting.save(plot_training_history(hist, interactive=True), out)
                 logging.log('Finished model building')
+
+                explainer = config.get('explainer')
+                if explainer is not None:
+                    from ..explanation.base import EnsembleExplainer
+                    logging.log(f'Creating {explainer} explainer')
+                    try:
+                        explainer = EnsembleExplainer.get(
+                            explainer,
+                            ensemble=backend.fitted_ensemble(),
+                            feature_names=encoder.feature_names_,
+                            target_names=encoder.get_target_or_class_names(),
+                            x=x_train,
+                            y=y_train
+                        )
+                    except Exception as e:      # noqa
+                        logging.warn(f'Error when creating explainer; skipping\n' + str(e))
+                    else:
+                        if explainer is None:
+                            logging.warn(f'Unknown explanation backend: {config["explainer"]}')
+                        else:
+                            (out / explainer.name()).mkdir(exist_ok=True, parents=True)
+                            io.dump(explainer.params_, out / explainer.name() / 'params.joblib')
 
         end = pd.Timestamp.now()
         logging.log(f'### Analysis finished at {end}')

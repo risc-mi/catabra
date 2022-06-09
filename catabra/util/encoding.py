@@ -63,6 +63,27 @@ class Encoder(BaseEstimator):
     def n_targets_(self) -> Optional[int]:
         return None if self._targets is None else len(self._targets)
 
+    @property
+    def feature_names_(self) -> Optional[list]:
+        return None if self._features is None else [f['name'] for f in self._features]
+
+    @property
+    def target_names_(self) -> Optional[list]:
+        return None if self._targets is None else [f['name'] for f in self._targets]
+
+    def get_target_or_class_names(self) -> Optional[list]:
+        """
+        Convenience method for getting the names of the targets or, in case of multiclass classification, the names of
+        the individual classes.
+        :return: List of target- or class names.
+        """
+        if self._task == 'multiclass_classification':
+            if self._targets is not None:
+                assert len(self._targets) == 1
+                return list(self._targets[0]['dtype']['categories'])
+        else:
+            return self.target_names_
+
     def fit(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None) -> 'Encoder':
         self._features = [self._fit_series(x[c]) for c in x.columns]
 
