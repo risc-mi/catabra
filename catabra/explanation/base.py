@@ -255,10 +255,35 @@ class EnsembleExplainer:
 
     def explain(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
                 show_progress: bool = False) -> dict:
+        """
+        Explain the ensemble, or some of its constituent models (pipelines), on a set of samples.
+        :param x: The samples, a DataFrame with the same columns as the ensemble was trained on.
+        :param jobs: The number of jobs to use.
+        :param batch_size: The batch size to use.
+        :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.
+        :param show_progress: Whether to display a progress bar.
+        :return: Dict with 1-2 levels of nesting. The keys in the outer dict are model-IDs (possibly including
+        "__ensemble__"), and the keys in the inner dicts (if any) are arbitrary and usually depend on the prediction
+        task and the explanation backend. Ultimately, the values are DataFrames with the same row index as `x` and
+        columns corresponding to `feature_names`, containing feature importance scores. Note that the result consists
+        entirely of floating point values, even if `x` has categorical or other columns.
+        """
         raise NotImplementedError()
 
     def explain_global(self, x: Optional[pd.DataFrame] = None, jobs: int = 1, batch_size: Optional[int] = None,
                        model_id=None, show_progress: bool = False) -> dict:
+        """
+        Explain the ensemble, or some of its constituent models (pipelines), globally.
+        :param x: Samples, optional, a DataFrame with the same columns as the ensemble was trained on.
+        Call method `global_behavior()` to see whether this argument is accepted or required (depends on the backend).
+        :param jobs: The number of jobs to use.
+        :param batch_size: The batch size to use.
+        :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.
+        :param show_progress: Whether to display a progress bar.
+        :return: Dict whose keys are model-IDs (possibly including "__ensemble__"), and whose values are Series or
+        DataFrames with feature importance scores. In either case, the row index equals `feature_names`, and the
+        columns of DataFrames can be arbitrary and usually depend on the prediction task and the explanation backend.
+        """
         raise NotImplementedError()
 
 

@@ -123,14 +123,12 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         return self._explain_multi(model_id, x, jobs, batch_size, True, not show_progress)
 
-    def _explain_single(self, model_id, x: pd.DataFrame, jobs: int, batch_size: Optional[int], glob: bool,
+    def _explain_single(self, model_id, x: pd.DataFrame, jobs: int, batch_size: int, glob: bool,
                         silent: bool) -> np.ndarray:
-        if batch_size is None:
-            batch_size = min(32, len(x))
         func = _explain_single_global if glob else _explain_single
         preprocessing, estimator = self._explainers[model_id]
-        if len(x) <= batch_size:
-            explanations = func(preprocessing, estimator, x)
+        if len(x) <= batch_size or glob:
+            return func(preprocessing, estimator, x)
         else:
             explanations = joblib.Parallel(n_jobs=jobs)(
                 joblib.delayed(func)(
@@ -141,8 +139,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                 )
                 for i in tqdm(range((len(x) + batch_size - 1) // batch_size), disable=silent, desc='Sample batches')
             )
-            explanations = np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
-        return explanations
+            return np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
 
     def _explain_multi(self, model_id: Optional[list], x: pd.DataFrame, jobs: int, batch_size: Optional[int],
                        glob: bool, silent: bool) -> dict:
@@ -155,7 +152,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         keys = [k for k in model_id if k in self._explainers]
 
         if len(x) <= batch_size:
-            func = _explain_single_global if glob else _explain_single
+            func = _explain_single      # explain locally, average at very end if `glob` is True
             if len(keys) <= 1:
                 all_explanations = [func(*self._explainers[key], x) for key in keys]
             else:
@@ -172,7 +169,8 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             for i, key in enumerate(keys):
                 if not silent:
                     print(f'Model {key} ({i + 1} of {len(keys)}):')
-                all_explanations.append(self._explain_single(key, x, jobs, batch_size, glob, silent))
+                # explain locally, average at very end if `glob` is True
+                all_explanations.append(self._explain_single(key, x, jobs, batch_size, False, silent))
 
         out = {k: s for k, s in zip(keys, all_explanations)}
         if isinstance(self._ensemble.meta_estimator_, (list, tuple)) \
@@ -183,7 +181,29 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             # https://github.com/slundberg/shap/issues/112
             out['__ensemble__'] = sum(w * s for w, s in zip(self._ensemble.meta_estimator_, all_explanations))
 
-        return out
+        if glob:
+            # reason for explaining everything locally and averaging at end is that we want to distinguish between
+            # positive and negative contributions, and back-propagating through preprocessing steps could change
+            # the polarity of scores
+            out = {k: _local_to_global(v) for k, v in out.items()}
+
+        return {k: self._finalize_output(v, x.index, glob) for k, v in out.items()}
+
+    def _finalize_output(self, s: np.ndarray, index, glob: bool):
+        if glob:
+            if s.ndim == 2:
+                # (2, n_features)
+                # don't call columns "pos" and "neg", as these might be confused with positive and negative class
+                return pd.DataFrame(data=s.T, index=self._feature_names, columns=['>0', '<0'])
+            else:
+                # (2, n_targets, n_features)
+                return pd.DataFrame(data=s.transpose((2, 1, 0)).reshape(s.shape[-1], -1), index=self._feature_names,
+                                    columns=[n + suffix for n in self._target_names for suffix in ('_>0', '_<0')])
+        else:
+            if s.ndim == 2:
+                return pd.DataFrame(data=s, index=index, columns=self._feature_names)
+            else:
+                return {n: self._finalize_output(s[i], index, glob) for i, n in enumerate(self._target_names)}
 
 
 class SHAPExplainer(ModelExplainer):
@@ -300,16 +320,19 @@ class SHAPExplainer(ModelExplainer):
         :param batch_size: The batch size to use.
         :return: SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction
         task:
-        * Regression: Shape is `([n_targets], n_features)`, where the first axis is only present if there are multiple
-            targets.
-        * Binary classification: Shape is `(n_features,)`.
-        * Multiclass- and multilabel classification: Shape is `(n_classes, n_features)`.
+        * Regression: Shape is `(2, [n_targets], n_features)`, where the second axis is only present if there are
+            multiple targets.
+        * Binary classification: Shape is `(2, n_features)`.
+        * Multiclass- and multilabel classification: Shape is `(2, n_classes, n_features)`.
+        In any case, the first axis distinguishes between positive (index 0) and negative (index 1) contributions.
+        Averaging happens by dividing through the total number of samples, such that `result[0] + result[1]` is the
+        average feature importance and `result[0] - result[1]` is the average _absolute_ feature importance.
 
         See method `explain()` for details.
         """
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
-        return self.explain(x, jobs=jobs, batch_size=batch_size).mean(axis=-2)      # sample axis is last-but-one
+        return _local_to_global(self.explain(x, jobs=jobs, batch_size=batch_size))
 
 
 class MultiOutputExplainer(shap.Explainer):
@@ -489,6 +512,12 @@ def _sample(x, permutation: np.ndarray = None, n: int = 100):
             return x[idx]
 
     return x
+
+
+def _local_to_global(s: np.ndarray) -> np.ndarray:
+    positive = (s * (s > 0)).sum(axis=-2)  # sample axis is last-but-one
+    negative = (s * (s < 0)).sum(axis=-2)  # sample axis is last-but-one
+    return np.stack([positive, negative], axis=0) / s.shape[-2]
 
 
 def _explain_single(preprocessing_explainer: TransformationExplainer, estimator_explainer: SHAPExplainer,
