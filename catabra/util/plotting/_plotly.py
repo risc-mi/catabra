@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Union, Optional
 import numpy as np
 import pandas as pd
 from plotly import express as px
@@ -180,9 +180,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     def _to_color(_c: tuple) -> str:
         return f'rgb({round(_c[0] * 256)},{round(_c[1] * 256)},{round(_c[2] * 256)})'
 
-    if isinstance(cmap, str):
-        from matplotlib import pyplot as plt
-        cmap = plt.get_cmap(cmap)
+    cmap = _common.get_colormap(cmap)
     cmap_min = _to_color(cmap(0.0))
     cmap_max = _to_color(cmap(1.0))
 
@@ -470,4 +468,121 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
         showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend) or any(lbl is not None for lbl in deviation_legend)
     )
+    return fig
+
+
+def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] = None,
+             color_name: Optional[str] = None, title: Optional[str] = None, x_label: Optional[str] = None,
+             cmap='red_blue', **kwargs):
+    """
+    Create a beeswarm plot, inspired by (and largely copied from) the shap package [1]. This plot type is very useful
+    for displaying local feature importance scores for a set of samples.
+
+    [1] https://github.com/slundberg/shap/blob/master/shap/plots/_beeswarm.py
+
+    :param values: Values to plot, a DataFrame whose columns correspond to the rows in the plot.
+    :param colors: Optional, colors of the points. A DataFrame with the same shape and column names as `values`, or a
+    Series with the same number of rows as `values`.
+    :param color_name: Name of the color bar; only relevant if `colors` is provided.
+    :param title: Title of the figure.
+    :param x_label: Label of the x-axis.
+    :param cmap: Name of a color map.
+    :return: plotly figure object.
+    """
+
+    assert all(values[c].dtype.kind in 'ifb' for c in values.columns)
+    n_samples, n_features = values.shape
+    row_height = 0.4
+
+    colors_orig = colors
+    if isinstance(colors, pd.DataFrame):
+        assert colors.shape == values.shape
+        assert (colors.columns == values.columns).all()
+    elif isinstance(colors, pd.Series):
+        assert len(colors) == len(values)
+        if colors.dtype.name == 'category':
+            colors = colors.cat.codes
+
+    cmap = _common.get_colormap(cmap)
+    fig = go.Figure()
+
+    values_min = values.min().min()
+    values_max = values.max().max()
+
+    # beeswarm
+    for pos, column in enumerate(reversed(values.columns)):
+        fig.add_shape(type='line', line=dict(dash='dash', color='#cccccc', width=0.5),
+                      x0=values_min, y0=pos, x1=values_max, y1=pos)
+        if isinstance(colors, pd.DataFrame):
+            col = colors[column]
+            col_orig = colors_orig[column]
+        elif isinstance(colors, pd.Series):
+            col = colors
+            col_orig = colors_orig
+        else:
+            col = None
+            col_orig = None
+        gray, colored = _common.beeswarm_feature(values[column], col, row_height)
+
+        if gray is not None:
+            x_gray, y_gray, i_gray = gray
+            if col is None:
+                c_gray = (cmap(np.zeros((1,), dtype=np.float32))[0, :3] * 255).astype(np.uint8)
+                c_gray = [f'rgb({c_gray[0]},{c_gray[1]},{c_gray[2]})'] * len(x_gray)
+            else:
+                c_gray = ['#777777'] * len(x_gray)
+        if colored is not None:
+            x_colored, y_colored = colored[:2]
+            c_colored = (cmap((np.clip(colored[2], colored[3], colored[4]) - colored[3]) / (colored[4] - colored[3]))[:, :3] * 255).astype(np.uint8)
+            c_colored = [f'rgb({c[0]},{c[1]},{c[2]})' for c in c_colored]
+
+        if gray is None:
+            if colored is not None:
+                x = x_colored
+                y = y_colored
+                c = c_colored
+                i = colored[5]
+        elif colored is None:
+            x = x_gray
+            y = y_gray
+            c = c_gray
+            i = i_gray
+        else:
+            x = pd.concat([x_gray, x_colored])
+            y = np.concatenate([y_gray, y_colored])
+            c = c_gray + c_colored
+            i = np.concatenate([i_gray, colored[5]])
+
+        if col_orig is None:
+            text = ['ID={}<br>X={}'.format(x.index[j], x.iloc[j]) for j in range(len(x))]
+        else:
+            text = ['ID={}<br>X={}<br>{}={}'.format(x.index[j], x.iloc[j], color_name, col_orig.iloc[i[j]])
+                    for j in range(len(x))]
+
+        fig.add_trace(
+            go.Scattergl(
+                x=x,
+                y=pos + y,
+                mode='markers',
+                marker=dict(size=4, color=c),
+                hovertemplate='%{text}',
+                text=text,
+                name=column
+            )
+        )
+
+    fig.update_layout(
+        xaxis=dict(title=x_label, constrain='domain'),
+        yaxis=dict(
+            ticktext=list(reversed(values.columns)),
+            tickvals=list(range(n_features)),
+            zeroline=False
+        ),
+        title=dict(text=_common.make_title(None, title), x=0.5, xref='paper'),
+        showlegend=False
+    )
+
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(range=[-1, n_features], showgrid=False)
+
     return fig

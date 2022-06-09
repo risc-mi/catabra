@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -89,7 +89,7 @@ def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str
     d_max = max(y_true.max(), y_hat.max())
     ax.set_aspect(1.)
     ax.plot([d_min, d_max], [d_min, d_max], ls='--', c='gray', lw=1.)
-    ax.scatter(y_true, y_hat, marker='.')
+    ax.scatter(y_true, y_hat, marker='.', rasterized=len(y_true) > 500)
 
     ax.set(
         ylabel='Predicted label' + unit_suffix,
@@ -337,6 +337,104 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         xlabel='Threshold',
         ylabel='Fraction of positive class',
         title=_common.make_title(name, title)
+    )
+    plt.close(ax.figure)
+    return ax.figure
+
+
+def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] = None,
+             color_name: Optional[str] = None, title: Optional[str] = None, x_label: Optional[str] = None, ax=None,
+             figsize='auto', cmap='red_blue', **kwargs):
+    """
+    Create a beeswarm plot, inspired by (and largely copied from) the shap package [1]. This plot type is very useful
+    for displaying local feature importance scores for a set of samples.
+
+    [1] https://github.com/slundberg/shap/blob/master/shap/plots/_beeswarm.py
+
+    :param values: Values to plot, a DataFrame whose columns correspond to the rows in the plot.
+    :param colors: Optional, colors of the points. A DataFrame with the same shape and column names as `values`, or a
+    Series with the same number of rows as `values`.
+    :param color_name: Name of the color bar; only relevant if `colors` is provided.
+    :param title: Title of the figure.
+    :param x_label: Label of the x-axis.
+    :param ax: An existing axis, or None.
+    :param figsize: Figure size or "auto".
+    :param cmap: Name of a color map.
+    :return: Matplotlib figure object.
+    """
+
+    assert all(values[c].dtype.kind in 'ifb' for c in values.columns)
+    n_samples, n_features = values.shape
+    row_height = 0.4
+    if ax is None:
+        if figsize == 'auto':
+            figsize = n_features * row_height + 1.5
+            figsize = (8, figsize)
+        _, ax = plt.subplots(figsize=figsize)
+
+    color_ticks = ['Low', 'High']
+    if isinstance(colors, pd.DataFrame):
+        assert colors.shape == values.shape
+        assert (colors.columns == values.columns).all()
+    elif isinstance(colors, pd.Series):
+        assert len(colors) == len(values)
+        if colors.dtype.name == 'category':
+            color_ticks = colors.cat.categories
+            colors = colors.cat.codes
+
+    cmap = _common.get_colormap(cmap)
+    ax.axvline(x=0, color='#999999', zorder=-1)
+
+    # beeswarm
+    for pos, column in enumerate(reversed(values.columns)):
+        ax.axhline(y=pos, color='#cccccc', lw=0.5, dashes=(1, 5), zorder=-1)
+        if isinstance(colors, pd.DataFrame):
+            col = colors[column]
+        elif isinstance(colors, pd.Series):
+            col = colors
+        else:
+            col = None
+        gray, colored = _common.beeswarm_feature(values[column], col, row_height)
+
+        if gray is not None:
+            if col is None:
+                col = cmap(0.)
+            else:
+                col = '#777777'
+            ax.scatter(gray[0], pos + gray[1], s=16, alpha=1, linewidth=0, zorder=3, color=col,
+                       rasterized=n_samples > 500)
+        if colored is not None:
+            ax.scatter(colored[0], pos + colored[1], cmap=cmap, c=colored[2], vmin=colored[3], vmax=colored[4],
+                       s=16, linewidth=0, alpha=1, zorder=3, rasterized=n_samples > 500)
+
+    # color bar
+    if colors is not None:
+        import matplotlib.cm as cm
+        m = cm.ScalarMappable(cmap=cmap)
+        m.set_array([0, 1])
+        cb = plt.colorbar(m, ticks=np.linspace(0, 1, len(color_ticks)), aspect=1000)
+        cb.set_ticklabels(color_ticks)
+        if color_name is not None:
+            cb.set_label(color_name, size=12, labelpad=0)
+        cb.ax.tick_params(length=0)
+        cb.set_alpha(1)
+        cb.outline.set_visible(False)
+        bbox = cb.ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
+        cb.ax.set_aspect((bbox.height - 0.9) * 20)
+
+    ax.xaxis.set_ticks_position('bottom')
+    ax.yaxis.set_ticks_position('none')
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.tick_params('y', length=20, width=0.5, which='major')
+
+    ax.set(
+        xlabel=x_label,
+        yticks=range(n_features),
+        yticklabels=reversed(values.columns),
+        ylim=(-1, n_features),
+        title=_common.make_title(None, title)
     )
     plt.close(ax.figure)
     return ax.figure
