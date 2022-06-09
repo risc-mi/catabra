@@ -11,8 +11,11 @@ from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_predictio
 
 class SHAPEnsembleExplainer(EnsembleExplainer):
 
-    def __init__(self, ensemble: FittedEnsemble = None, x=None, y=None, params=None):
-        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, x=x, y=y, params=params)
+    def __init__(self, ensemble: FittedEnsemble = None, feature_names: Optional[list] = None,
+                 target_names: Optional[list] = None, x: Optional[pd.DataFrame] = None,
+                 y: Optional[pd.DataFrame] = None, params=None):
+        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, feature_names=feature_names,
+                                                    target_names=target_names, x=x, y=y, params=params)
         self._ensemble = ensemble
 
         # dict mapping model (pipeline) IDs to pairs `(preprocessing_explainer, estimator_explainer)`
@@ -23,14 +26,27 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
 
         if params is None:
             assert x is not None
-            assert y is not None
-            y_shape = np.shape(y)
-            if len(y_shape) == 1:
-                self._n_targets = 1
+            if y is None:
+                n_targets = None
             else:
-                assert len(y_shape) == 2
-                self._n_targets = y_shape[1]
-            self._params = dict(explainers={}, n_targets=self._n_targets)
+                y_shape = np.shape(y)
+                if len(y_shape) == 1:
+                    n_targets = 1
+                else:
+                    assert len(y_shape) == 2
+                    n_targets = y_shape[1]
+            if feature_names is None:
+                self._feature_names = list(range(x.shape[1]))
+            else:
+                assert len(feature_names) == x.shape[1]
+                self._feature_names = feature_names
+            if target_names is None:
+                assert self._ensemble.task != 'multiclass_classification'
+                assert n_targets is not None
+                self._target_names = ['<unknown target>'] if n_targets == 1 else list(range(n_targets))
+            else:
+                self._target_names = target_names
+            self._params = dict(explainers={}, feature_names=self._feature_names, target_names=self._target_names)
             permutation = np.random.permutation(len(x))
             for _id, pipeline in ensemble.models_.items():
                 try:
@@ -39,7 +55,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                     estimator_explainer = SHAPExplainer(
                         pipeline.estimator,
                         task=ensemble.task,
-                        n_targets=self._n_targets,
+                        n_targets=len(self._target_names),
                         data=x_pp,
                         permutation=permutation
                     )
@@ -61,7 +77,8 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             unknown_ids = [_id for _id in self._params['explainers'] if _id not in ensemble.model_ids_]
             if unknown_ids:
                 raise ValueError('The following model IDs do not appear in the given ensemble: ' + str(unknown_ids))
-            self._n_targets = self._params.get('n_targets', 1)
+            self._target_names = self._params['target_names']
+            self._feature_names = self._params['feature_names']
             for _id, pipeline in ensemble.models_.items():
                 current_params = self._params['explainers'].get(_id)
                 if current_params is not None:
@@ -71,7 +88,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                         estimator_explainer = SHAPExplainer(
                             pipeline.estimator,
                             task=ensemble.task,
-                            n_targets=self._n_targets,
+                            n_targets=len(self._target_names),
                             params=current_params['estimator']
                         )
                     else:
@@ -79,7 +96,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                         estimator_explainer = SHAPExplainer(
                             pipeline,
                             task=ensemble.task,
-                            n_targets=self._n_targets,
+                            n_targets=len(self._target_names),
                             params=current_params['estimator']
                         )
                     self._explainers[_id] = (preprocessing_explainer, estimator_explainer)

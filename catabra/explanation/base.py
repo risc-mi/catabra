@@ -226,17 +226,25 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def __init__(self, ensemble: 'FittedEnsemble' = None, x: Optional[pd.DataFrame] = None, y=None, params=None):
+    def __init__(self, ensemble: 'FittedEnsemble' = None, feature_names: Optional[list] = None,
+                 target_names: Optional[list] = None, x: Optional[pd.DataFrame] = None,
+                 y: Optional[pd.DataFrame] = None, params=None):
         """
         Initialize an EnsembleExplainer for explaining the given ensemble, or constituents of it.
         :param ensemble: The ensemble to explain, an instance of FittedEnsemble.
+        :param feature_names: List of feature names, optional. None defaults to `range(n_features)`, where `n_features`
+        is determined from `x`.
+        :param target_names: List of target names, optional. In case of regression this is the list of target
+        variables, in case of binary classification this is the singleton list with the sole target variable, and in
+        multiclass- and multilabel classification this is the list of classes. None defaults to `range(n_targets)`,
+        where `n_targets` is determined from `y`.
         :param x: Training data, which is required by some explanation methods (e.g., SHAP).
         :param y: Labels of `x`, optional.
         :param params: Params obtained from a previous instantiation of an ensemble explainer of this type on
-        `ensemble`. If given, neither `x` nor `y` may be provided.
+        `ensemble`. If given, neither `feature_names`, `target_names`, `x` nor `y` may be provided.
         """
-        if not (params is None or (x is None and y is None)):
-            raise ValueError('If params is given, x and y must be None.')
+        if not (params is None or (feature_names is None and target_names is None and x is None and y is None)):
+            raise ValueError('If params is given, feature_names, target_names, x and y must be None.')
 
     @property
     def params_(self) -> dict:
