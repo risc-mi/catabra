@@ -8,7 +8,6 @@ from ..util import table as tu
 from ..util import io
 from ..util import logging
 from ..util import plotting
-from ..util.encoding import Encoder
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
@@ -57,13 +56,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     if len(table) == 0:
         raise ValueError('No table specified.')
     if folder is None:
-        raise ValueError('No folder specified.')
-    else:
-        folder = io.make_path(folder, absolute=True)
-    if not folder.exists():
-        raise ValueError(f'Folder "{folder.as_posix()}" does not exist.')
+        raise ValueError('No CaTabRa directory specified.')
 
-    config = io.load(folder / 'config.json')
+    loader = io.CaTabRaLoader(folder, check_exists=True)
+    config = loader.get_config()
 
     start = pd.Timestamp.now()
     table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in table]
@@ -71,12 +67,12 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     if out is None:
         out = table[0]
         if isinstance(out, pd.DataFrame):
-            out = folder / ('eval_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
+            out = loader.path / ('eval_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
         else:
-            out = folder / ('eval_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
+            out = loader.path / ('eval_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
     else:
         out = io.make_path(out, absolute=True)
-    if out == folder:
+    if out == loader.path:
         raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
     elif out.exists():
         if logging.prompt(f'Evaluation folder "{out.as_posix()}" already exists. Delete?',
@@ -97,7 +93,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         logging.log(f'### Evaluation started at {start}')
         invocation = dict(
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
-            folder=folder,
+            folder=loader.path,
             model_id=model_id,
             split=split,
             out=out,
@@ -129,7 +125,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 for _k, _m in split_masks.items():
                     yield _m, out / _k
 
-        encoder = Encoder.load(folder / 'encoder.json')
+        encoder = loader.get_encoder()
         x_test, y_test = encoder.transform(data=df)
 
         static_plots = config.get('static_plots', True)
@@ -149,8 +145,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                                        classify=encoder.task_ != 'regression',
                                                        fn=directory / 'statistics')
 
-        if encoder.task_ is not None and (folder / 'model.joblib').exists():
-            model = io.load(folder / 'model.joblib')
+        model = loader.get_model_or_fitted_ensemble()
+        if not (encoder.task_ is None or model is None):
             if model_id == '__ensemble__':
                 model_id = None
             main_metrics = config.get(encoder.task_ + '_metrics', [])
