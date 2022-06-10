@@ -43,7 +43,7 @@ def save(fig, fn: Union[str, Path], png: bool = False):
     elif hasattr(fig, 'savefig'):
         if fn.suffix == '':
             fn = fn.with_suffix('.png' if png else '.pdf')
-        fig.savefig(fn)
+        fig.savefig(fn, bbox_inches='tight')
     elif hasattr(fig, 'write_html'):
         if fn.suffix == '':
             fn = fn.with_suffix('.html')
