@@ -374,8 +374,7 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
 
     color_ticks = ['Low', 'High']
     if isinstance(colors, pd.DataFrame):
-        assert colors.shape == values.shape
-        assert (colors.columns == values.columns).all()
+        assert len(colors) == len(values)
     elif isinstance(colors, pd.Series):
         assert len(colors) == len(values)
         if colors.dtype.name == 'category':
@@ -388,24 +387,24 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
     # beeswarm
     for pos, column in enumerate(reversed(values.columns)):
         ax.axhline(y=pos, color='#cccccc', lw=0.5, dashes=(1, 5), zorder=-1)
-        if isinstance(colors, pd.DataFrame):
-            col = colors[column]
-        elif isinstance(colors, pd.Series):
+        if isinstance(colors, pd.Series):
             col = colors
+        elif isinstance(colors, pd.DataFrame) and column in colors.columns:
+            col = colors[column]
         else:
             col = None
         gray, colored = _common.beeswarm_feature(values[column], col, row_height)
 
         if gray is not None:
-            if col is None:
+            if colors is None:
                 col = cmap(0.)
             else:
                 col = '#777777'
             ax.scatter(gray[0], pos + gray[1], s=16, alpha=1, linewidth=0, zorder=3, color=col,
-                       rasterized=n_samples > 500)
+                       rasterized=n_samples * n_features > 50000)
         if colored is not None:
             ax.scatter(colored[0], pos + colored[1], cmap=cmap, c=colored[2], vmin=colored[3], vmax=colored[4],
-                       s=16, linewidth=0, alpha=1, zorder=3, rasterized=n_samples > 500)
+                       s=16, linewidth=0, alpha=1, zorder=3, rasterized=n_samples * n_features > 50000)
 
     # color bar
     if colors is not None:

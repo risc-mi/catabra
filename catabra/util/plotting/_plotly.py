@@ -496,8 +496,7 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
 
     colors_orig = colors
     if isinstance(colors, pd.DataFrame):
-        assert colors.shape == values.shape
-        assert (colors.columns == values.columns).all()
+        assert len(colors) == len(values)
     elif isinstance(colors, pd.Series):
         assert len(colors) == len(values)
         if colors.dtype.name == 'category':
@@ -513,12 +512,12 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
     for pos, column in enumerate(reversed(values.columns)):
         fig.add_shape(type='line', line=dict(dash='dash', color='#cccccc', width=0.5),
                       x0=values_min, y0=pos, x1=values_max, y1=pos)
-        if isinstance(colors, pd.DataFrame):
-            col = colors[column]
-            col_orig = colors_orig[column]
-        elif isinstance(colors, pd.Series):
+        if isinstance(colors, pd.Series):
             col = colors
             col_orig = colors_orig
+        elif isinstance(colors, pd.DataFrame) and column in colors.columns:
+            col = colors[column]
+            col_orig = colors_orig[column]
         else:
             col = None
             col_orig = None
@@ -526,7 +525,7 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
 
         if gray is not None:
             x_gray, y_gray, i_gray = gray
-            if col is None:
+            if colors is None:
                 c_gray = (cmap(np.zeros((1,), dtype=np.float32))[0, :3] * 255).astype(np.uint8)
                 c_gray = [f'rgb({c_gray[0]},{c_gray[1]},{c_gray[2]})'] * len(x_gray)
             else:
