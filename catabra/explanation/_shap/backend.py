@@ -2,9 +2,9 @@ from typing import Optional
 import joblib
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 import shap
 
+from ...util.logging import progress_bar
 from ..base import ModelExplainer, TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
 from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
 
@@ -137,7 +137,8 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                     x.iloc[i * batch_size:(i + 1) * batch_size],
                     copy=True
                 )
-                for i in tqdm(range((len(x) + batch_size - 1) // batch_size), disable=silent, desc='Sample batches')
+                for i in progress_bar(range((len(x) + batch_size - 1) // batch_size), disable=silent,
+                                      desc='Sample batches')
             )
             return np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
 
@@ -162,12 +163,12 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                         x,
                         copy=True
                     )
-                    for key in tqdm(keys, disable=silent, desc='Models')
+                    for key in progress_bar(keys, disable=silent, desc='Models')
                 )
         else:
             all_explanations = []
             for i, key in enumerate(keys):
-                if not silent:
+                if not silent and len(keys) > 1:
                     print(f'Model {key} ({i + 1} of {len(keys)}):')
                 # explain locally, average at very end if `glob` is True
                 all_explanations.append(self._explain_single(key, x, jobs, batch_size, False, silent))

@@ -1,4 +1,5 @@
 from typing import Optional, List
+import time
 import os
 import sys
 import traceback
@@ -51,6 +52,95 @@ def prompt(msg: str, accepted: Optional[List[str]] = None, allow_headless: bool 
                 res = input(msg).lower()
                 if res in accepted:
                     return res
+
+
+def progress_bar(iterable, desc: Optional[str] = None, total: Optional[int] = None, disable: bool = False,
+                 meter_width: int = 40):
+    """
+    Show a simple progress bar when iterating over a given iterable. This works similar to package `tqdm`, but in
+    contrast to `tqdm` also works when mirroring messages to a file.
+    :param iterable: The iterable.
+    :param desc: Description to add to the beginning of the progress bar, optional.
+    :param total: Total number of elements in `iterable` if `iterable` does not implement the `__len__()` method.
+    :param disable: Whether to disable the progress bar. If True, the behavior is equivalent to not calling this
+    function at all.
+    :param meter_width: The width of the meter, in characters. Should not be too long to make the whole progress bar
+    fit into a single line. Might have to be decreased if `desc` is a long text.
+    """
+    if disable:
+        for obj in iterable:
+            yield obj
+    else:
+        try:
+            total = len(iterable)
+        except AttributeError:
+            pass
+
+        if desc is None:
+            desc = ''
+        else:
+            desc = desc + ': '
+
+        state = dict(prev_len=0)
+
+        def _get_speed(_i: int, _elapsed: float) -> str:
+            if _i == 0:
+                return '?it/s'
+            if _i >= _elapsed:
+                return '{:.2f}it/s'.format(_i / _elapsed)
+            else:
+                return '{:.2f}s/it'.format(_elapsed / _i)
+
+        def _time_to_str(_t: float) -> str:
+            _out = ''
+            _t = int(_t)
+            if _t >= 3600:
+                _h, _t = divmod(_t, 3600)
+                _out = str(_h) + ':'
+            _m, _t = divmod(_t, 60)
+            _out += '{:02d}:{:02d}'.format(_m, _t)
+            return _out
+
+        def _print(text: str, nl: bool = True, r: bool = False):
+            prev_len = len(text)
+            pl = state['prev_len']
+            if r:
+                if prev_len < pl:
+                    text += ' ' * (pl - prev_len)
+                text = '\r' + text
+                state['prev_len'] = 0 if nl else prev_len
+            elif nl:
+                state['prev_len'] = 0
+            else:
+                state['prev_len'] = pl + prev_len
+            print(text, end='\n' if nl else '')
+
+        tic = time.time()
+        i = 0
+        if total is None:
+            _print(desc + '0 [?it/s]', nl=False)
+            for i, obj in enumerate(iterable, start=1):
+                yield obj
+                elapsed = time.time() - tic
+                _print(desc + '{} [{}, {}]'.format(i, _time_to_str(elapsed), _get_speed(i, elapsed)), nl=False, r=True)
+
+            _print(desc + '{} [{}, 100%]'.format(i, _time_to_str(time.time() - tic)), r=True)
+        elif total <= 0:
+            print(desc + '100%|' + '#' * meter_width + '| 0/0 [00:00<00:00, ?it/s]')
+        else:
+            _print(desc + '  0%|' + ' ' * meter_width + '| 0/{} [00:00<??:??, ?it/s]'.format(total), nl=False)
+            for i, obj in enumerate(iterable, start=1):
+                yield obj
+                elapsed = time.time() - tic
+                m = int(meter_width * i / total)
+                speed = _get_speed(i, elapsed)
+                _print(
+                    desc + '{:3d}%|'.format(round(i * 100 / total)) + '#' * m + ' ' * (meter_width - m) +
+                    '| {}/{} [{}<{}, {}]'.format(i, total, _time_to_str(elapsed),
+                                                 _time_to_str((total - i) * elapsed / i), speed),
+                    nl=(i == total),
+                    r=True
+                )
 
 
 class Headless:
