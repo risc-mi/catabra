@@ -220,7 +220,7 @@ def make_parser():
         '-m', '--model-id',
         type=str,
         nargs='+',
-        const='__ensemble__',
+        default='__ensemble__',
         metavar='MODEL_ID',
         help='The ID(s) of the prediction model(s) to explain. If no MODEL_ID is given, all models in the ensemble are'
              ' explained, if possible. Note that due to technical restrictions not all models might be explainable.'
@@ -228,13 +228,11 @@ def make_parser():
     explainer.add_argument(
         '-g', '--global',
         action='store_true',
-        metavar='GLOBAL',
         help='Create global explanations. If specified, ON might not be required (depends on the explanation backend).'
     )
     explainer.add_argument(
         '-l', '--local',
         action='store_true',
-        metavar='LOCAL',
         help='Create local explanations for each sample. Mutually exclusive with GLOBAL.'
     )
     explainer.add_argument(
