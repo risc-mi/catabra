@@ -1,6 +1,7 @@
 from .base import DataExplainer, ModelExplainer, TransformationExplainer, IdentityTransformationExplainer, \
     EnsembleExplainer
 from . import sklearn_explainer
+from .main import explain, explain_split, plot_beeswarms, plot_bars, average_local_explanations
 
 try:
     # in version 0.24.2 this is still experimental, and shap does not find it without explicitly enabling it
@@ -13,4 +14,5 @@ TransformationExplainer.register_factory('sklearn', sklearn_explainer.sklearn_ex
 
 
 __all__ = ['DataExplainer', 'ModelExplainer', 'TransformationExplainer', 'IdentityTransformationExplainer',
-           'EnsembleExplainer', 'sklearn_explainer']
+           'EnsembleExplainer', 'sklearn_explainer', 'explain', 'explain_split', 'plot_beeswarms', 'plot_bars',
+           'average_local_explanations']

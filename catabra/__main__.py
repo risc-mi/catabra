@@ -40,6 +40,18 @@ def make_parser():
         evaluate(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, out=args.out,
                  jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
 
+    def _explain(args: argparse.Namespace):
+        from .explanation import explain
+        glob = getattr(args, 'global')
+        loc = getattr(args, 'local')
+        if glob:
+            if loc:
+                raise ValueError('GLOBAL and LOCAL are mutually exclusive.')
+        elif not loc:
+            glob = None
+        explain(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, out=args.out,
+                glob=glob, jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
+
     analyzer = subparsers.add_parser(
         'analyze',
         help='Analyze a table, for instance by training classification- or regression models.'
@@ -174,6 +186,74 @@ def make_parser():
     _add_jobs(evaluator)
     _add_from(evaluator)
     evaluator.set_defaults(func=_evaluate)
+
+    explainer = subparsers.add_parser(
+        'explain',
+        help='Explain an existing CaTabRa object in terms of feature importance.'
+    )
+    explainer.add_argument(
+        'src',
+        type=str,
+        nargs='?',
+        metavar='SOURCE',
+        help='The CaTabRa object to explain. Must be the path to a folder which was the output directory of a'
+             ' previous invocation of `analyze`. "." is a shortcut for the current working directory.'
+    )
+    explainer.add_argument(
+        '--on',
+        type=str,
+        nargs='+',
+        metavar='ON',
+        help='The table(s) on which to explain SOURCE. Must be CSV- or Excel files, or tables stored in HDF5 files.'
+             ' Note that in contrast to command `evaluate`, no target columns need to be present.'
+    )
+    explainer.add_argument(
+        '-s', '--split',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='SPLIT',
+        help='The name of the column containing information about data splits.'
+             ' If given, SOURCE is explained on each split separately.'
+    )
+    explainer.add_argument(
+        '-m', '--model-id',
+        type=str,
+        nargs='+',
+        const='__ensemble__',
+        metavar='MODEL_ID',
+        help='The ID(s) of the prediction model(s) to explain. If no MODEL_ID is given, all models in the ensemble are'
+             ' explained, if possible. Note that due to technical restrictions not all models might be explainable.'
+    )
+    explainer.add_argument(
+        '-g', '--global',
+        action='store_true',
+        metavar='GLOBAL',
+        help='Create global explanations. If specified, ON might not be required (depends on the explanation backend).'
+    )
+    explainer.add_argument(
+        '-l', '--local',
+        action='store_true',
+        metavar='LOCAL',
+        help='Create local explanations for each sample. Mutually exclusive with GLOBAL.'
+    )
+    explainer.add_argument(
+        '-b', '--batch-size',
+        type=str,
+        metavar='BATCH_SIZE',
+        help='The batch size to use for explaining the CaTabRa object.'
+    )
+    explainer.add_argument(
+        '-o', '--out',
+        type=str,
+        metavar='OUT',
+        help='The name of the directory where to store the explanations.'
+             ' Defaults to "SOURCE/explain_ON_DATE_TIME", where DATE and TIME are the current date and time.'
+             ' "." is a shortcut for the current working directory.'
+    )
+    _add_jobs(explainer)
+    _add_from(explainer)
+    explainer.set_defaults(func=_explain)
 
     applier = subparsers.add_parser(
         'apply',
