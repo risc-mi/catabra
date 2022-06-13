@@ -142,6 +142,48 @@ In addition, there optional arguments as well:
     **Note**: If the invocation.json file specifies a model-ID or splitting column, but you want to evaluate the whole
     ensemble or disable splitting, you can simply pass `--model-id` / `--split` without argument.
 
+### Explaining CaTabRa Objects (Prediction Models)
+
+After analyzing data, the resulting models can be explained in terms of feature importance. The corresponding
+sub-command is `explain` and can be invoked as follows:
+```
+$ python -m catabra explain ...
+```
+Further information about the command can be obtained via
+```
+$ python -m catabra explain -h
+```
+
+The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
+explain. This is the output directory of a previous invocation of `analyze`.
+
+In addition, there optional arguments as well:
+* `--on TABLE [TABLE_2 TABLE_3 ...]`: File(s) containing the table(s) on which the CaTabRa object shall be explained.
+    The same restrictions apply to `TABLE` as with command `analyze`, described above. In particular, `TABLE` is
+    expected to contain all necessary feature columns, but in contrast to `analyze` and `evaluate` does not need to
+    contain any target columns.
+* `--split SPLIT`: Column used for splitting the data into disjoint subsets. If specified, `SOURCE` is explained on
+    each split separately.
+* `--model-id [MODEL_ID ...]`: Identifier(s) of the prediction model(s) to explain. By default, all models in the final
+    ensemble are explained. In contrast to `evaluate`, more than one ID can be specified.
+    Check out `SOURCE/model_summary.json` for all available model-IDs.
+* `--global`: Create global explanations. If specified, `TABLE` might not be required (depends on the explanation
+    backend). Mutually exclusive with `--local`. If neither `--global` nor `--local` are specified, global or local
+    explanations are generated depending on the explanation backend.
+* `--local`: Create local explanations, in which case `TABLE` is mandatory.
+    Mutually exclusive with `--global`. If neither `--global` nor `--local` are specified, global or local explanations
+    are generated depending on the explanation backend.
+* `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in `SOURCE`, with a
+    name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify whether it should
+    be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.
+* `--batch-size BATCH_SIZE`: Batch size used for generating explanations.
+* `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
+* `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
+    this file; this also includes `SOURCE` and `TABLE`.
+    
+    **Note**: If the invocation.json file specifies a model-ID or splitting column, but you want to explain all models
+    in the ensemble or disable splitting, you can simply pass `--model-id` / `--split` without argument.
+
 ### Applying CaTabRa Objects to New Data
 
 tbd
