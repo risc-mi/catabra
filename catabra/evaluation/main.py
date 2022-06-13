@@ -13,9 +13,10 @@ from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
 
 
-def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
-             split: Optional[str] = None, out: Union[str, Path, None] = None, jobs: Optional[int] = None,
-             batch_size: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
+def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
+             glob: Optional[bool] = False, split: Optional[str] = None, out: Union[str, Path, None] = None,
+             jobs: Optional[int] = None, batch_size: Optional[int] = None,
+             from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
     :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
@@ -23,6 +24,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     :param folder: The folder containing the CaTabRa object to evaluate.
     :param model_id: Optional, ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained
     model or the entire ensemble are evaluated.
+    :param explain: Explain prediction model(s). If "__all__", all models specified by `model_id` are explained;
+    otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are evaluated.
+    :param glob: Whether to create global instead of local explanations.
     :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
     subset is evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to
     carry any semantic information about training and test sets.
@@ -46,6 +50,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             folder = from_invocation.get('folder')
         if model_id is None:
             model_id = from_invocation.get('model_id')
+        if explain is None:
+            explain = from_invocation.get('explain')
+        if glob is None:
+            glob = from_invocation.get('glob')
         if split is None:
             split = from_invocation.get('split')
         if out is None:
@@ -95,6 +103,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
             folder=loader.path,
             model_id=model_id,
+            explain=explain,
+            glob=glob,
             split=split,
             out=out,
             jobs=jobs,
@@ -146,9 +156,36 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                                        fn=directory / 'statistics')
 
         model = loader.get_model_or_fitted_ensemble()
-        if not (encoder.task_ is None or model is None):
+        if encoder.task_ is None or model is None:
+            explain = []
+        else:
             if model_id == '__ensemble__':
                 model_id = None
+
+            if explain is None:
+                explain = set()
+            elif isinstance(explain, list):
+                explain = set(explain)
+            elif not isinstance(explain, set):
+                explain = {explain}
+            if '__ensemble__' in explain:
+                if model_id is None:
+                    explain = None
+                else:
+                    explain.remove('__ensemble__')
+                    explain.update(model.model_ids_)
+            elif '__all__' in explain:
+                if model_id is None:
+                    explain = None
+                else:
+                    explain.remove('__all__')
+                    explain.add(model_id)
+            if isinstance(explain, set):
+                if model_id is not None and any(e != model_id for e in explain):
+                    raise ValueError('Cannot explain models that are not being evaluated.')
+                explain = list(explain)
+            # `explain` is now either None or a list: None => explain all models; list => explain only these models
+
             main_metrics = config.get(encoder.task_ + '_metrics', [])
             bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
             if encoder.task_ == 'regression':
@@ -231,6 +268,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         logging.log(f'### Evaluation finished at {end}')
         logging.log(f'### Elapsed time: {end - start}')
         logging.log(f'### Output saved in {out.as_posix()}')
+
+    if explain is None or len(explain) > 0:
+        from ..explanation import explain as explain_fn
+        explain_fn(df, folder=folder, split=split, model_id=explain, out=out / 'explanations', glob=glob,
+                   batch_size=batch_size, jobs=jobs)
 
 
 def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,

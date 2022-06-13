@@ -131,6 +131,10 @@ In addition, there optional arguments as well:
     information about training and test sets.
 * `--model-id MODEL_ID`: Identifier of the prediction model to evaluate. By default, the sole trained model or the
     entire ensemble are evaluated. Check out `SOURCE/model_summary.json` for all available model-IDs.
+* `--explain [EXPLAIN ...]`: Explain prediction model(s). If passed without arguments, all models specified by
+    `MODEL_ID` are explained; otherwise, `EXPLAIN` contains the model ID(s) to explain. By default, explanations are
+    local, but this behavior can be overwritten by passing flag `--global`. See command `explain` for details.
+* `--global`: Create global explanations rather than local ones.
 * `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in `SOURCE`, with a
     name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify whether it should
     be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.

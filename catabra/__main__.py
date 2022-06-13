@@ -37,8 +37,12 @@ def make_parser():
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
-        evaluate(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, out=args.out,
-                 jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
+        expl = args.explain
+        if expl is not None and len(expl) == 0:
+            expl = '__all__'
+        evaluate(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, explain=expl,
+                 glob=getattr(args, 'global'), out=args.out, jobs=args.jobs, batch_size=args.batch_size,
+                 from_invocation=getattr(args, 'from', None))
 
     def _explain(args: argparse.Namespace):
         from .explanation import explain
@@ -168,6 +172,20 @@ def make_parser():
         metavar='MODEL_ID',
         help='The ID of the prediction model to evaluate. If no MODEL_ID is given, the sole trained model or the whole'
              ' ensemble is evaluated.'
+    )
+    evaluator.add_argument(
+        '-e', '--explain',
+        type=str,
+        nargs='*',
+        default=None,
+        metavar='EXPLAIN',
+        help='Explain prediction model(s). If passed without arguments, all models specified by MODEL_ID are explained;'
+             ' otherwise, EXPLAIN contains the model ID(s) to explain.'
+    )
+    evaluator.add_argument(
+        '-g', '--global',
+        action='store_true',
+        help='Create global explanations. Ignored unless --explain is passed.'
     )
     evaluator.add_argument(
         '-b', '--batch-size',
