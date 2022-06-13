@@ -437,3 +437,121 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
     )
     plt.close(ax.figure)
     return ax.figure
+
+
+def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict] = None, title: Optional[str] = None,
+                   x_label: Optional[str] = None, ax=None, figsize='auto', **kwargs):
+    """
+    Create a horizontal bar plot.
+    :param values: Values to plot, a DataFrame whose rows correspond to the rows in the plot and whose columns
+    correspond to grouped bars.
+    :param groups: Optional, grouping of columns. If given, group names must be mapped to lists of columns in `values`.
+    For instance, if `values` has columns "label1_>0", "label1_<0" and "label2", then `groups` might be set to
+
+        {
+            "label1": ["label1_>0", "label1_<0"],
+            "label2": ["label2"]
+        }
+
+    :param title: Title of the figure.
+    :param x_label: Label of the x-axis.
+    :param ax: An existing axis, or None.
+    :param figsize: Figure size or "auto".
+    :return: Matplotlib figure object.
+    """
+
+    n_features = len(values)
+    if isinstance(values, pd.Series):
+        values = values.to_frame()
+    if groups is None:
+        groups = {c: [c] for c in values.columns}
+    else:
+        assert len(groups) >= 1
+        assert all(all(c in values.columns for c in g) for g in groups.values())
+
+    if ax is None:
+        if figsize == 'auto':
+            figsize = (8, n_features * 0.5 * np.sqrt(len(groups)) + 1.5)
+        _, ax = plt.subplots(figsize=figsize)
+
+    negative_values_present = any((values[columns] < 0).any().any() for columns in groups.values())
+    positive_values_present = any((values[columns] > 0).any().any() for columns in groups.values())
+    neg_color = _common.get_colormap('blue_rgb')
+    pos_color = _common.get_colormap('red_rgb')
+
+    if len(groups) > 1:
+        if negative_values_present:
+            color = '#777777' if positive_values_present else neg_color
+        else:
+            color = pos_color
+        legend_handles = [ax.barh(1, [0.], 0., label=g, color=color) for g in groups]
+    else:
+        legend_handles = None
+
+    # draw the bars
+    y_pos = np.arange(n_features, 0, -1)
+    total_width = 0.7
+    bar_width = total_width / len(groups)
+    for i, (g, columns) in enumerate(groups.items()):
+        ypos_offset = -((i - len(groups) / 2) * bar_width + bar_width / 2)
+        for c in columns:
+            ax.barh(
+                y_pos + ypos_offset, values[c].values, bar_width, align='center', edgecolor=(1, 1, 1, 0.8), label=g,
+                color=[neg_color if values[c].iloc[j] < 0 else pos_color for j in range(n_features)]
+            )
+
+    # add text
+    xlen = ax.get_xlim()[1] - ax.get_xlim()[0]
+    bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
+    width, height = bbox.width, bbox.height
+    bbox_to_xscale = xlen / width
+    for i, (g, columns) in enumerate(groups.items()):
+        ypos_offset = -((i - len(groups) / 2) * bar_width + bar_width / 2)
+        for c in columns:
+            for j in range(n_features):
+                v = values[c].iloc[j]
+                if v <= 0:
+                    if negative_values_present:
+                        # only add text if there are strictly negative values
+                        ax.text(
+                            v - (5 / 72) * bbox_to_xscale, y_pos[j] + ypos_offset, '{:.2f}'.format(v),
+                            horizontalalignment='right', verticalalignment='center', color=neg_color
+                        )
+                else:
+                    ax.text(
+                        v + (5 / 72) * bbox_to_xscale, y_pos[j] + ypos_offset, '+{:.2f}'.format(v),
+                        horizontalalignment='left', verticalalignment='center', color=pos_color
+                    )
+
+    if len(groups) > 1 and n_features > 1:
+        # add horizontal lines for each feature row
+        for i in range(1, n_features):
+            ax.axhline(i + 0.5, color='#888888', lw=0.5, dashes=(1, 5), zorder=-1)
+
+    ax.xaxis.set_ticks_position('bottom')
+    ax.yaxis.set_ticks_position('none')
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    if negative_values_present:
+        ax.axvline(0, 0, 1, color='#000000', linestyle='-', linewidth=1, zorder=1)
+        ax.spines['left'].set_visible(False)
+
+    xmin, xmax = ax.get_xlim()
+
+    if negative_values_present:
+        ax.set_xlim(xmin - (xmax - xmin) * 0.05, xmax + (xmax - xmin) * 0.05)
+    else:
+        ax.set_xlim(xmin, xmax + (xmax - xmin) * 0.05)
+
+    if legend_handles is not None:
+        ax.legend(handles=legend_handles, loc='best')
+
+    ax.set(
+        xlabel=x_label,
+        yticks=y_pos,
+        yticklabels=values.index,
+        ylim=(0.5, n_features + 0.5),
+        title=_common.make_title(None, title)
+    )
+    plt.close(ax.figure)
+    return ax.figure

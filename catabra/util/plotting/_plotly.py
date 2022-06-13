@@ -585,3 +585,63 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
     fig.update_yaxes(range=[-1, n_features], showgrid=False)
 
     return fig
+
+
+def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict] = None, title: Optional[str] = None,
+                   x_label: Optional[str] = None, **kwargs):
+    """
+    Create a horizontal bar plot.
+    :param values: Values to plot, a DataFrame whose rows correspond to the rows in the plot and whose columns
+    correspond to grouped bars.
+    :param groups: Optional, grouping of columns. If given, group names must be mapped to lists of columns in `values`.
+    For instance, if `values` has columns "label1_>0", "label1_<0" and "label2", then `groups` might be set to
+
+        {
+            "label1": ["label1_>0", "label1_<0"],
+            "label2": ["label2"]
+        }
+
+    :param title: Title of the figure.
+    :param x_label: Label of the x-axis.
+    :return: plotly figure object.
+    """
+
+    n_features = len(values)
+    if isinstance(values, pd.Series):
+        values = values.to_frame()
+    if groups is None:
+        groups = {c: [c] for c in values.columns}
+    else:
+        assert len(groups) >= 1
+        assert all(all(c in values.columns for c in g) for g in groups.values())
+
+    fig = go.Figure()
+
+    neg_color = (_common.get_colormap('blue_rgb')[:3] * 255).astype(np.uint8)
+    pos_color = (_common.get_colormap('red_rgb')[:3] * 255).astype(np.uint8)
+    pos_color = f'rgb({pos_color[0]},{pos_color[1]},{pos_color[2]})'
+    neg_color = f'rgb({neg_color[0]},{neg_color[1]},{neg_color[2]})'
+
+    # draw the bars
+    for i, (g, columns) in enumerate(groups.items()):
+        for c in columns:
+            fig.add_trace(
+                go.Bar(
+                    name=g,
+                    orientation='h',
+                    x=values[c].iloc[::-1],
+                    y=values.index[::-1],
+                    offsetgroup=i,
+                    marker=dict(
+                        color=[neg_color if values[c].iloc[j] < 0 else pos_color for j in range(n_features - 1, -1, -1)]
+                    )
+                )
+            )
+
+    fig.update_layout(
+        xaxis=dict(title=x_label, constrain='domain'),
+        title=dict(text=_common.make_title(None, title), x=0.5, xref='paper'),
+        showlegend=False
+    )
+
+    return fig
