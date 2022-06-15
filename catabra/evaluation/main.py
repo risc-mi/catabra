@@ -357,9 +357,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             bs.run(bootstrapping_repetitions)
             _save(bs.describe(), 'bootstrapping')
     elif encoder.task_ == 'multilabel_classification':
-        labels = encoder.inverse_transform(
-            y=np.vstack([np.zeros((len(y_true.columns),)), np.ones((len(y_true.columns),))])
-        )
+        labels = pd.DataFrame({t: encoder.get_dtype(t)['categories'] for t in encoder.target_names_})
         overall, thresh, thresh_per_class, roc_curves, pr_curves = calc_multilabel_metrics(y_true, y_hat)
         if verbose:
             msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
@@ -398,7 +396,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             bs.run(bootstrapping_repetitions)
             _save(bs.describe(), 'bootstrapping')
     else:
-        labels = list(encoder.inverse_transform(y=np.arange(y_hat.shape[1])).iloc[:, 0])
+        labels = encoder.get_dtype(encoder.target_names_[0])['categories']
         if encoder.task_ == 'binary_classification':
             overall, thresh, calib, roc_curve, pr_curve = calc_binary_classification_metrics(y_true, y_hat)
             if verbose:

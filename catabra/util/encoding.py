@@ -84,6 +84,25 @@ class Encoder(BaseEstimator):
         else:
             return self.target_names_
 
+    def get_dtype(self, name: str) -> Optional[dict]:
+        if self._features is None:
+            raise ValueError('Encoder must be fit before method `get_dtype()` can be called.')
+        dt = None
+        for f in self._features:
+            if name == f['name']:
+                dt = f
+                break
+        if dt is not None:
+            return dt.get('dtype')
+        elif self._targets is not None:
+            for f in self._targets:
+                if name == f['name']:
+                    dt = f
+                    break
+            if dt is not None:
+                return dt.get('dtype')
+        raise ValueError('Unknown column name: ' + name)
+
     def fit(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None) -> 'Encoder':
         self._features = [self._fit_series(x[c]) for c in x.columns]
 
