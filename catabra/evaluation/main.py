@@ -352,9 +352,9 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
                 y_hat_decoded.index = y_true_decoded.index
             _save_plots(plot_regression(y_true_decoded, y_hat_decoded, interactive=True), 'interactive_plots')
-        if bootstrapping_repetitions > 0:
-            bs = Bootstrapping(y_true[na_mask], y_hat[na_mask], fn=bootstrapping_fn)
-            bs.run(bootstrapping_repetitions)
+        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
+                                 bootstrapping_fn=bootstrapping_fn)
+        if bs is not None:
             _save(bs.describe(), 'bootstrapping')
     elif encoder.task_ == 'multilabel_classification':
         labels = pd.DataFrame({t: encoder.get_dtype(t)['categories'] for t in encoder.target_names_})
@@ -391,9 +391,9 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             )
         overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
         _save(dict(overall=overall, thresholded=thresh, **thresh_per_class), 'metrics')
-        if bootstrapping_repetitions > 0:
-            bs = Bootstrapping(y_true[na_mask], y_hat[na_mask], fn=bootstrapping_fn)
-            bs.run(bootstrapping_repetitions)
+        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
+                                 bootstrapping_fn=bootstrapping_fn)
+        if bs is not None:
             _save(bs.describe(), 'bootstrapping')
     else:
         labels = encoder.get_dtype(encoder.target_names_[0])['categories']
@@ -415,33 +415,16 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             overall_df = pd.DataFrame(data=overall, index=[y_true.columns[0]])
             overall_df.insert(0, 'pos_label', labels[1])
             _save(dict(overall=overall_df, thresholded=thresh, calibration=calib), 'metrics')
-            if bootstrapping_repetitions > 0:
-                if static_plots or interactive_plots:
-                    bootstrapping_fn.update(
-                        roc_pr_curve=metrics.roc_pr_curve,
-                        calibration_curve=metrics.partial(
-                            metrics.calibration_curve,
-                            thresholds=np.r_[calib['threshold_lower'].values[0], calib['threshold_upper'].values]
-                        )
-                    )
-                bs = Bootstrapping(y_true[na_mask].iloc[:, 0], y_hat[na_mask, -1], fn=bootstrapping_fn)
-                bs.run(bootstrapping_repetitions)
-                roc_pr_curve = bs.results.pop('roc_pr_curve', None)
-                calibration_curve = bs.results.pop('calibration_curve', None)
+            bs, roc_curve_bs, pr_curve_bs, calibration_curve_bs = _bootstrap(
+                bootstrapping_repetitions,
+                y_true[na_mask].iloc[:, 0],
+                y_hat[na_mask, -1],
+                calib=calib,
+                bootstrapping_fn=bootstrapping_fn,
+                calc_roc_pr_calibration=static_plots or interactive_plots
+            )
+            if bs is not None:
                 _save(bs.describe(), 'bootstrapping')
-            else:
-                roc_pr_curve = None
-                calibration_curve = None
-            if roc_pr_curve is None:
-                roc_curve_bs = None
-                pr_curve_bs = None
-            else:
-                roc_curve_bs = roc_pr_curve[:2]
-                pr_curve_bs = roc_pr_curve[3:5]
-            if calibration_curve is None:
-                calibration_curve_bs = None
-            else:
-                calibration_curve_bs = np.stack(calibration_curve[0])
             if static_plots:
                 _save_plots(
                     plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
@@ -476,9 +459,9 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 _save_plots(plot_multiclass(conf_mat, interactive=False), 'static_plots')
             if interactive_plots:
                 _save_plots(plot_multiclass(conf_mat, interactive=True), 'interactive_plots')
-            if bootstrapping_repetitions > 0:
-                bs = Bootstrapping(y_true[na_mask].iloc[:, 0], y_hat[na_mask], fn=bootstrapping_fn)
-                bs.run(bootstrapping_repetitions)
+            bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].iloc[:, 0], y_hat[na_mask],
+                                     bootstrapping_fn=bootstrapping_fn)
+            if bs is not None:
                 _save(bs.describe(), 'bootstrapping')
 
     return out
@@ -1028,6 +1011,42 @@ def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: f
               pos_label: [thresholds.loc[i, 'false_positive'], thresholds.loc[i, 'true_positive']]},
         index=[neg_label, pos_label]
     ), thresholds.loc[i, 'threshold']
+
+
+def _bootstrap(n_repetitions: int, y_true, y_hat, bootstrapping_fn: Optional[dict] = None,
+               calib: Optional[pd.DataFrame] = None, calc_roc_pr_calibration: bool = False):
+    if n_repetitions > 0:
+        if bootstrapping_fn is None:
+            bootstrapping_fn = {}
+        if calc_roc_pr_calibration:
+            bootstrapping_fn['roc_pr_curve'] = metrics.roc_pr_curve
+            if calib is not None:
+                bootstrapping_fn['calibration_curve'] = metrics.partial(
+                    metrics.calibration_curve,
+                    thresholds=np.r_[calib['threshold_lower'].values[0], calib['threshold_upper'].values]
+                )
+        bs = Bootstrapping(y_true, y_hat, fn=bootstrapping_fn)
+        bs.run(n_repetitions)
+        if calc_roc_pr_calibration:
+            aux = bs.results.pop('roc_pr_curve', None)
+        else:
+            aux = None
+        if aux is None:
+            roc_curve_bs = pr_curve_bs = None
+        else:
+            roc_curve_bs = aux[:2]
+            pr_curve_bs = aux[3:5]
+        if calc_roc_pr_calibration:
+            aux = bs.results.pop('calibration_curve', None)
+        else:
+            aux = None
+        if aux is None:
+            calibration_bs = None
+        else:
+            calibration_bs = np.stack(aux[0])
+        return bs, roc_curve_bs, pr_curve_bs, calibration_bs
+    else:
+        return None, None, None, None
 
 
 # metrics for binary classification, which require probabilities of positive class
