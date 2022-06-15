@@ -323,12 +323,11 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
         from ..util.config import DEFAULT_CONFIG
         main_metrics = DEFAULT_CONFIG.get(encoder.task_, [])
 
+    na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
     if bootstrapping_repetitions > 0:
         bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in main_metrics}
-        na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
     else:
         bootstrapping_fn = {}
-        na_mask = None
 
     if encoder.task_ == 'regression':
         met = calc_regression_metrics(y_true, y_hat)
