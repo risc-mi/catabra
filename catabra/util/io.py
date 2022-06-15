@@ -52,6 +52,33 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
 
 
+def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
+    """
+    Read multiple DataFrames from a single file.
+    * If an Excel file, all sheets are read and returned.
+    * If an H5 file, all top-level keys are read and returned.
+    * If any other file, the singleton dict `{"table": df}` is returned, where `df` is the single DataFrame contained
+        in the file.
+    :param fn: The file to read.
+    :return: A dict mapping keys to DataFrames, possibly empty.
+    """
+    fn = make_path(fn)
+    if fn.suffix.lower() in ('.xlsx', '.xls'):
+        return pd.read_excel(str(fn), sheet_name=None)
+    elif fn.suffix.lower() == '.csv':
+        with open(fn, mode='rt') as f:
+            dialect = Sniffer().sniff(f.read(8192))
+            f.seek(0)
+            df = pd.read_csv(f, index_col=0, dialect=dialect)
+        return dict(table=df)
+    elif fn.suffix.lower() in ('.h5', '.hdf'):
+        with pd.HDFStore(str(fn), mode='r') as h5:
+            out = {k[1:]: df for k, df in h5.items()}       # `k[1:]` to trim leading "/"
+        return out
+    else:
+        raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
+
+
 def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: str = 'w'):
     """
     Write a DataFrame to file. The file type is determined from the file extension of the given file.
