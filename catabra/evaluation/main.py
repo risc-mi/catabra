@@ -321,7 +321,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
 
     if main_metrics is None:
         from ..util.config import DEFAULT_CONFIG
-        main_metrics = DEFAULT_CONFIG.get(encoder.task_, [])
+        main_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
     if bootstrapping_repetitions > 0:
@@ -976,7 +976,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
 def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, roc_curves=None, pr_curves=None,
                     interactive: bool = False) -> dict:
     """
-    Plot evaluation results of binary classification tasks.
+    Plot evaluation results of multilabel classification tasks.
     :param overall: Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
     :param threshold: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
     :param labels: Class names. None or a DataFrame with `n_class` columns and 2 rows.
