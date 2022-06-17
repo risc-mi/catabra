@@ -359,7 +359,18 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         evaluation.evaluate(df, folder=out, split=split, out=out / 'eval', jobs=jobs)
 
 
-def plot_training_history(hist: pd.DataFrame, interactive: bool = False) -> dict:
+def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:
+    """
+    Plot the evolution of performance scores during model training.
+    :param hist: The history to plot, as saved in "training_history.xlsx".
+    :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
+    :return: Dict with single key "training_history", which is mapped to a Matplotlib or plotly figure object.
+    The sole reason for returning a dict is consistency with other plotting functions.
+    """
+
+    if isinstance(hist, (str, Path)):
+        hist = io.read_df(hist)
+
     if len(hist) <= 1:
         return {}
     elif interactive:
