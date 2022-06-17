@@ -1002,6 +1002,161 @@ def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, roc_cur
     return out
 
 
+def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', bootstrapping_repetitions: int = 0,
+                 bootstrapping_metrics: Optional[list] = None,) -> Tuple[dict, Optional[pd.DataFrame]]:
+    """
+    Calculate performance metrics from raw sample-wise predictions and corresponding ground-truth.
+    :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
+    :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
+    object and calling its `get_encoder()` method.
+    :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
+    `bootstrapping_repetitions` is > 0. Defaults to the list of main metrics specified in the default config.
+    Ignored if `bootstrapping_repetitions` is 0.
+    :return: Pair `(metrics, bootstrapping)`, where `metrics` is a dict whose values are DataFrames and corresponds
+    exactly to what is by default saved as "metrics.xlsx" when invoking function `evaluate()`, and `bootstrapping` is
+    either None or a DataFrame with bootstrapped performance results, depending on whether `bootstrapping_repetitions`
+    is 0.
+    """
+
+    y_true, y_hat = _get_y_true_hat_from_predictions(predictions, encoder)
+    y_true = encoder.transform(y=y_true, inplace=False)
+    na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
+
+    if encoder.task_ == 'regression':
+        y_hat = encoder.transform(y=y_hat, inplace=False)
+        met = dict(metrics=calc_regression_metrics(y_true, y_hat))
+    elif encoder.task_ == 'multilabel_classification':
+        overall, thresh, thresh_per_class, _, _ = calc_multilabel_metrics(y_true, y_hat)
+        overall.insert(0, 'pos_label',
+                       [encoder.get_dtype(t)['categories'][1] for t in encoder.target_names_] + [None] * 3)
+        met = dict(overall=overall, thresholded=thresh, **thresh_per_class)
+    elif encoder.task_ == 'binary_classification':
+        pos_label = encoder.get_dtype(encoder.target_names_[0])['categories'][1]
+        overall, thresh, calib, roc_curve, pr_curve = calc_binary_classification_metrics(y_true, y_hat)
+        overall_df = pd.DataFrame(data=overall, index=[y_true.columns[0]])
+        overall_df.insert(0, 'pos_label', pos_label)
+        met = dict(overall=overall_df, thresholded=thresh, calibration=calib)
+        y_true = y_true.iloc[:, 0]
+        y_hat = y_hat[pos_label]
+    elif encoder.task_ == 'multiclass_classification':
+        overall, conf_mat, per_class = calc_multiclass_metrics(
+            y_true,
+            y_hat,
+            labels=encoder.get_dtype(encoder.target_names_[0])['categories']
+        )
+        overall = pd.DataFrame(data=overall, index=encoder.target_names_)
+        met = dict(overall=overall, confusion_matrix=conf_mat, per_class=per_class)
+        y_true = y_true.iloc[:, 0]
+    else:
+        raise ValueError(f'Unknown prediction task: {encoder.task_}')
+
+    if bootstrapping_repetitions > 0:
+        if bootstrapping_metrics is None:
+            from ..util.config import DEFAULT_CONFIG
+            bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
+        bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in bootstrapping_metrics}
+        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
+                                 bootstrapping_fn=bootstrapping_fn)
+        bs = bs.describe()
+    else:
+        bs = None
+
+    return met, bs
+
+
+def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[str, Path, pd.DataFrame, dict],
+                 encoder: 'Encoder', interactive: bool = False, bootstrapping_repetitions: int = 0) -> dict:
+    """
+    Plot the results of an evaluation. This happens automatically if config params "static_plots" or
+    "interactive_plots" are set to True. This function does not save the resulting plots to disk, but instead returns
+    them in a (nested) dict. This allows one to further modify / fine-tune them before displaying or saving.
+    :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
+    :param metrics_: Performance metrics, as saved in "metrics.xlsx".
+    :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
+    object and calling its `get_encoder()` method.
+    :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
+    :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform for adding confidence intervals
+    to ROC-, PR- and calibration curves in binary classification tasks.
+    :return: (Nested) dict of Matplotlib or plotly figure objects, depending on the value of `interactive`.
+    """
+    if encoder.task_ == 'regression':
+        assert predictions is not None
+        y_true, y_hat = _get_y_true_hat_from_predictions(predictions, encoder)
+        return plot_regression(y_true, y_hat, interactive=interactive)
+    else:
+        inplace = False
+        if isinstance(metrics_, (str, Path)):
+            metrics_ = io.read_dfs(metrics_)
+            inplace = True
+        if not isinstance(metrics_, dict):
+            raise ValueError('metrics must be a dict, but found type ' + str(type(metrics_)))
+
+        if encoder.task_ == 'binary_classification':
+            target_name = encoder.target_names_[0]
+            labels = encoder.get_dtype(target_name)['categories']
+            calib = metrics_['calibration']
+            if predictions is None:
+                roc_curve = pr_curve = roc_curve_bs = pr_curve_bs = calibration_bs = None
+            else:
+                y_true, y_hat = _get_y_true_hat_from_predictions(predictions, encoder)
+                y_true = encoder.transform(y=y_true, inplace=False).iloc[:, 0]
+                y_hat = y_hat[labels[1]]
+                roc_pr_curve = metrics.roc_pr_curve(y_true, y_hat)
+                roc_curve = roc_pr_curve[:3]
+                pr_curve = roc_pr_curve[3:]
+                na_mask = ~np.isnan(y_hat) & y_true.notna()
+                _, roc_curve_bs, pr_curve_bs, calibration_bs = \
+                    _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
+                               calib=calib, calc_roc_pr_calibration=True)
+            return plot_binary_classification(
+                metrics_['overall'].iloc[0].to_dict(),
+                metrics_['thresholded'],
+                calib,
+                name=target_name,
+                neg_label=labels[0],
+                pos_label=labels[1],
+                roc_curve=roc_curve,
+                pr_curve=pr_curve,
+                roc_curve_bs=roc_curve_bs,
+                pr_curve_bs=pr_curve_bs,
+                calibration_curve_bs=calibration_bs,
+                interactive=interactive
+            )
+        elif encoder.task_ == 'multiclass_classification':
+            conf_mat = metrics_['confusion_matrix']
+            if conf_mat.index.name is None and conf_mat.columns[0] == 'true \\ pred':
+                if inplace:
+                    conf_mat.set_index(conf_mat.columns[0], inplace=True)
+                else:
+                    conf_mat = conf_mat.set_index(conf_mat.columns[0], inplace=False)
+            return plot_multiclass(conf_mat, interactive=interactive)
+        elif encoder.task_ == 'multilabel_classification':
+            labels = pd.DataFrame({t: encoder.get_dtype(t)['categories'] for t in encoder.target_names_})
+            overall = metrics_['overall']
+            if overall.index.name is None and overall.index.dtype.kind != 'O':
+                if inplace:
+                    overall.set_index(overall.columns[0], inplace=True)
+                else:
+                    overall = overall.set_index(overall.columns[0], inplace=False)
+            if predictions is None:
+                roc_pr_curves = {}
+            else:
+                y_true, y_hat = _get_y_true_hat_from_predictions(predictions, encoder)
+                y_true = encoder.transform(y=y_true, inplace=False)
+                roc_pr_curves = {k: metrics.roc_pr_curve(y_true[k], y_hat[k]) for k in labels.columns}
+            return plot_multilabel(
+                overall,
+                {k: metrics_[k] for k in labels.columns},
+                roc_curves={k: v[:3] for k, v in roc_pr_curves.items()},
+                pr_curves={k: v[3:] for k, v in roc_pr_curves.items()},
+                labels=labels,
+                interactive=interactive
+            )
+        else:
+            raise ValueError(f'Unknown prediction task: {encoder.task_}')
+
+
 def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: float = 0.5, neg_label: str = 'negative',
                                           pos_label: str = 'positive') -> Tuple[pd.DataFrame, float]:
     i = (thresholds['threshold'] - threshold).abs().idxmin()
@@ -1046,6 +1201,44 @@ def _bootstrap(n_repetitions: int, y_true, y_hat, bootstrapping_fn: Optional[dic
         return bs, roc_curve_bs, pr_curve_bs, calibration_bs
     else:
         return None, None, None, None
+
+
+def _get_y_true_hat_from_predictions(predictions: Union[pd.DataFrame, str, Path], encoder: 'Encoder') \
+        -> Tuple[pd.DataFrame, pd.DataFrame]:
+    # return _decoded_ `y_true` and `y_hat`
+
+    inplace = False
+    if isinstance(predictions, (str, Path)):
+        from ..util import table
+        predictions = io.read_df(predictions)
+        predictions = table.convert_object_dtypes(predictions, inplace=True)
+        inplace = True
+
+    target_names = encoder.target_names_
+    if encoder.task_ == 'regression':
+        if predictions.columns[0] not in (target_names + [f'{t}_pred' for t in target_names]) \
+                and predictions[predictions.columns[0]].dtype.kind in 'iuO':
+            if inplace:
+                predictions.set_index(predictions.columns[0], inplace=True)
+            else:
+                predictions = predictions.set_index(predictions.columns[0], inplace=False)
+            if predictions.index.name == 'Unnamed: 0':
+                predictions.index.name = None
+        y_true = predictions[target_names]
+        y_hat = predictions[[f'{t}_pred' for t in target_names]]
+        y_hat.columns = target_names
+    elif encoder.task_ == 'multilabel_classification':
+        y_true = predictions[target_names]
+        y_hat = predictions[[f'{t}_proba' for t in target_names]]
+        y_hat.columns = target_names
+    else:
+        assert len(target_names) == 1
+        labels = encoder.get_dtype(target_names[0])['categories']
+        y_true = predictions[target_names]
+        y_hat = predictions[[f'{lbl}_proba' for lbl in labels]]
+        y_hat.columns = labels
+
+    return y_true, y_hat
 
 
 # metrics for binary classification, which require probabilities of positive class
