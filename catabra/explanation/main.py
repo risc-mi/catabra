@@ -233,15 +233,18 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     return out
 
 
-def plot_beeswarms(explanations: dict, features: Optional[pd.DataFrame] = None, interactive: bool = False,
-                   title: Optional[str] = None) -> dict:
+def plot_beeswarms(explanations: Union[dict, str, Path], features: Optional[pd.DataFrame] = None,
+                   interactive: bool = False, title: Optional[str] = None, max_features: Optional[int] = None,
+                   add_sum_of_remaining: bool = True) -> dict:
     """
     Create beeswarm plots of local explanations.
     :param explanations: Local explanations to plot, a dict as returned by `EnsembleExplainer.explain()`, i.e., 1-2
     levels of nesting, values are DataFrames with samples on row index and features on column index.
-    :param features: Feature values corresponding to feature importance scores, optional.
+    :param features: Encoded feature values corresponding to feature importance scores, optional.
     :param interactive: Whether to create interactive or static plots.
     :param title: The title of the plots.
+    :param max_features: Maximum number of features to plot, or None to determine this number automatically.
+    :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
     :return: Dict with plots.
     """
     if interactive:
@@ -253,23 +256,37 @@ def plot_beeswarms(explanations: dict, features: Optional[pd.DataFrame] = None, 
     else:
         backend = plotting.mpl_backend
 
+    if isinstance(explanations, (str, Path)):
+        aux = {k: v for k, v in io.read_dfs(explanations).items() if isinstance(v, pd.DataFrame)}
+        if aux:
+            explanations = aux
+        else:
+            explanations = {'table': io.read_df(explanations)}
+
     out = {}
     for k, v in explanations.items():
+        if isinstance(v, (str, Path)):
+            aux = {k1: v1 for k1, v1 in io.read_dfs(v).items() if isinstance(v1, pd.DataFrame)}
+            if aux:
+                v = aux
+            else:
+                v = io.read_df(v)
         if isinstance(v, dict):
-            for k1, v1 in v.items():
-                out[str(k) + '_' + str(k1)] = \
-                    backend.beeswarm(_prepare_for_beeswarm(v1), colors=features if len(features) == len(v1) else None,
-                                     color_name='Feature value', title=title, x_label='Importance')
+            aux = plot_beeswarms(v, features=features, interactive=interactive, title=title, max_features=max_features,
+                                 add_sum_of_remaining=add_sum_of_remaining)
+            for k1, v1 in aux.items():
+                out[str(k) + '_' + str(k1)] = v1
         elif isinstance(v, pd.DataFrame):
             out[str(k)] = \
-                backend.beeswarm(_prepare_for_beeswarm(v), colors=features if len(features) == len(v) else None,
+                backend.beeswarm(_prepare_for_beeswarm(v, max_features, add_sum_of_remaining),
+                                 colors=features if features is None or len(features) == len(v) else None,
                                  color_name='Feature value', title=title, x_label='Importance')
 
     return out
 
 
-def plot_bars(explanations: dict, interactive: bool = False, title: Optional[str] = None,
-              max_features: int = 10) -> dict:
+def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, title: Optional[str] = None,
+              max_features: int = 10, add_sum_of_remaining: bool = True) -> dict:
     """
     Create bar plots of global explanations.
     :param explanations: Global explanations to plot, a dict as returned by `EnsembleExplainer.explain_global()`, i.e.,
@@ -277,6 +294,7 @@ def plot_bars(explanations: dict, interactive: bool = False, title: Optional[str
     :param interactive: Whether to create interactive or static plots.
     :param title: The title of the plots.
     :param max_features: Maximum number of features to plot.
+    :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
     :return: Dict with plots.
     """
     if interactive:
@@ -288,9 +306,18 @@ def plot_bars(explanations: dict, interactive: bool = False, title: Optional[str
     else:
         backend = plotting.mpl_backend
 
+    if isinstance(explanations, (str, Path)):
+        aux = {k: v for k, v in io.read_dfs(explanations).items() if isinstance(v, pd.DataFrame)}
+        if aux:
+            explanations = aux
+        else:
+            explanations = {'table': io.read_df(explanations)}
+
     out = {}
     for k, v in explanations.items():
-        df, groups = _prepare_for_bar(v, max_features)
+        if isinstance(v, (str, Path)):
+            v = io.read_df(v)
+        df, groups = _prepare_for_bar(v, max_features, add_sum_of_remaining)
         out[str(k)] = backend.horizontal_bar(df, groups=groups, title=title, x_label='Importance')
     return out
 
@@ -325,18 +352,22 @@ def average_local_explanations(explanations: Union[pd.DataFrame, dict], **kwargs
         return positive.to_frame('>0').join(negative.to_frame('<0'))
 
 
-def _prepare_for_beeswarm(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_for_beeswarm(df: pd.DataFrame, max_features: Optional[int], add_sum_of_remaining: bool) -> pd.DataFrame:
     cols = df.abs().mean(axis=0).sort_values(ascending=False).index
-    n = max(6, int(50000 / max(len(df), 1)))    # number of features to show
-    if n < len(cols):
+    if max_features is None:
+        n = max(6, int(50000 / max(len(df), 1)))    # number of features to show
+    else:
+        n = max_features
+    if n < len(cols) and add_sum_of_remaining:
         df0 = df.reindex(cols[:n - 1], axis=1)
         df0[f'Sum of {len(cols) + 1 - n} remaining features'] = df[cols[n - 1:]].sum(axis=1)
         return df0
     else:
-        return df.reindex(cols, axis=1)
+        return df.reindex(cols[:n], axis=1)
 
 
-def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int) -> Tuple[pd.DataFrame, dict]:
+def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
+                     add_sum_of_remaining: bool) -> Tuple[pd.DataFrame, dict]:
     if isinstance(df, pd.Series):
         idx = df.abs().sort_values(ascending=False).index
         groups = {str(df.name): [df.name]}
@@ -353,10 +384,10 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int) -> T
             idx = np.maximum(idx, np.maximum(0, df[columns].max(axis=1)) - np.minimum(0, df[columns].min(axis=1)))
         idx = idx.sort_values(ascending=False).index
 
-    if max_features < len(idx):
+    if max_features < len(idx) and add_sum_of_remaining:
         df0 = df.reindex(idx[:max_features - 1])
         df0.loc[f'Sum of {len(idx) + 1 -max_features} remaining features'] = \
             df.loc[idx[max_features - 1:]].sum(axis=0)
     else:
-        df0 = df.reindex(idx)
+        df0 = df.reindex(idx[:max_features])
     return df0, groups
