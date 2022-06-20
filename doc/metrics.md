@@ -1,11 +1,8 @@
-# Built-in Metrics
+# Metrics
 
-This document contains a short description of all built-in metrics that are by default reported in the metrics.xlsx
-files generated upon evaluation.
+## Built-in Regression Metrics
 
-Each of the metrics is implemented by a function in the `util.metrics` module.
-
-## Regression Metrics
+This section lists all built-in regression metrics that are implemented in the `util.metrics` module.
 
 ### R²
 
@@ -123,7 +120,9 @@ Each of the metrics is implemented by a function in the `util.metrics` module.
     `mean_squared_error`, with `power=1` it is equivalent to `mean_poisson_deviance`, and with `power=2` it is
     equivalent to `mean_gamma_deviance`.
 
-## Classification Metrics
+## Built-in Classification Metrics
+
+This section lists all built-in classification metrics that are implemented in the `util.metrics` module.
 
 ### Area under Receiver Operator Characteristic Curve
 
@@ -474,3 +473,23 @@ a properly suffixed version of the function, or via the `average` parameter of t
 
 **Note**: Some metrics, like `accuracy`, are defined for multilabel problems even without averaging. What is reported
 in metrics.xlsx are still the averaged versions, though.
+
+## Calculating Metrics from Raw Predictions
+
+By default, CaTabRa automatically calculates suitable performance metrics when evaluating trained prediction models,
+and saves them to disk in files called metrics.xlsx and (optionally) bootstrapping.xlsx. These metrics can easily be
+computed manually as well; all that is required are sample-wise predictions (as saved in `"predictions.xlsx"`) and the
+corresponding data encoder that can be easily obtained from a `CaTabRaLoader` object:
+
+```python
+from catabra.util import io
+from catabra import evaluation
+
+loader = io.CaTabRaLoader("CaTabRa_dir")
+metrics, bootstrapping = evaluation.calc_metrics(
+    "predictions.xlsx",
+    loader.get_encoder(),
+    bootstrapping_repetitions=...,
+    bootstrapping_metrics=...
+)
+```
