@@ -98,8 +98,11 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
 * `--time TIME`: Time budget for model training, in minutes. Some AutoML backends require a fixed budget, others might
     not. Overwrites the `"time_limit"` config param. `0` means that no prediction models are trained.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
-* `--config CONFIG`: Path to a JSON file containing an alternative config dict. Merged with the default config in
-    `util/config.py`. See Section Configuration below for details.
+* `--config CONFIG`: Path to a JSON file containing an alternative config dict. Merged with the default config specified
+    via parameter `--default-config`. See Section Configuration below for details.
+* `--default-config DEFAULT_CONFIG`: Default config to use. Possible values are `full` (default; full range of
+    preprocessing steps and ML algorithms for model training), `basic` (only very basic preprocessing and ML algorithms)
+    and `interpretable` (only inherently interpretable preprocessing and ML algorithms).
 * `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
     this file; this also includes `TABLE`.
     

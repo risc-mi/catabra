@@ -293,29 +293,13 @@ class AutoSklearnBackend(AutoMLBackend):
         specific = self.config.get(self.name(), {})
         include = specific.get('include')
         exclude = specific.get('exclude')
-        if include is None:
-            include = {}
-        else:
+        if include is not None:
             include = include.copy()
-        if exclude is None:
-            exclude = {}
-        else:
+        if exclude is not None:
             exclude = exclude.copy()
-        if self.task == 'regression':
-            if 'classifier' in include:
-                del include['classifier']
-            if 'classifier' in exclude:
-                del exclude['classifier']
-        else:
-            if 'regressor' in include:
-                del include['regressor']
-            if 'regressor' in exclude:
-                del exclude['regressor']
-        for k in list(include):
-            ve = exclude.get(k)
-            if ve is not None:
-                include[k] = [v for v in include[k] if v not in ve]
-                del exclude[k]
+        self._validate_include_exclude_params(include, exclude, y_train.shape[1] > 1)
+        if exclude is not None and len(exclude) == 0:
+            exclude = None
         kwargs['include'] = include
         kwargs['exclude'] = exclude
 
@@ -376,7 +360,7 @@ class AutoSklearnBackend(AutoMLBackend):
 
         if self.task == 'regression':
             from autosklearn.regression import AutoSklearnRegressor as Estimator
-        elif groups is None and resampling_strategy is None and len(include) == len(exclude) == 0:
+        elif groups is None and resampling_strategy is None and include is None and exclude is None:
             # TODO: Use AutoSklearn2Classifier even if grouping is specified.
             del kwargs['include']
             del kwargs['exclude']
@@ -640,3 +624,52 @@ class AutoSklearnBackend(AutoMLBackend):
             else:
                 raise ValueError(resampling_strategy)
         return cv
+
+    def _validate_include_exclude_params(self, include: Optional[dict], exclude: Optional[dict], multioutput: bool):
+        # Copied from autosklearn.pipeline.base.BasePipeline._validate_include_exclude_params()
+        # `include` and `exclude` are modified in place
+
+        if include is None and exclude is None:
+            return
+        elif not (include is None or exclude is None):
+            for k in list(include):
+                ve = exclude.get(k)
+                if ve is not None:
+                    include[k] = [v for v in include[k] if v not in ve]
+                    del exclude[k]
+
+        if self.task == 'regression':
+            from autosklearn.pipeline.regression import SimpleRegressionPipeline as Pipeline
+            dataset_properties = dict(multioutput=multioutput, sparse=False)
+        else:
+            from autosklearn.pipeline.classification import SimpleClassificationPipeline as Pipeline
+            dataset_properties = dict(
+                multilabel=self.task == 'multilabel_classification',
+                multiclass=self.task == 'multiclass_classification'
+            )
+        from autosklearn.pipeline.components.base import AutoSklearnChoice
+
+        pip = Pipeline(dataset_properties=dataset_properties)
+        supported_steps = {step[0]: list(step[1].get_available_components(dataset_properties=dataset_properties))
+                           for step in pip.steps if isinstance(step[1], AutoSklearnChoice)}
+        for argument in (include, exclude):
+            if argument is not None:
+                for key, candidate_components in list(argument.items()):
+                    available_components = supported_steps.get(key)
+                    if available_components is None:
+                        del argument[key]
+                    else:
+                        if not isinstance(candidate_components, (list, tuple, set)):
+                            candidate_components = [candidate_components]
+                        argument[key] = [c for c in candidate_components if c in available_components]
+
+        if include is not None:
+            # check that no component list is empty
+            for k, v in include.items():
+                if len(v) == 0:
+                    raise ValueError(f'No valid components for {k} found. Choose among {supported_steps[k]}.')
+        if exclude is not None:
+            # drop empty lists
+            for k, v in list(exclude.items()):
+                if len(v) == 0:
+                    del exclude[k]

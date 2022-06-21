@@ -20,7 +20,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
             split: Optional[str] = None, ignore: Optional[Iterable[str]] = None, time: Optional[int] = None,
             out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
-            jobs: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
+            default_config: Optional[str] = None, jobs: Optional[int] = None,
+            from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
     the remaining ones.
@@ -44,7 +45,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     parent directory of `table`, with a name following a fixed naming pattern. If `out` already exists, the user is
     prompted to specify whether it should be replaced; otherwise, it is automatically created.
     :param config: Optional, configuration dict or path to JSON file containing such a dict. Merged with the default
-    configuration in `util/config.py`. Empty string means that the default configuration is used.
+    configuration specified via `default_config`. Empty string means that the default configuration is used.
+    :param default_config: Default configuration to use, one of "full", "", "basic", "interpretable" or None.
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
@@ -75,6 +77,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             out = from_invocation.get('out')
         if config is None:
             config = from_invocation.get('config')
+        if default_config is None:
+            default_config = from_invocation.get('default_config')
         if time is None:
             time = from_invocation.get('time')
         if jobs is None:
@@ -101,14 +105,22 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     else:
         dataset_name = None
 
-    if config is None:
-        config = {}
-    elif isinstance(config, dict):
-        config = copy.deepcopy(config)
-    else:
+    if group == '':
+        group = None
+    if split == '':
+        split = None
+    if config == '':
+        config = None
+    if default_config in (None, ''):
+        default_config = 'full'
+
+    if isinstance(config, (str, Path)):
+        config = io.make_path(config, absolute=True)
         # if `config` is in `out`, it's better to load it before deleting `out`
-        config = io.load(config)
-    config = cfg.add_defaults(config)
+        # we don't overwrite `config` here, because we want to write its original value into "invocation.json"
+        config_value = io.load(config)
+    else:
+        config_value = config
 
     if out is None:
         out = table[0]
@@ -129,15 +141,6 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             return
     out.mkdir(parents=True)
 
-    if group == '':
-        group = None
-    if split == '':
-        split = None
-    if config == '':
-        config = None
-    if isinstance(config, (str, Path)):
-        config = io.make_path(config, absolute=True)
-
     with logging.LogMirror((out / 'console.txt').as_posix()):
         logging.log(f'### Analysis started at {start}')
         invocation = dict(
@@ -149,11 +152,26 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             ignore=ignore,
             out=out,
             config=config,
+            default_config=default_config,
             time=time,
             jobs=jobs,
             timestamp=start
         )
         io.dump(io.to_json(invocation), out / 'invocation.json')
+
+        config = config_value
+        if config is None:
+            config = {}
+        elif isinstance(config, dict):
+            config = copy.deepcopy(config)
+        if default_config == 'basic':
+            config = cfg.add_defaults(config, default=cfg.BASIC_CONFIG)
+        elif default_config == 'interpretable':
+            config = cfg.add_defaults(config, default=cfg.INTERPRETABLE_CONFIG)
+        elif default_config != 'full':
+            raise ValueError('Default config must be one of "full", "basic" or "interpretable",'
+                             f' but found {default_config}.')
+        config = cfg.add_defaults(config)
         io.dump(config, out / 'config.json')
 
         # merge tables

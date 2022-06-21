@@ -32,8 +32,8 @@ def make_parser():
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
-                ignore=args.ignore, time=args.time, out=args.out, config=args.config, jobs=args.jobs,
-                from_invocation=getattr(args, 'from', None))
+                ignore=args.ignore, time=args.time, out=args.out, config=args.config,
+                default_config=args.default_config, jobs=args.jobs, from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -129,8 +129,15 @@ def make_parser():
         nargs='?',
         const='',
         metavar='CONFIG',
-        help='The path to an alternative config file. If no CONFIG is given, the default configuration from'
-             ' util/config.py is used.'
+        help='The path to an alternative config file. Merged with the default config specified via --default-config.'
+    )
+    analyzer.add_argument(
+        '--default-config',
+        type=str,
+        metavar='DEFAULT_CONFIG',
+        help='Default config to use. Possible values are "full" (default; full range of preprocessing steps and ML'
+             ' algorithms for model training), "basic" (only very basic preprocessing and ML algorithms) and'
+             ' "interpretable" (only inherently interpretable preprocessing and ML algorithms).'
     )
     _add_jobs(analyzer)
     _add_from(analyzer)

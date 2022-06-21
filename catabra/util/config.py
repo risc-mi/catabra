@@ -55,6 +55,100 @@ DEFAULT_CONFIG = {
 }
 
 
+# only absolutely necessary (data) preprocessing, only standard ML algorithms
+BASIC_CONFIG = {
+    "ensemble_size": 5,
+    "ensemble_nbest": 5,
+
+    "auto-sklearn": {
+        "include": {
+            # data preprocessor cannot be configured
+            "feature_preprocessor": [
+                "no_preprocessing"
+            ],
+            "classifier": [
+                "decision_tree",
+                "k_nearest_neighbors",
+                "lda",
+                "liblinear_svc",
+                "qda",
+                "random_forest"
+            ],
+            "regressor": [
+                "decision_tree",
+                "k_nearest_neighbors",
+                "liblinear_svr",
+                "random_forest"
+            ]
+        }
+    }
+}
+
+
+# only preprocessing steps that do not change feature space too much, only interpretable ML algorithms
+INTERPRETABLE_CONFIG = {
+    "ensemble_size": 5,
+    "ensemble_nbest": 5,
+
+    "auto-sklearn": {
+        "include": {
+            "feature_preprocessor": [
+                "densifier",
+                "extra_trees_preproc_for_classification",
+                "extra_trees_preproc_for_regression",
+                "fast_ica",
+                "feature_agglomeration",
+                # "kernel_pca",
+                "kitchen_sinks",
+                "liblinear_svc_preprocessor",
+                "no_preprocessing",
+                # "nystroem",
+                "pca",
+                # "polynomial",
+                # "random_trees_embedding",
+                "select_percentile_classification",
+                "select_percentile_regression",
+                "select_rates_classification",
+                "select_rates_regression",
+                "truncatedSVD"
+            ],
+            "classifier": [
+                "adaboost",
+                # "bernoulli_nb",
+                "decision_tree",
+                "extra_trees",
+                # "gaussian_nb",
+                "gradient_boosting",
+                # "k_nearest_neighbors",
+                "lda",
+                "liblinear_svc",
+                # "libsvm_svc",
+                # "mlp",
+                # "multinomial_nb",
+                "passive_aggressive",
+                # "qda",
+                "random_forest",
+                "sgd"
+            ],
+            "regressor": [
+                "adaboost",
+                "ard_regression",
+                "decision_tree",
+                "extra_trees",
+                # "gaussian_process",
+                "gradient_boosting",
+                # "k_nearest_neighbors",
+                "liblinear_svr",
+                # "libsvm_svr",
+                # "mlp",
+                "random_forest",
+                "sgd"
+            ]
+        }
+    }
+}
+
+
 def add_defaults(config: dict, default: Optional[dict] = None) -> dict:
     """
     Add default config values into a given config dict.
