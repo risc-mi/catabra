@@ -178,7 +178,7 @@ class AutoSklearnBackend(AutoMLBackend):
         # * `autosklearn.automl.AutoML.cv_results_`,
         # * `autosklearn.estimators.AutoSklearnEstimator.leaderboard()`
         from smac.tae import StatusType
-        import time     # no global import, shadowed by `time` parameter of method `fit()`
+        from time import tzname
 
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
@@ -197,7 +197,9 @@ class AutoSklearnBackend(AutoMLBackend):
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
-                timestamp.append(pd.Timestamp(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(run_value.endtime))))
+                timestamp.append(
+                    pd.Timestamp(run_value.endtime, unit='s', tz='utc').tz_convert(tzname[0]).tz_localize(None)
+                )
                 model_id.append(run_value.additional_info['num_run'])
                 val_metric.append(metric_optimum - (metric_sign * run_value.cost))
                 train_metric.append(metric_optimum - (metric_sign * run_value.additional_info['train_loss']))
@@ -235,13 +237,16 @@ class AutoSklearnBackend(AutoMLBackend):
                 result['ensemble_val_' + metric_name] = np.nan
                 if 'ensemble_test_score' in aux.columns:
                     result['ensemble_test_' + metric_name] = np.nan
-                for i in result.index:
-                    mask = result.loc[i, 'timestamp'] < aux['Timestamp']
+                for i in range(len(result)):
+                    # find first ensemble fitted after current and before next model, if any
+                    mask = result['timestamp'].iloc[i] < aux['Timestamp']
+                    if i + 1 < len(result):
+                        mask &= result['timestamp'].iloc[i + 1] > aux['Timestamp']
                     if mask.any():
                         j = aux.loc[mask, 'Timestamp'].idxmin()
-                        result.loc[i, 'ensemble_val_' + metric_name] = aux.loc[j, 'ensemble_optimization_score']
+                        result.loc[result.index[i], 'ensemble_val_' + metric_name] = aux.loc[j, 'ensemble_optimization_score']
                         if 'ensemble_test_score' in aux.columns:
-                            result.loc[i, 'ensemble_test_' + metric_name] = aux.loc[j, 'ensemble_test_score']
+                            result.loc[result.index[i], 'ensemble_test_' + metric_name] = aux.loc[j, 'ensemble_test_score']
                 result['ensemble_val_' + metric_name].fillna(method='ffill', inplace=True)
                 if 'ensemble_test_score' in aux.columns:
                     result['ensemble_test_' + metric_name].fillna(method='ffill', inplace=True)
