@@ -57,3 +57,39 @@ def repr_list(lst: Union[list, tuple], limit: Optional[int] = 50, delim: str = '
     else:
         out = delim.join([repr(x) for x in lst])
     return '[' + out + ']' if brackets else out
+
+
+def repr_timedelta(delta, subsecond_resolution: int = 0) -> str:
+    """
+    Return a string representation of some time delta.
+    Minutes and seconds are always displayed, hours and days only if needed. Format is "d days hh:mm:ss".
+    :param delta: Time delta to represent, either a float or an object with a `total_seconds()` method (e.g., a pandas
+    Timedelta instance). Floats are assumed to be given in seconds.
+    :param subsecond_resolution: The subsecond resolution to display, i.e., number of decimal places.
+    :return: String representation of `delta`.
+    """
+    assert subsecond_resolution >= 0
+    if hasattr(delta, 'total_seconds'):
+        delta = delta.total_seconds()
+    out = ''
+    if delta < 0:
+        delta = -delta
+        out = '-'
+    if delta >= 3600:
+        hours, delta = divmod(delta, 3600)
+        hours = int(hours)
+        if hours >= 24:
+            days, hours = divmod(hours, 24)
+            if days == 1:
+                out += '1 day '
+            else:
+                out += '{:d} days '.format(days)
+        out += '{:02d}:'.format(hours)
+    minutes, delta = divmod(delta, 60)
+    minutes = int(minutes)
+    out += '{:02d}:'.format(minutes)
+    if delta < 10:
+        out += '0'
+    fmt = '{:.' + str(subsecond_resolution) + 'f}'
+    out += fmt.format(delta)
+    return out

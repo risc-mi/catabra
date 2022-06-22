@@ -4,6 +4,8 @@ import os
 import sys
 import traceback
 
+from .common import repr_timedelta
+
 
 def log(*msg, **kwargs):
     print('[CaTabRa]', *msg, flush=True, **kwargs)
@@ -91,16 +93,6 @@ def progress_bar(iterable, desc: Optional[str] = None, total: Optional[int] = No
             else:
                 return '{:.2f}s/it'.format(_elapsed / _i)
 
-        def _time_to_str(_t: float) -> str:
-            _out = ''
-            _t = int(_t)
-            if _t >= 3600:
-                _h, _t = divmod(_t, 3600)
-                _out = str(_h) + ':'
-            _m, _t = divmod(_t, 60)
-            _out += '{:02d}:{:02d}'.format(_m, _t)
-            return _out
-
         def _print(text: str, nl: bool = True, r: bool = False):
             prev_len = len(text)
             pl = state['prev_len']
@@ -122,9 +114,10 @@ def progress_bar(iterable, desc: Optional[str] = None, total: Optional[int] = No
             for i, obj in enumerate(iterable, start=1):
                 yield obj
                 elapsed = time.time() - tic
-                _print(desc + '{} [{}, {}]'.format(i, _time_to_str(elapsed), _get_speed(i, elapsed)), nl=False, r=True)
+                _print(desc + '{} [{}, {}]'.format(i, repr_timedelta(elapsed), _get_speed(i, elapsed)),
+                       nl=False, r=True)
 
-            _print(desc + '{} [{}, 100%]'.format(i, _time_to_str(time.time() - tic)), r=True)
+            _print(desc + '{} [{}, 100%]'.format(i, repr_timedelta(time.time() - tic)), r=True)
         elif total <= 0:
             print(desc + '100%|' + '#' * meter_width + '| 0/0 [00:00<00:00, ?it/s]')
         else:
@@ -136,8 +129,8 @@ def progress_bar(iterable, desc: Optional[str] = None, total: Optional[int] = No
                 speed = _get_speed(i, elapsed)
                 _print(
                     desc + '{:3d}%|'.format(round(i * 100 / total)) + '#' * m + ' ' * (meter_width - m) +
-                    '| {}/{} [{}<{}, {}]'.format(i, total, _time_to_str(elapsed),
-                                                 _time_to_str((total - i) * elapsed / i), speed),
+                    '| {}/{} [{}<{}, {}]'.format(i, total, repr_timedelta(elapsed),
+                                                 repr_timedelta((total - i) * elapsed / i), speed),
                     nl=(i == total),
                     r=True
                 )
