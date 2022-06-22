@@ -18,6 +18,25 @@ explanation.TransformationExplainer.register_factory('auto-sklearn', explanation
                                                      errors='ignore')
 
 
+def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, float, float],
+                                other_metrics: Iterable[Tuple[str, float, float]]) -> Tuple[float, float, float, dict]:
+    # metrics must be passed as triples `(name, optimum, sign)`
+
+    val = main_metric[1] - (main_metric[2] * run_value.cost)
+    train = main_metric[1] - (main_metric[2] * run_value.additional_info['train_loss'])
+    test = main_metric[1] - (main_metric[2] * run_value.additional_info.get('test_loss', np.nan))
+
+    # additional metrics are only available for validation set for single models,
+    # even if test data is provided
+    other = {}
+    for metric in other_metrics:
+        cost = run_value.additional_info.get(metric[0])
+        if cost is not None:
+            other[metric[0]] = metric[1] - (metric[2] * cost)
+
+    return val, train, test, other
+
+
 def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = False, copy: bool = False) -> np.ndarray:
     # copied and adapted from autosklearn.automl._model_predict()
 
@@ -191,40 +210,33 @@ class AutoSklearnBackend(AutoMLBackend):
         test_metric = []
         duration = []
         types = []
-        metric_optimum = self.model_.automl_._metric._optimum
-        metric_sign = self.model_.automl_._metric._sign
-        metric_name = self.model_.automl_._metric.name
+        main_metric = \
+            (self.model_.automl_._metric.name, self.model_.automl_._metric._optimum, self.model_.automl_._metric._sign)
+        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.automl_._scoring_functions]
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
                 timestamp.append(
-                    pd.Timestamp(run_value.endtime, unit='s', tz='utc').tz_convert(tzname[0]).tz_localize(None)
+                    pd.Timestamp(run_value.endtime, unit='s', tz='utc').tz_convert(py_time.tzname[0]).tz_localize(None)
                 )
                 model_id.append(run_value.additional_info['num_run'])
-                val_metric.append(metric_optimum - (metric_sign * run_value.cost))
-                train_metric.append(metric_optimum - (metric_sign * run_value.additional_info['train_loss']))
-                test_metric.append(metric_optimum - (metric_sign * run_value.additional_info.get('test_loss', np.nan)))
+                val, train, test, other = _get_metrics_from_run_value(run_value, main_metric, other_metrics)
+                val_metric.append(val)
+                train_metric.append(train)
+                test_metric.append(test)
+                for metric_name, values in metric_dict.items():
+                    values.append(other.get(metric_name, np.NaN))
                 duration.append(run_value.time)
                 run_config = configs[run_key.config_id]._values
                 types.append(run_config[f'{self._get_estimator_name()}:__choice__'])
 
-                # additional metrics are only available for validation set for single models,
-                # even if test data is provided
-                for metric in self.model_.automl_._scoring_functions:
-                    if metric.name in run_value.additional_info.keys():
-                        metric_cost = run_value.additional_info[metric.name]
-                        metric_value = metric._optimum - (metric._sign * metric_cost)
-                    else:
-                        metric_value = np.NaN
-                    metric_dict[metric.name].append(metric_value)
-
         result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp, type=types))
-        result['val_' + metric_name] = val_metric
+        result['val_' + main_metric[0]] = val_metric
         for name, values in metric_dict.items():
             result['val_' + name] = values
-        result['train_' + metric_name] = train_metric
+        result['train_' + main_metric[0]] = train_metric
         if not np.isnan(test_metric).all():
-            result['test_' + metric_name] = test_metric
+            result['test_' + main_metric[0]] = test_metric
         result['duration'] = duration
 
         if self.model_.automl_.ensemble_ is not None:
@@ -233,10 +245,19 @@ class AutoSklearnBackend(AutoMLBackend):
                 (_, model_id, _) = self.model_.automl_.ensemble_.identifiers_[i]
                 result.loc[result['model_id'] == model_id, 'ensemble_weight'] = weight
             aux = pd.DataFrame(self.model_.automl_.ensemble_performance_history)
-            if not aux.empty:
-                result['ensemble_val_' + metric_name] = np.nan
+            if aux.empty:
+                aux = getattr(self.model_.automl_.ensemble_, 'trajectory_', [])
+                if aux:
+                    # set ensemble score of all models trained after last model occurring in ensemble to final
+                    # trajectory value
+                    aux = main_metric[1] - main_metric[2] * aux[-1]
+                    result['ensemble_val_' + main_metric[0]] = np.nan
+                    result.loc[result['timestamp'] >= result.loc[result['ensemble_weight'] > 0., 'timestamp'].max(),
+                               'ensemble_val_' + main_metric[0]] = aux
+            else:
+                result['ensemble_val_' + main_metric[0]] = np.nan
                 if 'ensemble_test_score' in aux.columns:
-                    result['ensemble_test_' + metric_name] = np.nan
+                    result['ensemble_test_' + main_metric[0]] = np.nan
                 for i in range(len(result)):
                     # find first ensemble fitted after current and before next model, if any
                     mask = result['timestamp'].iloc[i] < aux['Timestamp']
@@ -244,12 +265,12 @@ class AutoSklearnBackend(AutoMLBackend):
                         mask &= result['timestamp'].iloc[i + 1] > aux['Timestamp']
                     if mask.any():
                         j = aux.loc[mask, 'Timestamp'].idxmin()
-                        result.loc[result.index[i], 'ensemble_val_' + metric_name] = aux.loc[j, 'ensemble_optimization_score']
+                        result.loc[result.index[i], 'ensemble_val_' + main_metric[0]] = aux.loc[j, 'ensemble_optimization_score']
                         if 'ensemble_test_score' in aux.columns:
-                            result.loc[result.index[i], 'ensemble_test_' + metric_name] = aux.loc[j, 'ensemble_test_score']
-                result['ensemble_val_' + metric_name].fillna(method='ffill', inplace=True)
+                            result.loc[result.index[i], 'ensemble_test_' + main_metric[0]] = aux.loc[j, 'ensemble_test_score']
+                result['ensemble_val_' + main_metric[0]].fillna(method='ffill', inplace=True)
                 if 'ensemble_test_score' in aux.columns:
-                    result['ensemble_test_' + metric_name].fillna(method='ffill', inplace=True)
+                    result['ensemble_test_' + main_metric[0]].fillna(method='ffill', inplace=True)
 
         result.sort_values('timestamp', inplace=True, ascending=True)
         return result
