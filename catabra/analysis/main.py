@@ -326,7 +326,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 hist = backend.training_history()
                 io.write_df(hist, out / 'training_history.xlsx')
                 if hist.empty:
-                    sub = pd.Series([])
+                    sub = pd.Series([], dtype=np.float32)
                 else:
                     cols = [c for c in hist.columns if c.startswith('ensemble_val_')]
                     if cols:
@@ -335,7 +335,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                         else:
                             sub = hist[cols].iloc[-1]
                     else:
-                        sub = pd.Series([])
+                        sub = pd.Series([], dtype=np.float32)
                 msg = ['Final training statistics:', '    n_models_trained: ' + str(len(hist))]
                 msg += ['    {}: {}'.format(sub.index[i], sub.iloc[i]) for i in range(len(sub))]
                 logging.log('\n'.join(msg))
