@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, Iterable
 import shutil
 import inspect
 import re
@@ -6,8 +6,15 @@ import numpy as np
 import pandas as pd
 import sklearn
 import joblib
+import logging as py_logging
+import time as py_time      # otherwise shadowed by parameter of method `fit()`
+import yaml
+from smac.callbacks import IncorporateRunResultCallback
+from smac.tae import StatusType
 
+from ...util import io
 from ...util import logging
+from ...util.common import repr_timedelta
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
@@ -16,6 +23,75 @@ from . import explanation
 
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')
+
+
+class _EnsembleLoggingHandler(py_logging.Handler):
+    """Logging handler for printing _comprehensible_ messages whenever a new ensemble has been fit.
+    Solution is a bit hacky and can easily break if some of the internals of auto-sklearn change."""
+
+    def __init__(self, metric: str = 'cost', optimum: str = '0.', sign: str = '-1.', start_time: str = '0.', **kwargs):
+        super(_EnsembleLoggingHandler, self).__init__(**kwargs)
+        self.metric = metric
+        self.optimum = float(optimum)
+        self.sign = float(sign)
+        self.start_time = float(start_time)
+        # Counting ensembles analogous to models in `_SMACLoggingCallback` does not work, as the counter is
+        # never increased. This might be because this class is being re-instantiated again and again.
+
+    def emit(self, record: py_logging.LogRecord):
+        if record.levelname == 'INFO':
+            if hasattr(record.msg, 'weights_') and hasattr(record.msg, 'trajectory_'):
+                n_models = sum(w > 0 for w in record.msg.weights_)
+                value = self.optimum - self.sign * record.msg.trajectory_[-1]
+                try:
+                    logging.log(
+                        'New ensemble fitted:\n'
+                        '    ensemble_val_{:s}: {:f}\n'
+                        '    n_constituent_models: {:d}\n'
+                        '    total_elapsed_time: {:s}'
+                        .format(self.metric, value, n_models, repr_timedelta(record.created - self.start_time))
+                    )
+                except RecursionError:
+                    raise
+                except:     # noqa
+                    self.handleError(record)
+
+
+# Hacky, but class must be in some installed package such that `logging` finds it. We do not want to rely on CaTabRa
+# being installed.
+setattr(py_logging, '_AutoSklearnHandler', _EnsembleLoggingHandler)
+
+
+class _SMACLoggingCallback(IncorporateRunResultCallback):
+    """Callback for printing messages whenever a new model has been trained."""
+
+    def __init__(self, main_metric: Tuple[str, float, float], other_metrics: Iterable[Tuple[str, float, float]],
+                 estimator_name: str, start_time: float = 0.):
+        self.main_metric = main_metric
+        self.other_metrics = other_metrics
+        self.estimator_choice = estimator_name + ':__choice__'
+        self.start_time = start_time
+        self._n = 0     # interestingly, counting models seems to work even if multiple jobs are used
+
+    def __call__(self, smbo: 'SMBO', run_info: 'RunInfo', result: 'RunValue', time_left: float) -> Optional[bool]:
+        try:
+            if result.status == StatusType.SUCCESS and result.additional_info:
+                self._n += 1
+                val, train, test, other = _get_metrics_from_run_value(result, self.main_metric, self.other_metrics)
+                msg = 'New model #{:d} trained:\n    val_{:s}: {:f}\n'.format(self._n, self.main_metric[0], val)
+                for k, v in other.items():
+                    msg += '    val_{:s}: {:f}\n'.format(k, v)
+                if not pd.isna(test):
+                    msg += '    test_{:s}: {:f}\n'.format(self.main_metric[0], test)
+                if not pd.isna(train):
+                    msg += '    train_{:s}: {:f}\n'.format(self.main_metric[0], train)
+                msg += '    type: {:s}\n' \
+                       '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
+                                                             repr_timedelta(result.endtime - self.start_time))
+                logging.log(msg)
+        except:  # noqa
+            pass
+        return None
 
 
 def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, float, float],
@@ -196,8 +272,6 @@ class AutoSklearnBackend(AutoMLBackend):
         # * `autosklearn.automl.AutoML.performance_over_time_`,
         # * `autosklearn.automl.AutoML.cv_results_`,
         # * `autosklearn.estimators.AutoSklearnEstimator.leaderboard()`
-        from smac.tae import StatusType
-        from time import tzname
 
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
@@ -383,6 +457,7 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['metric'] = get_scorer(metrics[0])
             if len(metrics) > 1:
                 kwargs['scoring_functions'] = [get_scorer(m) for m in metrics[1:]]
+        metric = kwargs.get('metric')
 
         if self.task == 'regression':
             from autosklearn.regression import AutoSklearnRegressor as Estimator
@@ -394,10 +469,47 @@ class AutoSklearnBackend(AutoMLBackend):
         else:
             from autosklearn.classification import AutoSklearnClassifier as Estimator
 
-        # TODO: Set up proper logging, e.g., for printing to console whenever new pipeline has been fit.
+        # logging 1: ensemble building
+        if kwargs.get('n_jobs', 1) == 1:
+            # only works if 1 job is used, because otherwise only <Future: ...> messages are logged
+            import autosklearn.util.logging_ as logging_
+            with open(io.make_path(logging_.__file__).parent / 'logging.yaml', mode='rt') as fh:
+                logging_config = yaml.safe_load(fh)
+            askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler', 'start_time': str(py_time.time())}
+            if metric is not None:
+                askl_handler.update(
+                    metric=str(metric.name),
+                    optimum=str(metric._optimum),
+                    sign=str(metric._sign)
+                )
+            logging_config['handlers']['_askl_handler'] = askl_handler
+            logging_config['loggers']['Client-EnsembleBuilder'] = {
+                'level': 'INFO',
+                'handlers': ['_askl_handler']
+            }
+            kwargs['logging_config'] = logging_config
+
+        # logging 2: individual models
+        if metric is not None:
+            kwargs['get_trials_callback'] = _SMACLoggingCallback(
+                (metric.name, metric._optimum, metric._sign),
+                [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
+                self._get_estimator_name(),
+                start_time=py_time.time()
+            )
+        # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
+        # be nothing we can do about it ...
+
+        if kwargs.get('n_jobs', 1) != 1:
+            kwargs['seed'] = 42
+
         self.model_ = Estimator(**kwargs)
         self.model_.fit(x_train, y_train, dataset_name=dataset_name)
         if kwargs.get('ensemble_size', 1) > 0:
+            if kwargs.get('n_jobs', 1) != 1:
+                # `fit_ensemble()` must be called before `refit()`
+                # not sure whether this is actually needed, but should not take too much time so we do it anyway
+                self.model_.fit_ensemble(y_train)
             self.model_.refit(x_train, y_train)
         return self
 
