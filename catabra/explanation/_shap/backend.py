@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import shap
 
+from .kernel_explainer import CustomKernelExplainer
 from ...util.logging import progress_bar
 from ..base import ModelExplainer, TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
 from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
@@ -65,13 +66,14 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                         estimator=estimator_explainer.params_
                     )
                 except:     # noqa
-                    # Explaining the whole pipeline with KernelExplainer does not work under certain circumstances,
-                    # e.g., if the AutoML backend is auto-sklearn (reason: auto-sklearn expects DataFrames, which are
-                    # necessary for ColumnTransformer, but KernelExplainer converts input into arrays).
-                    # Setting argument `keep_index` of KernelExplainer to True does not help.
-                    # Hence, we simply skip this pipeline.
-                    # TODO: Subclass KernelExplainer to keep DataFrames.
-                    pass
+                    preprocessing_explainer = IdentityTransformationExplainer()
+                    estimator_explainer = SHAPExplainer(pipeline, task=ensemble.task, n_targets=len(self._target_names),
+                                                        data=x, permutation=permutation)
+                    self._explainers[_id] = (preprocessing_explainer, estimator_explainer)
+                    self._params['explainers'][_id] = dict(
+                        preprocessing=preprocessing_explainer.params_,
+                        estimator=estimator_explainer.params_
+                    )
         else:
             self._params = params
             unknown_ids = [_id for _id in self._params['explainers'] if _id not in ensemble.model_ids_]
@@ -215,13 +217,13 @@ class SHAPExplainer(ModelExplainer):
         if params is None:
             assert data is not None
             if isinstance(estimator, FittedModel):
-                kwargs = dict(data=_sample(data, permutation=permutation))
-                self._explainer = shap.KernelExplainer(
+                kwargs = dict(data=_sample(data, permutation=permutation), keep_index=True)
+                self._explainer = CustomKernelExplainer(
                     get_prediction_function(estimator, proba=self._task != 'regression'),
                     **kwargs
                 )
-                self._params = dict(explainer_class='KernelExplainer', init_kwargs=kwargs, pre='prediction_function',
-                                    call_kwargs=dict(silent=True))
+                self._params = dict(explainer_class='CustomKernelExplainer', init_kwargs=kwargs,
+                                    pre='prediction_function', call_kwargs=dict(silent=True))
             else:
                 self._explainer, self._params = _get_explainer(estimator, data, permutation, self._task != 'regression')
         else:
@@ -478,9 +480,9 @@ def _get_explainer(estimator, data, permutation, proba):
     except:  # noqa
         pass
 
-    kwargs = dict(data=data_sample)
-    explainer = shap.KernelExplainer(get_prediction_function(estimator, proba=proba), **kwargs)
-    return explainer, dict(explainer_class='KernelExplainer', init_kwargs=kwargs, pre='prediction_function',
+    kwargs = dict(data=data_sample, keep_index=True)
+    explainer = CustomKernelExplainer(get_prediction_function(estimator, proba=proba), **kwargs)
+    return explainer, dict(explainer_class='CustomKernelExplainer', init_kwargs=kwargs, pre='prediction_function',
                            call_kwargs=dict(silent=True))
 
 
@@ -495,6 +497,8 @@ def _make_explainer(estimator, params: dict, proba: bool):
         cls = MultiOutputExplainer
     elif explainer_class == 'OneVsRestExplainer':
         cls = OneVsRestExplainer
+    elif explainer_class == 'CustomKernelExplainer':
+        cls = CustomKernelExplainer
     else:
         cls = getattr(shap, explainer_class)
     return cls(estimator, **params['init_kwargs'])
