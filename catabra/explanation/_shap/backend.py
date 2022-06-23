@@ -6,7 +6,7 @@ import shap
 
 from .kernel_explainer import CustomKernelExplainer
 from ...util.logging import progress_bar
-from ..base import ModelExplainer, TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
+from ..base import TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
 from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
 
 
@@ -21,7 +21,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
 
         # dict mapping model (pipeline) IDs to pairs `(preprocessing_explainer, estimator_explainer)`
         # `preprocessing_explainer` may be None, if `estimator_explainer` explains the whole pipeline
-        # `estimator_explainer` is an instance of class `ModelExplainer`
+        # `estimator_explainer` is an instance of class `SHAPExplainer`
         # not every model (pipeline) needs to occur in the dict
         self._explainers = {}
 
@@ -209,7 +209,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                 return {n: self._finalize_output(s[i], index, glob) for i, n in enumerate(self._target_names)}
 
 
-class SHAPExplainer(ModelExplainer):
+class SHAPExplainer:
 
     def __init__(self, estimator, task=None, n_targets: int = 1, data=None, permutation=None, params=None):
         self._task = task
