@@ -489,6 +489,47 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
 
 
 class _LinearTransformationExplainer(TransformationExplainer):
+    """
+    Linear transformations are tricky. Assume that x_1, ..., x_m are the input features and that an new feature z is
+    constructed as a linear combination of the x_i:
+
+          z = sum_{i=1}^m alpha_i * x_i + b
+
+    Then there are at least three possibilities how to back-propagate the importance s of z:
+
+    1. Global back-propagation. Do not take actual feature values into account, only consider coefficients:
+
+          t_i = alpha_i / (sum_{j=1)^m |alpha_j|) * s
+
+          This is a very simple approach -- maybe too simple?
+
+    2. LRP-0-like. Multiply coefficients by actual feature values:
+
+          t_i = alpha_i * x_i / (sum_{j=1}^m |alpha_j * x_j|) * s
+
+          This closely resembles the LRP-0 rule of layer-wise relevance propagation, the only differences being the
+          absolute values in the sum in the denominator (to avoid division by 0), and the fact that the bias b is
+          ignored. This approach is probably better suited to cases where 0 represents "missingness"/"de-activation",
+          as in ReLU networks; that's in fact what LRP-0 was originally proposed for.
+
+    3. SHAP-like:
+
+          t_i = alpha_i * (x_i - mu_i) / (sum_{j=1}^m |alpha_j * (x_j - mu_j)|) * s
+
+          where mu_i := E(X_i) is the expected feature value.
+          Removing the absolute values in the denominator yields a rule that fits perfectly with linear SHAP (and
+          maybe SHAP in general?). However, the choice of the expected value is sort of arbitrary and merely owes
+          to the fact that SHAP sets features to their expected value for "switching them off". Other methods might
+          set them to 0 (think of LRP-0!) or any other sentinel value instead.
+
+    In every case, the denominator ensures that total importance is roughly preserved -- "roughly" because of the
+    absolute values that avoid division by 0. Other means for avoiding division by 0 are conceivable as well, of course.
+    The fact that the bias b is entirely ignored owes to the general paradigm of back-propagating importance, that
+    transformations that act on each feature separately have no impact on feature importance.
+
+    Given that no solution appears to be perfect, we go with the simplest one (1.) for the time being. This decision
+    might have to be revisited in the future, though.
+    """
 
     def __init__(self, transformer, matrix: np.ndarray, params=None):
         # `matrix` must be array of shape `(n_features_in, n_features_out)`, such that `transform()` approximately
@@ -511,9 +552,6 @@ class _LinearTransformationExplainer(TransformationExplainer):
             raise ValueError('S must be at least a 1D array.')
         elif s.shape[-1] != self._matrix.shape[1]:
             raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__, self._matrix.shape[1]))
-        # this roughly corresponds to LRP-0, with two main differences:
-        # 1. we take absolute values when forming denominators, to avoid division by 0
-        # 2. we do not take "activations" into account, but propagate importance globally
         return np.dot(s, self._matrix.T)
 
 
