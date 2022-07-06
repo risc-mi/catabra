@@ -592,11 +592,7 @@ def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFram
 
         if any(v for v, _ in ranks.values()):
             aux = aux.join(df[value_col].reset_index(drop=True), on='__observation_idx__')
-            aux = aux.set_index('__rank__', append=True)[[value_col, time_col]]
-        else:
-            aux = aux.set_index('__rank__', append=True)[[time_col]]
-        aux = aux.unstack(level=-1)
-        assert len(aux) == len(out)
+        assert len(aux) == len(out) * len(ranks)
         aux.sort_index(inplace=True)
 
         for r, (v, t) in ranks.items():
@@ -604,10 +600,11 @@ def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFram
                 r0 = -r - 1
             else:
                 r0 = r
+            m = aux['__rank__'] == r0
             if v:
-                out[(attr, 'r' + str(r))].values[:] = aux[(value_col, r0)].values
+                out[(attr, 'r' + str(r))].values[:] = aux.loc[m, value_col].values
             if t:
-                out[(attr, 't' + str(r))].values[:] = aux[(time_col, r0)].values
+                out[(attr, 't' + str(r))].values[:] = aux.loc[m, time_col].values
 
 
 def _resample_eav_ranks_2(df: pd.DataFrame, out: pd.DataFrame, agg: dict, entity_col, time_col,
