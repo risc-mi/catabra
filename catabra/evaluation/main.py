@@ -190,6 +190,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                if y_hat.ndim == 1:
+                    y_hat = y_hat.reshape(-1, 1)
 
                 # decoded ground truth and predictions for each target
                 y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
