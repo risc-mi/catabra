@@ -261,10 +261,19 @@ class AutoSklearnBackend(AutoMLBackend):
         return [_id for _, _id, _ in self._get_model_keys()]
 
     def summary(self) -> dict:
+        try:
+            # `show_models()` throws an exception if no models or only dummy models were trained
+            models = self.model_.show_models().values
+            models = [self._summarize_model(m) for m in models]
+        except:     # noqa
+            name = self._get_estimator_name()
+            # dummy estimators
+            models = [{'model_id': _id, name: m.__class__.__name__}
+                      for (_, _id, _), m in self.model_.automl_.models_.items()]
         return dict(
             automl=self.name(),
             task=self.task,
-            models=[self._summarize_model(m) for m in self.model_.show_models().values()]
+            models=models
         )
 
     def training_history(self) -> pd.DataFrame:
@@ -638,7 +647,7 @@ class AutoSklearnBackend(AutoMLBackend):
         if pipeline is None:
             # cv => rely on `self.model_.automl_.cv_models_.get(key)`
             return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
-        else:
+        elif hasattr(pipeline, 'steps'):
             estimator = pipeline.steps[-1][1].choice.estimator
             if estimator is None:
                 # cv => rely on `self.model_.automl_.cv_models_.get(key)`
@@ -650,6 +659,9 @@ class AutoSklearnBackend(AutoMLBackend):
                     preprocessing=steps,
                     estimator=estimator
                 )
+        else:
+            # dummy estimator
+            return dict(estimator=pipeline)
 
     def _get_fitted_model_by_id(self, model_id):
         models = [v for (_, _id, _), v in self._get_fitted_models().items() if _id == model_id]
