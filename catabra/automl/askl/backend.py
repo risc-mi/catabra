@@ -263,7 +263,7 @@ class AutoSklearnBackend(AutoMLBackend):
     def summary(self) -> dict:
         try:
             # `show_models()` throws an exception if no models or only dummy models were trained
-            models = self.model_.show_models().values
+            models = self.model_.show_models().values()
             models = [self._summarize_model(m) for m in models]
         except:     # noqa
             name = self._get_estimator_name()
