@@ -199,8 +199,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 y_hat_decoded.index = y_test_decoded.index
 
                 for mask, directory in _iter_splits():
-                    evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory, y_hat_decoded=y_hat_decoded,
-                                   y_true_decoded=y_test_decoded, main_metrics=main_metrics, static_plots=static_plots,
+                    evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                                   y_hat_decoded=y_hat_decoded[mask], y_true_decoded=y_test_decoded[mask],
+                                   main_metrics=main_metrics, static_plots=static_plots,
                                    interactive_plots=interactive_plots,
                                    bootstrapping_repetitions=bootstrapping_repetitions,
                                    split=(None if directory == out else directory.stem), verbose=True)
