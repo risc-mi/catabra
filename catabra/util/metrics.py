@@ -70,6 +70,48 @@ def _weighted_average(func):
     return _out
 
 
+def bootstrapped(func, n_repetitions: int = 100, agg='mean', seed=None, replace: bool = True,
+                 size: Union[int, float] = 1., **kwargs):
+    """
+    Convenience function for converting a metric into its bootstrapped version.
+    :param func: The metric to convert, e.g., `roc_auc`, `accuracy`, `mean_squared_error`, etc.
+    :param n_repetitions: Number of bootstrapping repetitions to perform. If 0, `func` is returned unchanged.
+    :param agg: Aggregation to compute of bootstrapping results.
+    :param seed: Random seed.
+    :param replace: Whether to resample with replacement. If False, this does not actually correspond to bootstrapping.
+    :param size: The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given
+    data. Bootstrapping normally assumes that resampled data have the same number of samples as the original data,
+    so this parameter should be set to 1.
+    :param kwargs: Additional keyword arguments that are passed to `func` upon application. Note that only arguments
+    that do not need to be resampled can be passed here; in particular, this excludes `sample_weight`.
+    :return: New metric that, when applied to `y_true` and `y_hat`, resamples the data, evaluates the metric on each
+    resample, and returns som aggregation (typically average) of the results thus obtained.
+    """
+    if n_repetitions <= 0:
+        if kwargs:
+            return partial(func, **kwargs)
+        else:
+            return func
+
+    from .bootstrapping import Bootstrapping
+
+    def fn(y_true, y_hat, sample_weight=None, **kwargs2):
+        kwargs2.update(kwargs)
+        if kwargs2:
+            _func = partial(func, **kwargs2)
+        else:
+            _func = func
+        if sample_weight is None:
+            _kwargs = None
+        else:
+            _kwargs = dict(sample_weight=sample_weight)
+        bs = Bootstrapping(y_true, y_hat, kwargs=_kwargs, fn=_func, seed=seed, replace=replace, size=size)
+        bs.run(n_repetitions=n_repetitions)
+        return bs.agg(agg)
+
+    return fn
+
+
 # regression
 r2 = skl_metrics.r2_score
 mean_absolute_error = skl_metrics.mean_absolute_error
