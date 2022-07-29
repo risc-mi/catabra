@@ -88,7 +88,10 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
 * `--split SPLIT`: Column used for splitting the data into train- and test set. If specified, descriptive  statistics,
     OOD-detectors and prediction models are generated based exclusively on the training split and then automatically
     evaluated on the test split. The name and/or values of the column must contain the string "train", "test" or "val",
-    to clearly indicate what is the training- and what is the test data. 
+    to clearly indicate what is the training- and what is the test data.
+* `--sample-weight SAMPLE_WEIGHT`: Column with sample weights, which are used for training, evaluating and
+    explaining prediction models.
+    Note, however, that not all AutoML-backends may support sample weights (auto-sklearn currently does not).
 * `--ignore IGNORE`: List of columns to ignore when training prediction models. Automatically includes `GROUP` and
     `SPLIT`, if specified, but may contain further columns.
 * `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in the parent directory
@@ -132,6 +135,7 @@ In addition, there optional arguments as well:
 * `--split SPLIT`: Column used for splitting the data into disjoint subsets. If specified, each subset is evaluated
     individually. In contrast to command `analyze`, the name/values of the column do not need to carry any semantic
     information about training and test sets.
+* `--sample-weight SAMPLE_WEIGHT`: Column with sample weights, which are used for evaluating prediction models.
 * `--model-id MODEL_ID`: Identifier of the prediction model to evaluate. By default, the sole trained model or the
     entire ensemble are evaluated. Check out `SOURCE/model_summary.json` for all available model-IDs.
 * `--explain [EXPLAIN ...]`: Explain prediction model(s). If passed without arguments, all models specified by
@@ -171,6 +175,8 @@ In addition, there optional arguments as well:
     contain any target columns.
 * `--split SPLIT`: Column used for splitting the data into disjoint subsets. If specified, `SOURCE` is explained on
     each split separately.
+* `--sample-weight SAMPLE_WEIGHT`: Column with sample weights, which may be used for explaining prediction models.
+    Only relevant for global explanations depending on background samples.
 * `--model-id [MODEL_ID ...]`: Identifier(s) of the prediction model(s) to explain. By default, all models in the final
     ensemble are explained. In contrast to `evaluate`, more than one ID can be specified.
     Check out `SOURCE/model_summary.json` for all available model-IDs.

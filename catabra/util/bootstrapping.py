@@ -6,8 +6,8 @@ import pandas as pd
 
 class Bootstrapping:
 
-    def __init__(self, *args: Union[pd.DataFrame, pd.Series, np.ndarray], fn=None, seed=None, replace: bool = True,
-                 size: Union[int, float] = 1.):
+    def __init__(self, *args: Union[pd.DataFrame, pd.Series, np.ndarray], kwargs: Optional[dict] = None,
+                 fn=None, seed=None, replace: bool = True, size: Union[int, float] = 1.):
         """
         Perform bootstrapping [1], i.e., repeatedly sample with replacement from given data and evaluate statistics
         on each resample to obtain mean, standard deviation, etc. for more robust estimates.
@@ -15,6 +15,8 @@ class Bootstrapping:
         [1] https://en.wikipedia.org/wiki/Bootstrapping_(statistics)
 
         :param args: Data, non-empty sequence of DataFrames, Series or arrays of the same length.
+        :param kwargs: Additional keyword arguments passed to the function `fn` computing the statistics. Like `args`,
+        the values of the dict must be DataFrames, Series or arrays of the same length as the elements of `args`.
         :param fn: The statistics to compute. Must be None, a function that takes the given `args` as input and returns
         a scalar/array/DataFrame/Series or a (nest) dict/tuple thereof, or a (nested) dict/tuple of such functions.
         :param seed: Optional, random seed.
@@ -29,6 +31,9 @@ class Bootstrapping:
         assert all(isinstance(a, (pd.Series, pd.DataFrame, np.ndarray)) for a in self._args)
         self._n = len(args[0])
         assert all(len(a) == self._n for a in self._args[1:])
+        self._kwargs = {} if kwargs is None else kwargs
+        assert all(isinstance(a, (pd.Series, pd.DataFrame, np.ndarray)) for a in self._kwargs.values())
+        assert all(len(a) == self._n for a in self._kwargs.values())
         self._fn = fn
         self._rng = np.random.RandomState(seed=seed)
         self._replace = replace
@@ -61,7 +66,8 @@ class Bootstrapping:
             self._idx.append(idx)
             res = Bootstrapping._apply_function(
                 self._fn,
-                [a[idx] if isinstance(a, np.ndarray) else a.iloc[idx] for a in self._args]
+                [a[idx] if isinstance(a, np.ndarray) else a.iloc[idx] for a in self._args],
+                {k: a[idx] if isinstance(a, np.ndarray) else a.iloc[idx] for k, a in self._kwargs.items()}
             )
             if self._results is None:
                 self._results = Bootstrapping._init_results(res)
@@ -157,15 +163,16 @@ class Bootstrapping:
             return pd.DataFrame(index=['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max'])
 
     @staticmethod
-    def _apply_function(fn, args: list):
+    def _apply_function(fn, args: list, kwargs: dict):
         if fn is None:
+            # ignore `kwargs`
             return tuple(args)
         elif isinstance(fn, dict):
-            return {k: Bootstrapping._apply_function(v, args) for k, v in fn.items()}
+            return {k: Bootstrapping._apply_function(v, args, kwargs) for k, v in fn.items()}
         elif isinstance(fn, tuple):
-            return tuple(Bootstrapping._apply_function(f, args) for f in fn)
+            return tuple(Bootstrapping._apply_function(f, args, kwargs) for f in fn)
         else:
-            return fn(*args)
+            return fn(*args, **kwargs)
 
     @staticmethod
     def _init_results(new):

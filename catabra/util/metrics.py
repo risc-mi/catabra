@@ -7,15 +7,19 @@ from sklearn import metrics as skl_metrics
 
 
 def _micro_average(func):
-    def _out(y_true, y_pred, **kwargs):
+    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
             classes = np.unique(y_true)
             y_true_one_hot = y_true[..., np.newaxis] == classes
             y_pred_one_hot = y_pred[..., np.newaxis] == classes
-            return func(y_true_one_hot.reshape(-1), y_pred_one_hot.reshape(-1), **kwargs)
-        else:
-            return func(y_true.reshape(-1), y_pred.reshape(-1), **kwargs)
+            y_true = y_true_one_hot
+            y_pred = y_pred_one_hot
+
+        if sample_weight is not None:
+            sample_weight = np.repeat(sample_weight, y_true.shape[1])
+
+        return func(y_true.ravel(), y_pred.ravel(), sample_weight=sample_weight, **kwargs)
 
     return _out
 
@@ -35,24 +39,33 @@ def _macro_average(func):
 def _samples_average(func):
     # only defined for multilabel problems
 
-    def _out(y_true, y_pred, **kwargs):
+    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(2,))
-        return np.mean([func(y_true[i], y_pred[i], **kwargs) for i in range(y_true.shape[0])])
+        return np.average([func(y_true[i], y_pred[i], **kwargs) for i in range(y_true.shape[0])], weights=sample_weight)
 
     return _out
 
 
 def _weighted_average(func):
-    def _out(y_true, y_pred, **kwargs):
+    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
-            classes, weights = np.unique(y_true, return_counts=True)
-            return \
-                np.sum([w * func(y_true == c, y_pred == c, **kwargs) for c, w in zip(classes, weights)]) / len(y_true)
+            if sample_weight is None:
+                classes, weights = np.unique(y_true, return_counts=True)
+            else:
+                classes = np.unique(y_true)
+                weights = np.zeros((len(classes),), dtype=np.float32)
+                for i, c in enumerate(classes):
+                    weights[i] = ((y_true == c) * sample_weight).sum()
+            return np.sum([w * func(y_true == c, y_pred == c, sample_weight=sample_weight, **kwargs)
+                           for c, w in zip(classes, weights)]) / len(y_true)
         else:
-            weights = (y_true > 0).sum(axis=0)
-            return \
-                np.sum([w * func(y_true[:, i], y_pred[:, i], **kwargs) for i, w in enumerate(weights)]) / weights.sum()
+            if sample_weight is None:
+                weights = (y_true > 0).sum(axis=0)
+            else:
+                weights = ((y_true > 0) * sample_weight[..., np.newaxis]).sum(axis=0)
+            return np.sum([w * func(y_true[:, i], y_pred[:, i], sample_weight=sample_weight, **kwargs)
+                           for i, w in enumerate(weights)]) / weights.sum()
 
     return _out
 
@@ -65,11 +78,14 @@ root_mean_squared_error = partial(skl_metrics.mean_squared_error, squared=False)
 mean_squared_log_error = skl_metrics.mean_squared_log_error
 median_absolute_error = skl_metrics.median_absolute_error
 mean_absolute_percentage_error = skl_metrics.mean_absolute_percentage_error
-max_error = skl_metrics.max_error
 explained_variance = skl_metrics.explained_variance_score
 mean_tweedie_deviance = skl_metrics.mean_tweedie_deviance
 mean_poisson_deviance = skl_metrics.mean_poisson_deviance
 mean_gamma_deviance = skl_metrics.mean_gamma_deviance
+
+
+def max_error(y_true, y_pred, sample_weight=None):
+    return skl_metrics.max_error(y_true, y_pred)
 
 
 # classification with probabilities
@@ -97,13 +113,14 @@ def pr_auc(y_true, y_score, **kwargs) -> float:
     return skl_metrics.auc(recall, precision)
 
 
-def balance_score_threshold(y_true, y_score) -> Tuple[float, float]:
+def balance_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> Tuple[float, float]:
     """
     Compute the balance score and -threshold of a binary classification problem.
     :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
     contain NaN.
     :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
     to the positive class. Range is arbitrary.
+    :param sample_weight: Sample weights.
     :return: Pair `(balance_score, balance_threshold)`, where `balance_threshold` is the decision threshold that
     minimizes the difference between sensitivity and specificity, i.e., it is defined as
 
@@ -114,13 +131,21 @@ def balance_score_threshold(y_true, y_score) -> Tuple[float, float]:
     """
     if len(y_true) != len(y_score):
         raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+    elif sample_weight is not None and len(y_true) != len(sample_weight):
+        raise ValueError(
+            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+        )
     elif len(y_true) == 0:
         return 0., 0.
     if isinstance(y_true, pd.Series):
         y_true = y_true.values
     if isinstance(y_score, pd.Series):
         y_score = y_score.values
-    s = pd.DataFrame(data=dict(p=(y_true > 0), n=(y_true < 1)), index=y_score).groupby(level=0).sum()
+    s = pd.DataFrame(data=dict(p=(y_true > 0).astype(np.float32), n=(y_true < 1).astype(np.float32)), index=y_score)
+    if sample_weight is not None:
+        s['p'] *= sample_weight
+        s['n'] *= sample_weight
+    s = s.groupby(level=0).sum()
     s.sort_index(ascending=False, inplace=True)
     n_pos = s['p'].sum()
     n_neg = s['n'].sum()
@@ -135,16 +160,16 @@ def balance_score_threshold(y_true, y_score) -> Tuple[float, float]:
     return ((tn[i] / n_neg) if n_pos == 0 else (tp[i] / n_pos)), th
 
 
-def balance_score(y_true, y_score) -> float:
-    return balance_score_threshold(y_true, y_score)[0]
+def balance_score(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
+    return balance_score_threshold(y_true, y_score, sample_weight=sample_weight)[0]
 
 
-def balance_threshold(y_true, y_score) -> float:
-    return balance_score_threshold(y_true, y_score)[1]
+def balance_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
+    return balance_score_threshold(y_true, y_score, sample_weight=sample_weight)[1]
 
 
-def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optional[np.ndarray] = None) \
-        -> Tuple[np.ndarray, np.ndarray]:
+def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, sample_weight: Optional[np.ndarray] = None,
+                      thresholds: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute the calibration curve of a binary classification problem. The predicated class probabilities are binned and,
     for each bin, the fraction of positive samples is determined. These fractions can then be plotted against the
@@ -152,6 +177,7 @@ def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optio
     :param y_true: Ground truth, array of shape `(n,)` with values among 0 and 1. Values must not be NaN.
     :param y_score: Predicated probabilities of the positive class, array of shape `(n,)` with arbitrary non-NaN values;
     in particular, the values do not necessarily need to correspond to probabilities or confidences.
+    :param sample_weight: Sample weight.
     :param thresholds: The thresholds used for binning `y_score`. If None, suitable thresholds are determined
     automatically.
     :return: Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and
@@ -160,7 +186,7 @@ def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, thresholds: Optio
     """
     assert y_true.shape == y_score.shape
     if thresholds is None:
-        thresholds = get_thresholds(y_score, n_max=40, add_half_one=False)
+        thresholds = get_thresholds(y_score, n_max=40, add_half_one=False, sample_weight=sample_weight)
     if len(thresholds) < 2:
         return np.empty((0,), dtype=np.float32), thresholds
     return \
@@ -237,15 +263,33 @@ def roc_pr_curve(y_true: np.ndarray, y_score: np.ndarray, *, pos_label: Union[in
         np.hstack((precision[sl], 1)), np.hstack((recall[sl], 0)), thresholds[sl]
 
 
-def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None) -> list:
+def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None,
+                   sample_weight: Optional[np.ndarray] = None) -> list:
     n = min(np.isfinite(y).sum(), n_max)
     if n == 0:
         thresholds = set()
     elif n == 1:
         thresholds = {np.nanmin(y)}
-    else:
+    elif sample_weight is None:
         thresholds = np.sort(y[np.isfinite(y)])
         thresholds = set(thresholds[np.linspace(0, len(thresholds) - 1, n).round().astype(np.int32)])
+    else:
+        mask = np.isfinite(y)
+        y0 = y[mask]
+        sample_weight = sample_weight[mask]
+        indices = np.argsort(y0)
+        y0 = y0[indices]
+        sample_weight = sample_weight[indices]
+        s = sample_weight.cumsum() / np.maximum(sample_weight.sum(), 1e-8)
+        np.clip(s, 0., 1., out=s)
+        s *= n
+        s = np.ceil(s).astype(np.int32)
+        indices = np.zeros((n,), dtype=np.int32)
+        for i in range(1, n):
+            aux = np.where(s == i)[0]
+            if len(aux) > 0:
+                indices[i] = aux[-1]
+        thresholds = set(y0[indices])
     if add_half_one is True or (add_half_one is None and not (y < 0).any() and not (1 < y).any()):
         thresholds.update({0.5, 1.})
     thresholds = list(thresholds)

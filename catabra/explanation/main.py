@@ -11,8 +11,8 @@ from ..util import plotting
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
-            split: Optional[str] = None, out: Union[str, Path, None] = None, glob: Optional[bool] = False,
-            jobs: Optional[int] = None, batch_size: Optional[int] = None,
+            split: Optional[str] = None, sample_weight: Optional[str] = None, out: Union[str, Path, None] = None,
+            glob: Optional[bool] = False, jobs: Optional[int] = None, batch_size: Optional[int] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Explain an existing CaTabRa object (prediction model) in terms of feature importance.
@@ -26,6 +26,8 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
     subset is explained individually. In contrast to function `analyze()`, the name/values of the column do not need to
     carry any semantic information about training and test sets.
+    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
+    Sample weights are used both for training and evaluating prediction models.
     :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
     with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
     should be replaced; otherwise, it is automatically created.
@@ -50,6 +52,8 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             model_id = from_invocation.get('model_id')
         if split is None:
             split = from_invocation.get('split')
+        if sample_weight is None:
+            sample_weight = from_invocation.get('sample_weight')
         if out is None:
             out = from_invocation.get('out')
         if glob is None:
@@ -97,6 +101,8 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
 
     if split == '':
         split = None
+    if sample_weight == '':
+        sample_weight = None
     if glob is None:
         glob = not (global_behavior.get('mean_of_local', False) or len(table) > 0)
 
@@ -107,6 +113,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             folder=loader.path,
             model_id=model_id,
             split=split,
+            sample_weight=sample_weight,
             out=out,
             glob=glob,
             jobs=jobs,
@@ -150,6 +157,21 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
 
             x_test = encoder.transform(x=df)
 
+        if sample_weight is None or df is None:
+            sample_weights = None
+        elif sample_weight in df.columns:
+            if df[sample_weight].dtype.kind not in 'fiub':
+                raise ValueError(f'Column "{sample_weight}" must have numeric data type,'
+                                 f' but found {df[sample_weight].dtype.name}.')
+            logging.log(f'Weighting samples by column "{sample_weight}"')
+            sample_weights = df[sample_weight].values
+            na_mask = np.isnan(sample_weights)
+            if na_mask.any():
+                sample_weights = sample_weights.copy()
+                sample_weights[na_mask] = 1.
+        else:
+            raise ValueError(f'"{sample_weight}" is no column of the specified table.')
+
         static_plots = config.get('static_plots', True)
         interactive_plots = config.get('interactive_plots', False)
         if interactive_plots and plotting.plotly_backend is None:
@@ -161,9 +183,10 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
         for mask, directory in _iter_splits():
             if mask is not None:
                 logging.log('*** Split ' + directory.stem)
-            explain_split(explainer, x=(x_test if mask is None else x_test[mask]), directory=directory, glob=glob,
-                          model_id=model_id, batch_size=batch_size, jobs=jobs, static_plots=static_plots,
-                          interactive_plots=interactive_plots, verbose=True)
+            explain_split(explainer, x=x_test if mask is None else x_test[mask],
+                          sample_weight=None if sample_weights is None else sample_weights[mask],
+                          directory=directory, glob=glob, model_id=model_id, batch_size=batch_size, jobs=jobs,
+                          static_plots=static_plots, interactive_plots=interactive_plots, verbose=True)
 
         end = pd.Timestamp.now()
         logging.log(f'### Explanation finished at {end}')
@@ -171,13 +194,15 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
         logging.log(f'### Output saved in {out.as_posix()}')
 
 
-def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None, directory=None, glob: bool = False,
+def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None,
+                  sample_weight: Optional[np.ndarray] = None, directory=None, glob: bool = False,
                   model_id=None, batch_size: Optional[int] = None, jobs: int = 1, static_plots: bool = True,
                   interactive_plots: bool = False, verbose: bool = False) -> Optional[dict]:
     """
     Explain a single data split.
     :param explainer: Explainer object.
     :param x: Encoded data to apply `explainer` to, optional unless `glob` is False. Only features, no labels.
+    :param sample_weight: Sample weights, optional. Ignored if `x` is None or `glob` is False.
     :param directory: Directory where to save the explanations. If None, results are returned in a dict.
     :param glob: Whether to create global explanations.
     :param model_id: ID(s) of the model(s) to explain.
@@ -204,8 +229,8 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
 
     title = explainer.name() + ' Feature Importance'
     if glob:
-        explanations: dict = explainer.explain_global(x=x, jobs=jobs, batch_size=batch_size,
-                                                      model_id=model_id, show_progress=verbose)
+        explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
+                                                      batch_size=batch_size, model_id=model_id, show_progress=verbose)
         if static_plots:
             _save_plots(plot_bars(explanations, interactive=False, title=title), 'static_plots')
         if interactive_plots:
@@ -322,12 +347,13 @@ def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, t
     return out
 
 
-def average_local_explanations(explanations: Union[pd.DataFrame, dict], **kwargs) \
-        -> Union[np.ndarray, pd.DataFrame, dict]:
+def average_local_explanations(explanations: Union[pd.DataFrame, dict], sample_weight: Optional[np.ndarray] = None,
+                               **kwargs) -> Union[np.ndarray, pd.DataFrame, dict]:
     """
     Average local explanations to get a global overview of feature importance.
     :param explanations: Local explanations to average, DataFrame of shape `(*dim, n_samples, n_features)` or a
     (nested) dict thereof with at most two levels of nesting.
+    :param sample_weight: Sample weights, optional.
     :return: Averaged explanations, with the same format as what would be returned by method
     `EnsembleExplainer.explain_global()`. That is, either a single DataFrame, or a dict whose values are DataFrames.
     """
@@ -335,11 +361,12 @@ def average_local_explanations(explanations: Union[pd.DataFrame, dict], **kwargs
         if kwargs.get('_require_df', False):
             raise ValueError('Expected DataFrame, got dict.')
         elif kwargs.get('_nest', True):
-            return {k: average_local_explanations(v, _nest=False) for k, v in explanations.items()}
+            return {k: average_local_explanations(v, sample_weight=sample_weight, _nest=False)
+                    for k, v in explanations.items()}
         else:
             dfs = []
             for k, v in explanations.items():
-                df = average_local_explanations(v, _require_df=True)
+                df = average_local_explanations(v, sample_weight=sample_weight, _require_df=True)
                 df.columns = [f'{k}_{c}' for c in df.columns]
                 dfs.append(df)
             if dfs:
@@ -347,8 +374,13 @@ def average_local_explanations(explanations: Union[pd.DataFrame, dict], **kwargs
             else:
                 return pd.DataFrame()
     else:
-        positive = (explanations * (explanations > 0)).sum(axis=0) / len(explanations)
-        negative = (explanations * (explanations < 0)).sum(axis=0) / len(explanations)
+        if sample_weight is None:
+            positive = (explanations * (explanations > 0)).sum(axis=0) / len(explanations)
+            negative = (explanations * (explanations < 0)).sum(axis=0) / len(explanations)
+        else:
+            div = sample_weight.sum()
+            positive = ((explanations * (explanations > 0)) * sample_weight[..., np.newaxis]).sum(axis=0) / div
+            negative = ((explanations * (explanations < 0)) * sample_weight[..., np.newaxis]).sum(axis=0) / div
         return positive.to_frame('>0').join(negative.to_frame('<0'))
 
 

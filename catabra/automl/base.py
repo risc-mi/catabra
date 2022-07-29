@@ -68,7 +68,7 @@ class AutoMLBackend:
         raise NotImplementedError()
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            time: Optional[int] = None, jobs: Optional[int] = None,
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
             dataset_name: Optional[str] = None) -> 'AutoMLBackend':
         """
         Fit models and/or an ensemble thereof to new data.
@@ -78,6 +78,7 @@ class AutoMLBackend:
         float data type. May contain NaN values.
         :param groups: Optional grouping information for internal (cross) validation. If given, must have shape
         `(n_samples,)`.
+        :param sample_weights: Optional sample weights. If given, must have shape `(n_samples,)`.
         :param time: The time budget, in minutes, or -1 if no budget is imposed. Overwrites the time budget specified
         in the config dict.
         :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number

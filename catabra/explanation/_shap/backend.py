@@ -117,13 +117,14 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
 
     def explain(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
                 show_progress: bool = False) -> dict:
-        return self._explain_multi(model_id, x, jobs, batch_size, False, not show_progress)
+        return self._explain_multi(model_id, x, None, jobs, batch_size, False, not show_progress)
 
-    def explain_global(self, x: Optional[pd.DataFrame] = None, jobs: int = 1, batch_size: Optional[int] = None,
-                       model_id=None, show_progress: bool = False) -> dict:
+    def explain_global(self, x: Optional[pd.DataFrame] = None, sample_weight: Optional[np.ndarray] = None,
+                       jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
+                       show_progress: bool = False) -> dict:
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
-        return self._explain_multi(model_id, x, jobs, batch_size, True, not show_progress)
+        return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
 
     def _explain_single(self, model_id, x: pd.DataFrame, jobs: int, batch_size: int, glob: bool,
                         silent: bool) -> np.ndarray:
@@ -144,8 +145,8 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             )
             return np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
 
-    def _explain_multi(self, model_id: Optional[list], x: pd.DataFrame, jobs: int, batch_size: Optional[int],
-                       glob: bool, silent: bool) -> dict:
+    def _explain_multi(self, model_id: Optional[list], x: pd.DataFrame, sample_weight: Optional[np.ndarray], jobs: int,
+                       batch_size: Optional[int], glob: bool, silent: bool) -> dict:
         if batch_size is None:
             batch_size = min(32, len(x))
         if model_id is None:
@@ -188,7 +189,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             # reason for explaining everything locally and averaging at end is that we want to distinguish between
             # positive and negative contributions, and back-propagating through preprocessing steps could change
             # the polarity of scores
-            out = {k: _local_to_global(v) for k, v in out.items()}
+            out = {k: _local_to_global(v, sample_weight) for k, v in out.items()}
 
         return {k: self._finalize_output(v, x.index, glob) for k, v in out.items()}
 
@@ -314,11 +315,13 @@ class SHAPExplainer:
                 assert s.shape[0] == self._n_targets
         return s
 
-    def explain_global(self, x=None, jobs: int = 1, batch_size: Optional[int] = None) -> np.ndarray:
+    def explain_global(self, x=None, sample_weight: Optional[np.ndarray] = None, jobs: int = 1,
+                       batch_size: Optional[int] = None) -> np.ndarray:
         """
         Explain the estimator globally w.r.t. a given set of samples. This amounts to explaining the given samples
         and then averaging the obtained SHAP values.
         :param x: Samples to explain, array-like of shape `(n_samples, n_features)`.
+        :param sample_weight: Sample weights. None or array of shape `(n_samples,)`.
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
         :return: SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction
@@ -335,7 +338,7 @@ class SHAPExplainer:
         """
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
-        return _local_to_global(self.explain(x, jobs=jobs, batch_size=batch_size))
+        return _local_to_global(self.explain(x, jobs=jobs, batch_size=batch_size), sample_weight)
 
 
 class MultiOutputExplainer(shap.Explainer):
@@ -519,10 +522,17 @@ def _sample(x, permutation: np.ndarray = None, n: int = 100):
     return x
 
 
-def _local_to_global(s: np.ndarray) -> np.ndarray:
-    positive = (s * (s > 0)).sum(axis=-2)  # sample axis is last-but-one
-    negative = (s * (s < 0)).sum(axis=-2)  # sample axis is last-but-one
-    return np.stack([positive, negative], axis=0) / s.shape[-2]
+def _local_to_global(s: np.ndarray, sample_weight: Optional[np.ndarray]) -> np.ndarray:
+    if sample_weight is None:
+        div = s.shape[-2]
+        positive = (s * (s > 0)).sum(axis=-2)  # sample axis is last-but-one
+        negative = (s * (s < 0)).sum(axis=-2)  # sample axis is last-but-one
+    else:
+        div = sample_weight.sum()
+        sample_weight = sample_weight.reshape([1] * (s.ndim - 2) + [-1, 1])
+        positive = ((s * (s > 0)) * sample_weight).sum(axis=-2)  # sample axis is last-but-one
+        negative = ((s * (s < 0)) * sample_weight).sum(axis=-2)  # sample axis is last-but-one
+    return np.stack([positive, negative], axis=0) / div
 
 
 def _explain_single(preprocessing_explainer: TransformationExplainer, estimator_explainer: SHAPExplainer,

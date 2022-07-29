@@ -66,15 +66,17 @@ def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History
     return fig
 
 
-def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str] = None,
-                       title: Optional[str] = 'Truth-Prediction Plot'):
+def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, sample_weight: Optional[np.ndarray] = None,
+                       name: Optional[str] = None, title: Optional[str] = 'Truth-Prediction Plot', cmap='Blues'):
     """
     Create a scatter plot with results of a regression task.
     :param y_true: Ground truth, array of shape `(n,)`. May contain NaN values.
     :param y_hat: Predictions, array of shape `(n,)`. Must have same data type as `y_true`, and may also contain NaN
     values.
+    :param sample_weight: Sample weights.
     :param name: Name of the target variable.
     :param title: The title of the resulting figure.
+    :param cmap: The color map for coloring points according to `sample_weight`.
     :return: plotly figure object.
     """
     assert len(y_true) == len(y_hat)
@@ -97,12 +99,38 @@ def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str
         text = None
     if isinstance(y_hat, pd.Series):
         y_hat = y_hat.values
-    df = pd.DataFrame(data=dict(y_true=y_true, y_hat=y_hat))
-    if text is not None:
-        df['ID'] = text
-        text = 'ID'
-    fig = px.scatter(df, x='y_true', y='y_hat', text=text, marginal_x='histogram', marginal_y='histogram')
-    fig.update_traces(histnorm='probability', selector={'type': 'histogram'})
+    if sample_weight is None:
+        df = pd.DataFrame(data=dict(y_true=y_true, y_hat=y_hat))
+        if text is not None:
+            df['ID'] = text
+            text = 'ID'
+        fig = px.scatter(df, x='y_true', y='y_hat', text=text, marginal_x='histogram', marginal_y='histogram')
+        fig.update_traces(histnorm='probability', selector={'type': 'histogram'})
+    else:
+        def _to_color(_c: tuple) -> str:
+            return f'rgb({round(_c[0] * 256)},{round(_c[1] * 256)},{round(_c[2] * 256)})'
+
+        cmap = _common.get_colormap(cmap)
+        if text is None:
+            text = ['y_true={}<br>y_hat={}<br>sample_weight={}'.format(y_true[j], y_hat[j], sample_weight[j])
+                    for j in range(len(y_true))]
+        else:
+            text = ['ID={}<br>y_true={}<br>y_hat={}<br>sample_weight={}'.format(text[j], y_true[j], y_hat[j],
+                                                                                sample_weight[j])
+                    for j in range(len(y_true))]
+        colors = cmap((sample_weight - sample_weight.min()) / (sample_weight.max() - sample_weight.min()))
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scattergl(
+                x=y_true,
+                y=y_hat,
+                mode='markers',
+                marker=dict(color=[_to_color(c) for c in colors]),
+                hovertemplate='%{text}',
+                text=text,
+                name=''
+            )
+        )
     fig.add_shape(type='line', line=dict(dash='dash', width=0.5), x0=d_min, y0=d_min, x1=d_max, y1=d_max)
 
     fig.update_layout(

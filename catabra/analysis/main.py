@@ -18,8 +18,8 @@ from ..util import statistics
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
-            split: Optional[str] = None, ignore: Optional[Iterable[str]] = None, time: Optional[int] = None,
-            out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
+            split: Optional[str] = None, sample_weight: Optional[str] = None, ignore: Optional[Iterable[str]] = None,
+            time: Optional[int] = None, out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
             default_config: Optional[str] = None, jobs: Optional[int] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
@@ -37,6 +37,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     descriptive statistics, OOD-detectors and prediction models are generated based exclusively on the training split
     and then automatically evaluated on the test split. The name and/or values of the column must contain the string
     "train", "test" or "val", to clearly indicate what is the training- and what is the test data.
+    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
+    Sample weights are used both for training and evaluating prediction models.
     :param ignore: Optional, list of columns to ignore when training prediction models. Automatically includes `group`
     and `split`, but may contain further columns.
     :param time: Optional, time budget for model training, in minutes. Some AutoML backends require a fixed budget,
@@ -71,6 +73,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             group = from_invocation.get('group')
         if split is None:
             split = from_invocation.get('split')
+        if sample_weight is None:
+            sample_weight = from_invocation.get('sample_weight')
         if ignore is None:
             ignore = from_invocation.get('ignore')
         if out is None:
@@ -109,6 +113,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         group = None
     if split == '':
         split = None
+    if sample_weight == '':
+        sample_weight = None
     if config == '':
         config = None
     if default_config in (None, ''):
@@ -149,6 +155,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             classify=classify,
             group=group,
             split=split,
+            sample_weight=sample_weight,
             ignore=ignore,
             out=out,
             config=config,
@@ -278,6 +285,22 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             else:
                 raise ValueError(f'"{group}" is no column of the specified table.')
 
+        if sample_weight is None:
+            sample_weights = None
+        elif sample_weight in df_train.columns:
+            if df_train[sample_weight].dtype.kind not in 'fiub':
+                raise ValueError(f'Column "{sample_weight}" must have numeric data type,'
+                                 f' but found {df_train[sample_weight].dtype.name}.')
+            logging.log(f'Weighting samples by column "{sample_weight}"')
+            ignore.add(sample_weight)
+            sample_weights = df_train[sample_weight].values
+            na_mask = np.isnan(sample_weights)
+            if na_mask.any():
+                sample_weights = sample_weights.copy()
+                sample_weights[na_mask] = 1.
+        else:
+            raise ValueError(f'"{sample_weight}" is no column of the specified table.')
+
         id_cols = [c for c in id_cols if c not in ignore and c not in target]
         if id_cols:
             logging.warn(f'{len(id_cols)} columns appear to contain IDs, but are used as features:',
@@ -313,6 +336,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         x_train, y_train = encoder.fit_transform(df_train, y=y_train)
         encoder.dump(out / 'encoder.json')
 
+        # backend = None
         if y_train is not None and (config.get('time_limit') if time is None else time) != 0:
             automl = config.get('automl')
             if automl is not None:
@@ -320,7 +344,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 if backend is None:
                     raise ValueError(f'Unknown AutoML backend: {automl}')
                 logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
-                backend.fit(x_train, y_train, groups=group, time=time, jobs=jobs, dataset_name=dataset_name)
+                backend.fit(x_train, y_train, groups=group, sample_weights=sample_weights, time=time, jobs=jobs,
+                            dataset_name=dataset_name)
                 io.dump(backend, out / 'model.joblib')
                 io.dump(io.to_json(backend.summary()), out / 'model_summary.json')
                 hist = backend.training_history()
@@ -367,6 +392,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                             (out / explainer.name()).mkdir(exist_ok=True, parents=True)
                             io.dump(explainer.params_, out / explainer.name() / 'params.joblib')
 
+        # ood_detection(x_train, y_train, backend.fitted_ensemble() if backend else None)
+
         end = pd.Timestamp.now()
         logging.log(f'### Analysis finished at {end}')
         logging.log(f'### Elapsed time: {end - start}')
@@ -374,7 +401,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
     if len(split_masks) > 0:
         from .. import evaluation
-        evaluation.evaluate(df, folder=out, split=split, out=out / 'eval', jobs=jobs)
+        evaluation.evaluate(df, folder=out, split=split, sample_weight=sample_weight, out=out / 'eval', jobs=jobs)
 
 
 def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:

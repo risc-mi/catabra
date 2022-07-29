@@ -210,12 +210,14 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def explain_global(self, x: Optional[pd.DataFrame] = None, jobs: int = 1, batch_size: Optional[int] = None,
-                       model_id=None, show_progress: bool = False) -> dict:
+    def explain_global(self, x: Optional[pd.DataFrame] = None, sample_weight: Optional[np.ndarray] = None,
+                       jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
+                       show_progress: bool = False) -> dict:
         """
         Explain the ensemble, or some of its constituent models (pipelines), globally.
         :param x: Samples, optional, a DataFrame with the same columns as the ensemble was trained on.
         Call method `global_behavior()` to see whether this argument is accepted or required (depends on the backend).
+        :param sample_weight: Sample weight. Ignored if `x` is None.
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
         :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.

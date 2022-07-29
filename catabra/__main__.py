@@ -12,6 +12,16 @@ def make_parser():
     _parser.add_argument('--version', action='version', version='%(prog)s ' + __version__)
     subparsers = _parser.add_subparsers(help='The function to invoke.')
 
+    def _add_weights(_p: argparse.ArgumentParser):
+        _p.add_argument(
+            '-w', '--sample-weight',
+            type=str,
+            nargs='?',
+            const='',
+            metavar='SAMPLE_WEIGHT',
+            help='Name of the column containing sample weights.'
+        )
+
     def _add_jobs(_p: argparse.ArgumentParser):
         _p.add_argument(
             '-j', '--jobs',
@@ -32,7 +42,7 @@ def make_parser():
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
-                ignore=args.ignore, time=args.time, out=args.out, config=args.config,
+                sample_weight=args.sample_weight, ignore=args.ignore, time=args.time, out=args.out, config=args.config,
                 default_config=args.default_config, jobs=args.jobs, from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
@@ -40,9 +50,9 @@ def make_parser():
         expl = args.explain
         if expl is not None and len(expl) == 0:
             expl = '__all__'
-        evaluate(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, explain=expl,
-                 glob=getattr(args, 'global'), out=args.out, jobs=args.jobs, batch_size=args.batch_size,
-                 from_invocation=getattr(args, 'from', None))
+        evaluate(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
+                 model_id=args.model_id, explain=expl, glob=getattr(args, 'global'), out=args.out, jobs=args.jobs,
+                 batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
 
     def _explain(args: argparse.Namespace):
         from .explanation import explain
@@ -53,8 +63,9 @@ def make_parser():
                 raise ValueError('GLOBAL and LOCAL are mutually exclusive.')
         elif not loc:
             glob = None
-        explain(*(args.on or []), folder=args.src, split=args.split, model_id=args.model_id, out=args.out,
-                glob=glob, jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
+        explain(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
+                model_id=args.model_id, out=args.out, glob=glob, jobs=args.jobs, batch_size=args.batch_size,
+                from_invocation=getattr(args, 'from', None))
 
     analyzer = subparsers.add_parser(
         'analyze',
@@ -102,12 +113,13 @@ def make_parser():
              ' If given, models are trained on the training data and automatically evaluated on all test splits'
              ' afterward.'
     )
+    _add_weights(analyzer)
     analyzer.add_argument(
         '-i', '--ignore',
         type=str,
         nargs='*',
         metavar='IGNORE',
-        help='Names of columns to ignore, typically ID-columns. GROUP and SPLIT are always ignored.'
+        help='Names of columns to ignore, typically ID-columns. GROUP, SPLIT and SAMPLE_WEIGHT are always ignored.'
     )
     analyzer.add_argument(
         '-t', '--time',
@@ -171,6 +183,7 @@ def make_parser():
         help='The name of the column containing information about data splits.'
              ' If given, SOURCE is evaluated on each split separately.'
     )
+    _add_weights(evaluator)
     evaluator.add_argument(
         '-m', '--model-id',
         type=str,
@@ -241,6 +254,7 @@ def make_parser():
         help='The name of the column containing information about data splits.'
              ' If given, SOURCE is explained on each split separately.'
     )
+    _add_weights(explainer)
     explainer.add_argument(
         '-m', '--model-id',
         type=str,

@@ -56,15 +56,18 @@ def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History
     return ax.figure
 
 
-def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str] = None,
-                       title: Optional[str] = 'Truth-Prediction Plot', ax=None, figsize='auto'):
+def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, sample_weight: Optional[np.ndarray] = None,
+                       name: Optional[str] = None, title: Optional[str] = 'Truth-Prediction Plot',
+                       cmap='Blues', ax=None, figsize='auto'):
     """
     Create a scatter plot with results of a regression task, using the default Matplotlib backend.
     :param y_true: Ground truth, array of shape `(n,)`. May contain NaN values.
     :param y_hat: Predictions, array of shape `(n,)`. Must have same data type as `y_true`, and may also contain NaN
     values.
+    :param sample_weight: Sample weights.
     :param name: Name of the target variable.
     :param title: The title of the resulting figure.
+    :param cmap: The color map for coloring points according to `sample_weight`.
     :param ax: An existing axis, or None.
     :param figsize: Figure size. If "auto", the 'optimal' figure size is determined automatically.
     :return: Matplotlib figure object.
@@ -89,7 +92,12 @@ def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, name: Optional[str
     d_max = max(y_true.max(), y_hat.max())
     ax.set_aspect(1.)
     ax.plot([d_min, d_max], [d_min, d_max], ls='--', c='gray', lw=1.)
-    ax.scatter(y_true, y_hat, marker='.', rasterized=len(y_true) > 500)
+    if sample_weight is None:
+        ax.scatter(y_true, y_hat, marker='.', rasterized=len(y_true) > 500)
+    else:
+        s = ax.scatter(y_true, y_hat, marker='.', rasterized=len(y_true) > 500, c=sample_weight, cmap=cmap)
+        cb = plt.colorbar(s, ax=ax, shrink=0.82)
+        cb.set_label('Sample weight')
 
     ax.set(
         ylabel='Predicted label' + unit_suffix,

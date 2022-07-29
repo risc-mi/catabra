@@ -375,7 +375,7 @@ class AutoSklearnBackend(AutoMLBackend):
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            time: Optional[int] = None, jobs: Optional[int] = None,
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
             dataset_name: Optional[str] = None) -> 'AutoSklearnBackend':
         if time is None:
             time = self.config.get('time_limit')
@@ -427,10 +427,16 @@ class AutoSklearnBackend(AutoMLBackend):
         # TODO: Tweak autosklearn to handle unlabeled samples.
         mask = y_train.notna().all(axis=1).values
         if not mask.all():
+            logging.warn('auto-sklearn backend does not support unlabeled samples for training.'
+                         f' Dropping {len(y_train) - mask.sum()} unlabeled samples ({100 * (1 - mask.mean()):.2f}%).')
             x_train = x_train[mask]
             y_train = y_train[mask]
             if groups is not None:
                 groups = groups[mask]
+
+        # TODO: Tweak autosklearn to handle sample weights.
+        if sample_weights is not None:
+            logging.warn('auto-sklearn backend does not support sample weights for training.')
 
         # resampling strategy
         resampling_strategy = specific.get('resampling_strategy')
