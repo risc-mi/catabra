@@ -621,35 +621,55 @@ def group_windows(windows: pd.DataFrame, entity_col=None, time_col=None, target=
                 windows[target] = windows[target].astype(np.int32)
             data['target'] = windows[target].values
         if entity_col is None:
-            entity_col_aux = None
             sort_col = ['start']
+            data['entity'] = 0
         else:
-            entity_col_aux = 'entity'
-            sort_col = [entity_col_aux, 'start']
-            data[entity_col_aux] = windows[(entity_col, '')].values
+            sort_col = ['entity', 'start']
+            data['entity'] = windows[(entity_col, '')].values
 
         windows_aux = pd.DataFrame(data=data)
         windows_aux.sort_values(sort_col, inplace=True)
 
         if 'target' in windows_aux.columns:
             for g in windows_aux['target'].unique():
-                mask = _check_disjoint(windows_aux[windows_aux['target'] == g], entity_col_aux, 'start', 'stop',
+                mask = _check_disjoint(windows_aux[windows_aux['target'] == g], 'entity', 'start', 'stop',
                                        include_both_endpoints)
                 assert not mask.any(), 'Provided grouping does not make windows mutually disjoint!'
         else:
-            mask = _check_disjoint(windows_aux, entity_col_aux, 'start', 'stop', include_both_endpoints)
-            if mask.any():
-                # if offending entries exist, _all_ entries of corresponding entities must be processed manually
-                # SLOW!
-                if entity_col_aux is None:
-                    grp = _make_disjoint_groups(windows_aux, 'start', 'stop', include_both_endpoints)
-                else:
-                    grp = pd.Series(index=windows_aux.index, data=0)
-                    for e in windows_aux.loc[mask, entity_col_aux].unique():
-                        mask0 = windows_aux[entity_col_aux] == e
-                        grp[mask0] = _make_disjoint_groups(windows_aux[mask0], 'start', 'stop', include_both_endpoints)
-                grp.sort_index(inplace=True)
-                windows[target] = grp.values
+            _pregroup_windows(windows_aux, 'entity', 'start', 'stop', 'pre_group', include_both_endpoints)
+            s = windows_aux.groupby('entity')['pre_group'].agg(['min', 'max'])
+            s = s['max'] > s['min']
+            if s.any():
+                # if offending entities exist, they must be processed manually => SLOW!
+                mask = windows_aux['entity'].isin(s[s].index)
+                windows_grouped = \
+                    windows_aux[mask].groupby('pre_group').agg({'entity': 'first', 'start': 'min', 'stop': 'max'})
+                # `windows_grouped` has "pre_group" on the row index and three columns "entity", "start", "stop"
+
+                grp_idx = 0
+                windows_grouped['target'] = 0
+                windows_grouped['i'] = np.arange(len(windows_grouped))
+                mask0 = np.ones((len(windows_grouped),), dtype=bool)
+                comp = '__gt__' if include_both_endpoints else '__ge__'
+                while mask0.any():
+                    indices = []
+                    sub = windows_grouped[mask0]
+                    mask1 = np.ones((mask0.sum(),), dtype=bool)
+                    while mask1.any():
+                        cur = sub[mask1].groupby('entity')[['stop', 'i']].first()
+                        indices.append(cur['i'])
+                        cur.columns = ['stop', 'j']
+                        tmp = sub[['entity', 'start', 'i']][mask1].join(cur, on='entity', how='left')
+                        mask1 &= (tmp['i'] > tmp['j']) & (getattr(tmp['start'], comp)(tmp['stop']))
+                    indices = np.concatenate(indices)
+                    windows_grouped['target'].values[indices] = grp_idx
+                    grp_idx += 1
+                    mask0[mask0] &= ~sub['i'].isin(indices)
+                # `windows_grouped` now has an additional column "target"
+
+                windows_aux['target'] = windows_grouped['target'].reindex(windows_aux['pre_group'], fill_value=0).values
+                windows_aux.sort_index(inplace=True)
+                windows[target] = windows_aux['target'].values
             else:
                 # all windows are disjoint => nothing to do here
                 windows[target] = 0
@@ -730,22 +750,23 @@ def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_b
     return mask
 
 
-def _make_disjoint_groups(df: pd.DataFrame, start_col, stop_col, include_both_endpoints: bool) -> pd.Series:
-    out = pd.Series(index=df.index, data=0)
-    current = []
-    comp = '__le__' if include_both_endpoints else '__lt__'
-    for i in range(len(df)):
-        start = df[start_col].iloc[i]
-        fn = getattr(start, comp)
-        current = [(g, s) for g, s in current if fn(s)]
-        current_grps = [g for g, _ in current]
-        grp = 0
-        for grp in range(len(current_grps) + 1):
-            if grp not in current_grps:
-                break
-        current.append((grp, df[stop_col].iloc[i]))
-        out.iloc[i] = grp
-    return out
+def _pregroup_windows(df: pd.DataFrame, entity_col, start_col, stop_col, grp_col, include_both_endpoints: bool):
+    # assumes `df` is sorted wrt. `entity_col` and `start_col`
+
+    prev_stop = np.roll(df[stop_col].values, 1)
+    if include_both_endpoints:
+        mask = (df[start_col] <= prev_stop).values
+    else:
+        mask = (df[start_col] < prev_stop).values
+    # `mask` indicates whether previous entry stops after current entry starts
+
+    if entity_col is not None:
+        mask |= np.roll(df[entity_col].values, 1) != df[entity_col].values
+    mask[0] = False
+    # `mask` now indicates whether previous entry stops after current entry starts,
+    # or previous entry belongs to different entity
+
+    df[grp_col] = np.cumsum(mask)
 
 
 def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: dict, mode_agg: dict,
