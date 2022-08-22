@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 import pandas as pd
 
@@ -315,6 +316,278 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
         _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
 
     out.drop(to_drop, axis=1, inplace=True, errors='ignore')
+    return out
+
+
+def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list = None, entity_col=None,
+                      start_col=None, stop_col=None, attribute_col=None, value_col=None, time_col=None,
+                      epsilon=1e-7) -> pd.DataFrame:
+    """
+    Resample interval-like data wrt. explicitly passed windows of arbitrary (possibly infinite) length. "Interval-like"
+    means that each observation is characterized by a start- and stop time rather than a singular timestamp (as in EAV
+    data). A typical example of interval-like data are medication records, since medications can be administered over
+    longer time periods.
+
+    The only supported resampling aggregation is summing the observed values per time window, scaled by the fraction
+    of the length of the intersection of observation interval and time window divided by the total length of the
+    observation interval: Let `W = [s, t]` be a time window and let `I = [a, b]` be an observation interval with
+    observed value `v`. Then `I` contributes to `W` the value
+
+                   |W n I|
+        W_I = v * ---------         (1)
+                     |I|
+
+    The overall value of `W` is the sum of `W_I` over all intervals. Of course, all this is computed separately for
+    each entity-attribute combination.
+    Some remarks on Eq. (1) are in place:
+        * If `a = b` both numerator and denominator are 0. In this case the fraction is defined as 1 if `a in W`
+            (i.e., `s <= a <= t`) and 0 otherwise.
+        * If `I` is infinite and `W n I` is non-empty but finite, `W_I` is set to `epsilon * sign(v)`.
+            Note that `W n I` is non-empty even if it is of the form `[x, x]`. This leads to the slightly
+            counter-intuitive situation that `W_I = epsilon` if `I` is infinite, and `W_I = 0` if `I` is finite.
+        * If `I` and `W n I` are both infinite, the fraction is defined as 1. This is regardless of whether `W n I`
+            equals `I` or whether it is a proper subset of it.
+
+    :param df: The DataFrame to resample. Must have columns `value_col` (contains observed values), `start_col`
+    (optional; contains start times), `stop_time` (optional; contains end times), `attribute_col` (optional; contains
+    attribute identifiers) and `entity_col` (optional; contains entity identifiers). Must have one column index level.
+    Data types are arbitrary, as long as times and entity identifiers can be compared wrt. `<` and `<=`
+    (e.g., float, int, time delta, date time). Entity identifiers must not be NA. Values must be numeric (float, int,
+    bool).
+    Although both `start_col` and `stop_col` are optional, at least one must be present. Missing start- and end
+    columns are interpreted as -/+ inf.
+    All intervals are closed, i.e., start- and end times are included. This is especially relevant for entries whose
+    start time equals their end time.
+
+    :param windows: The target windows into which `df` is resampled. Must have either one or two columns index level(s).
+    If it has one column index level, must have columns `start_col` (optional; contains start times of each window),
+    `stop_col` (optional; contains end times of each window) and `entity_col` (optional; contains entity identifiers).
+    If it has two column index levels, the columns must be `(time_col, "start")`, `(time_col, "stop")` and
+    `(entity_col, "")`.
+    At least one of the two endpoint-columns must be present; if one is missing it is assumed to represent -/+ inf.
+    All time windows are closed, i.e., start- and end times are included.
+
+    :param attributes: The attributes to consider. Must be a list-like of attribute identifiers. None defaults to the
+    list of all such identifiers present in column `attribute_col`. If `attribute_col` is None but `attributes` is not,
+    it must be a singleton list.
+
+    :param entity_col: Name of the column in `df` and `windows` containing entity identifiers. If None, all entries
+    are assumed to belong to the same entity. Note that entity identifiers may also be on the row index.
+
+    :param start_col: Name of the column in `df` (and `windows` if it has only one column index level) containing start
+    times. If None, all start times are assumed to be -inf. Note that despite its name the data type of the column is
+    arbitrary, as long as its values can be compared wrt. `<` and `<=`.
+
+    :param stop_col: Name of the column in `df` (and `windows` if it has only one column index level) containing end
+    times. If None, all end times are assumed to be +inf. Note that despite its name the data type of the column is
+    arbitrary, as long as its values can be compared wrt. `<` and `<=`.
+
+    :param attribute_col: Name of the column in `df` containing attribute identifiers. If None, all entries are assumed
+    to belong to the same attribute.
+
+    :param value_col: Name of the column in `df` containing the observed values.
+
+    :param time_col: Name of the column(s) in `windows` containing start- and end times of the windows. Only needed if
+    `windows` has two column index levels, because otherwise these two columns must be called `start_col` and
+    `stop_col`, respectively.
+
+    :param epsilon: The value to set `W_I` to if `I` is infinite and `W n I` is non-empty and finite; see Eq. (1) and
+    the subsequent remarks for details.
+
+    :return: Resampled data. Like `windows`, but with one additional column for each attribute.
+    Order of columns is arbitrary, order of rows is exactly as in `windows`. Number of column index levels is as in
+    `windows`.
+    """
+
+    # Meaningful aggregations besides "sum" are
+    #   * number of intervals with non-empty intersection per window ("count")
+    #   * duration of intersections per window ("duration")
+    #       => cannot be achieved by setting `value` to interval duration if intervals are infinite
+    #   * total duration of intervals with non-empty intersection per window ("total_duration")
+    #   * ... any other aggregation on durations of intersections or total durations of intersecting intervals
+    # One could consider adding these in the future.
+
+    assert df.columns.nlevels == 1
+    assert value_col in df.columns
+    assert df[value_col].dtype.kind in 'fiub'
+    assert start_col in df.columns or stop_col in df.columns
+    assert attribute_col is None or attribute_col in df.columns
+
+    if entity_col is None or entity_col == df.index.name:
+        df = df.drop([c for c in df.columns if c not in (start_col, stop_col, value_col, attribute_col)], axis=1)
+    else:
+        assert entity_col in df.columns
+        df = df.set_index(entity_col)
+        df.drop([c for c in df.columns if c not in (start_col, stop_col, value_col, attribute_col)],
+                axis=1, inplace=True)
+
+    if start_col in df.columns:
+        time_dtype = df[start_col].dtype
+        if stop_col in df.columns:
+            assert df[stop_col].dtype == time_dtype
+    else:
+        assert stop_col in df.columns
+        time_dtype = df[stop_col].dtype
+
+    window_start_col = 'window_start'
+    window_stop_col = 'window_stop'
+    windows_orig = windows
+    if windows.columns.nlevels == 2:
+        columns = {c_cur: c_new for c_cur, c_new in [((time_col, 'start'), window_start_col),
+                                                     ((time_col, 'stop'), window_stop_col),
+                                                     ((entity_col, ''), entity_col)] if c_cur in windows.columns}
+    else:
+        assert windows.columns.nlevels == 1
+        columns = {c_cur: c_new for c_cur, c_new in [(start_col, window_start_col), (stop_col, window_stop_col),
+                                                     (entity_col, entity_col)] if c_cur in windows.columns}
+    windows = windows[list(columns)].copy()
+    windows.columns = list(columns.values())
+
+    assert window_start_col in windows.columns or window_stop_col in windows.columns
+    assert window_start_col not in windows.columns or \
+           (windows[window_start_col].notna().all() and windows[window_start_col].dtype == time_dtype)
+    assert window_stop_col not in windows.columns or \
+           (windows[window_stop_col].notna().all() and windows[window_stop_col].dtype == time_dtype)
+
+    if entity_col is None or entity_col in windows.columns:
+        windows.reset_index(drop=True, inplace=True)
+    else:
+        assert entity_col == windows.index.name
+        windows.reset_index(inplace=True)
+
+    # restrict `df` to relevant entries
+    if start_col in df.columns:
+        mask = df[start_col].notna()
+        if stop_col in df.columns:
+            mask &= df[stop_col].notna() & (df[start_col] <= df[stop_col])
+    else:
+        mask = df[stop_col].notna()
+    if entity_col is not None:
+        mask &= df.index.isin(windows[entity_col])
+    if attribute_col in df.columns:
+        if attributes is None:
+            attributes = df[attribute_col].unique()
+        else:
+            mask &= df[attribute_col].isin(attributes)
+    else:
+        if attributes is None:
+            attributes = ['sum']
+        else:
+            assert len(attributes) == 1
+    if not mask.all():
+        df = df[mask].copy()
+
+    if df.empty:
+        out = pd.DataFrame(index=windows.index, columns=attributes, data=0, dtype=np.float32)
+    elif (start_col in df.columns or window_start_col in windows.columns) \
+            and (stop_col in df.columns or window_stop_col in windows.columns):
+        if entity_col is None:
+            # get all interval-window combinations, resulting in a DataFrame with `len(windows) * len(df)` rows
+            aux = pd.DataFrame(index=np.tile(windows.index, len(df)),
+                               data={c: np.tile(windows[c].values, len(df)) for c in windows.columns})
+            for c in df.columns:
+                aux[c] = np.repeat(df[c].values, len(windows))
+            out = _resample_interval_aux(aux, start_col, stop_col, value_col, attribute_col, window_start_col,
+                                         window_stop_col, epsilon).reindex(windows.index, fill_value=0)
+            if isinstance(out, pd.Series):
+                out = out.to_frame(attributes[0])
+        else:
+            _MAX_ROWS = max(len(df), 10000000)  # maximum number of rows of DataFrame to process at once
+
+            # `n_rows` contains the number of rows of `windows.join(df, on=entity_col, how='inner')` for each entity
+            n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
+                .join(windows[entity_col].value_counts(), how='inner').prod(axis=1)
+            if n_rows.sum() <= _MAX_ROWS:
+                partition = np.zeros((len(windows),), dtype=np.int8)
+            else:
+                partition = partition_series(n_rows, _MAX_ROWS).reindex(windows[entity_col], fill_value=0).values
+
+            # the following could easily be parallelized
+            dfs = [
+                _resample_interval_aux(windows[partition == g].join(df, on=entity_col, how='inner'),
+                                       start_col, stop_col, value_col, attribute_col,
+                                       window_start_col, window_stop_col, epsilon)
+                for g in range(partition.max() + 1)
+            ]
+            out = pd.concat(dfs, axis=0, sort=False).reindex(windows.index, fill_value=0)
+            if isinstance(out, pd.Series):
+                out = out.to_frame(attributes[0])
+    else:
+        # all intersections are infinite => no need to take windows into account
+        if entity_col is None:
+            if attribute_col is None:
+                out = pd.DataFrame(index=windows.index, data={attributes[0]: df[value_col].sum()})
+            else:
+                s = df.groupby(attribute_col)[value_col].sum()
+                out = pd.DataFrame(index=windows.index, columns=s.index, dtype=s.dtype)
+                for a, v in s.iteritems():
+                    out[a] = v
+        else:
+            if attribute_col is not None:
+                df.set_index(attribute_col, append=True, inplace=True)
+            s = df.groupby(level=list(range(df.index.nlevels)))[value_col].sum()
+            if s.index.nlevels == 1:
+                s = s.to_frame(attributes[0])
+            else:
+                s = s.unstack(level=-1, fill_value=0)
+            out = s.reindex(windows[entity_col], fill_value=0)
+            out.index = windows.index
+
+    # `out` is a DataFrame with one column per attribute and the exact same row index as `windows`
+    # (which is a RangeIndex)
+
+    # make sure that all requested attributes appear in `out`
+    out = out.reindex(attributes, axis=1, fill_value=0)
+
+    out.sort_index(inplace=True)    # to be on the safe side
+    out.index = windows_orig.index
+    if windows_orig.columns.nlevels == 2:
+        out.columns = pd.MultiIndex.from_product([out.columns, ['']])
+    return pd.concat([windows_orig, out], axis=1, sort=False)
+
+
+def partition_series(s: pd.Series, n, shuffle: bool = True) -> pd.Series:
+    """
+    Partition a given Series into as few groups as possible, such that the sum of the series' values in each group does
+    not exceed a given threshold.
+    :param s: The series to partition. The data type should allow for taking sums and comparing elements, and all
+    values are assumed to be non-negative.
+    :param n: The threshold, of the same data type as `s`.
+    :param shuffle: Whether to randomly shuffle `s` before generating the partition. If False, this function is
+    deterministic.
+    :return: A new series with the same index as `s`, with values from 0 to `g - 1` specifying the group ID of each
+    entry (`g` is the total number of groups).
+
+    Note that the partitions returned by this function may not be optimal, since finding optimal partitions is
+    computationally difficult.
+    Also note that `s` may contain entries whose value exceeds `n`; such entries are put into singleton groups.
+    """
+
+    out = pd.Series(index=s.index, data=0, dtype=np.int64)
+    if s.sum() <= n:
+        return out
+
+    groups = {}
+    if shuffle:
+        rng = np.random.permutation(len(s))
+    else:
+        rng = range(len(s))
+    m = 0
+    for i in rng:
+        x = s.iloc[i]
+        j = -1
+        if x < n:
+            for k, v in groups.items():
+                if v + x <= n:
+                    groups[k] += x
+                    j = k
+                    break
+        if j < 0:
+            j = m
+            m += 1
+            groups[j] = x
+        out.iloc[i] = j
+
     return out
 
 
@@ -675,3 +948,66 @@ def _resample_eav_ranks_2(df: pd.DataFrame, out: pd.DataFrame, agg: dict, entity
                             out[(attr, 'r' + str(r))].values[mask] = aux[(value_col, r)].values[mask]
                         if t:
                             out[(attr, 't' + str(r))].values[mask] = aux[(time_col, r)].values[mask]
+
+
+def _resample_interval_aux(df: pd.DataFrame, start_col, stop_col, value_col, attribute_col,
+                           window_start_col, window_stop_col, epsilon) -> Union[pd.Series, pd.DataFrame]:
+    # `df` is changed in place
+    # assumes that `start_col` or `window_start_col`, as well as `stop_col` or `window_stop_col`, are in `df`
+    # assumes that `df[start_col] <= df[stop_col]` if both columns appear in `df`
+
+    if start_col in df.columns and stop_col in df.columns:
+        duration = df[stop_col] - df[start_col]
+    else:
+        duration = None
+
+    if start_col in df.columns:
+        if window_start_col in df.columns:
+            start = np.maximum(df[start_col], df[window_start_col])
+        else:
+            start = df[start_col]
+    else:
+        start = df[window_start_col]
+
+    if stop_col in df.columns:
+        if window_stop_col in df.columns:
+            stop = np.minimum(df[stop_col], df[window_stop_col])
+        else:
+            stop = df[stop_col]
+    else:
+        stop = df[window_stop_col]
+
+    factor = pd.Series(index=df.index, data=0, dtype=np.float32)
+    if duration is None:
+        try:
+            is_inf = np.isposinf(stop - start)
+            is_eps = (~is_inf) & (stop >= start)
+            factor[is_inf] = 1
+        except TypeError:
+            is_eps = stop >= start
+    else:
+        numerator = stop - start
+        mask = df[start_col] < df[stop_col]  # we assume that `df[start_col] <= df[stop_col]`
+        factor[~mask & (stop >= start)] = 1
+        mask &= stop >= start
+        try:
+            is_num_inf = np.isposinf(numerator)
+            is_denom_inf = np.isposinf(duration)
+            is_eps = (~is_num_inf) & is_denom_inf & mask
+            factor[is_num_inf & is_denom_inf] = 1
+            mask &= ~(is_num_inf | is_denom_inf)
+        except TypeError:
+            is_eps = pd.Series(index=df.index, data=False)
+        factor.values[mask.values] = (numerator[mask] / duration[mask]).values
+
+    eps_value = epsilon * np.sign(df.loc[is_eps, value_col])
+    df[value_col] = df[value_col] * factor
+    df.loc[is_eps, value_col] = eps_value
+
+    if attribute_col is not None:
+        df.set_index(attribute_col, append=True, inplace=True)
+    s = df.groupby(level=list(range(df.index.nlevels)))[value_col].sum()
+    if s.index.nlevels > 1:
+        s = s.unstack(level=-1, fill_value=0)
+
+    return s
