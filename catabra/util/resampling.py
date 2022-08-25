@@ -3,9 +3,13 @@ import numpy as np
 import pandas as pd
 
 
+# maximum number of rows to allow for intermediate DataFrames when optimizing for "time"
+MAX_ROWS = 10000000
+
+
 def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, entity_col=None, time_col=None,
-                 attribute_col=None, value_col=None, window_group_col=None, include_start: bool = True,
-                 include_stop: bool = False) -> pd.DataFrame:
+                 attribute_col=None, value_col=None, include_start: bool = True, include_stop: bool = False,
+                 optimize: str = 'time') -> pd.DataFrame:
     """
     Resample data in EAV (entity-attribute-value) format wrt. explicitly passed windows of arbitrary (possibly
     infinite) length.
@@ -53,13 +57,16 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
 
     :param value_col: Name of the column in `df` containing the observed values.
 
-    :param window_group_col: Name of the column in `windows` containing information for grouping the windows such that
-    all windows in a group are mutually disjoint. If None, this information is computed automatically; otherwise, must
-    have integral data type and non-negative values. In any case, this column is not present in the result!
-
     :param include_start: Whether start times of observation windows are part of the windows.
 
     :param include_stop: Whether end times of observation windows are part of the windows.
+
+    :param optimize: Whether to optimize runtime or memory requirements. If set to "time", the function returns faster
+    but requires more memory; if set to "memory", the runtime is longer but memory consumption is reduced to a minimum.
+    If "time", global variable `MAX_ROWS` can be used to adjust the time-memory tradeoff: increasing it increases
+    memory consumption while reducing runtime.
+    Note that this parameter is only relevant for computing non-rank-like aggregations, since rank-like aggregations
+    ("rxx", "txx") can be efficiently computed anyway.
 
     :return: Resampled data. Like `windows`, but with one additional column for each requested aggregation.
     Order of columns is arbitrary, order of rows is exactly as in `windows`.
@@ -80,7 +87,6 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
     assert (time_col, 'stop') not in windows.columns or \
            (windows[(time_col, 'stop')].notna().all() and windows[(time_col, 'stop')].dtype == df[time_col].dtype)
     assert entity_col is None or (entity_col, '') in windows.columns or entity_col == windows.index.name
-    assert window_group_col is None or (window_group_col, '') in windows.columns
 
     if not agg or windows.empty:
         # no aggregations or no windows => nothing to do
@@ -96,10 +102,6 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
         to_drop.append((entity_col, ''))
         data.append(windows.index)
         columns.append((entity_col, ''))
-    if window_group_col is not None:
-        to_drop.extend([(window_group_col, ''), (tmp_col, 'grp')])
-        data.append(windows[(window_group_col, '')])
-        columns.append((tmp_col, 'grp'))
     val_val = _get_default_value(df[value_col].dtype)
     time_val = _get_default_value(df[time_col].dtype)
     zero_val = np.array(0, dtype=np.float64)
@@ -175,15 +177,15 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
     out = pd.concat([windows, out], axis=1, sort=False, join='inner')
 
     # restrict `df` to relevant entries
+    if entity_col is not None and entity_col in df.columns:
+        df = df.set_index(entity_col)
     mask = df[time_col].notna()
     if entity_col is not None:
-        if entity_col in df.columns:
-            mask &= df[entity_col].isin(out[(entity_col, '')])
-        else:
-            mask &= df.index.isin(out[(entity_col, '')])
+        mask &= df.index.isin(out[(entity_col, '')])
     if attribute_col is not None:
         mask &= df[attribute_col].isin(agg.keys())
     df = df[mask]
+    # `entity_col` is either None or the row index of `df`
 
     # compute aggregations for which observations and windows do not need to be merged
     if neg_rank_agg:
@@ -209,15 +211,11 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
         return out
 
     # merge windows with observations
-    cols = [time_col]
-    if entity_col is not None and entity_col in df.columns:
-        cols.append(entity_col)
-    df0 = df[cols].copy()
-    df0.reset_index(inplace=True, drop=entity_col is None or entity_col in df.columns)
+    df0 = df[[time_col]].copy()
+    df0.reset_index(inplace=True, drop=entity_col is None)
     df0['__observation_idx__'] = np.arange(len(df0))
     df0['__window_idx__'] = -1.
-    df1 = pd.DataFrame(data={'__window_idx__': np.arange(len(out), dtype=np.float64),
-                             '__observation_idx__': -1})
+    df1 = pd.DataFrame(data=dict(__window_idx__=np.arange(len(out), dtype=np.float64), __observation_idx__=-1))
 
     if neg_rank_agg and (time_col, 'start') in out.columns and (time_col, 'stop') in out.columns:
         # special case: sort by "stop" first to handle negative ranks
@@ -261,59 +259,159 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
         _resample_eav_ranks(df, out, merged, nn_rank_agg, entity_col, time_col, attribute_col, value_col,
                             include_stop)
 
-    merged.loc[merged['__window_idx__'] < 0., '__window_idx__'] = np.nan
-
     if standard_agg or mode_agg or quantile_agg:
-        # assign windows to groups s.t. all windows in same group are disjoint
-        to_drop.append((tmp_col, 'grp'))
-        group_windows(out, entity_col=entity_col, time_col=time_col, target=(tmp_col, 'grp'),
-                      include_both_endpoints=include_start and include_stop)
-
-        # set groups of empty windows to -1
-        if (time_col, 'start') in out.columns and (time_col, 'stop') in out.columns:
-            if include_start and include_stop:
-                out.loc[out[(time_col, 'start')] > out[(time_col, 'stop')], (tmp_col, 'grp')] = -1
-            else:
-                out.loc[out[(time_col, 'start')] >= out[(time_col, 'stop')], (tmp_col, 'grp')] = -1
-
-        all_groups = {g for g in out[(tmp_col, 'grp')].unique() if g >= 0}
-        assert all_groups
-    else:
-        all_groups = set()
-
-    # iterate over groups of disjoint windows
-    for grp in all_groups:
-        group_mask = out[(tmp_col, 'grp')] == grp
-        group_merged = merged[merged['__window_idx__'].isin(np.where(group_mask)[0]) |
-                              merged['__window_idx__'].isna()].copy()
-        if entity_col is None:
-            s = group_merged['__window_idx__'].fillna(method=fill_method)
+        # set `windows` to a simple DataFrame with columns `entity_col`, "__start__" and "__stop__" (if present)
+        # row index is connected to `out` via `.iloc[]` and to `merged` via "__windows_idx__"
+        if (entity_col, '') in out.columns:
+            take_cols = [(entity_col, '')]
+            new_cols = [entity_col]
+            sort_col = [entity_col]
         else:
-            s = group_merged.groupby(entity_col)['__window_idx__'].fillna(method=fill_method)
-        s = s.fillna(-1).astype(np.int64)
-        assert len(s) == len(group_merged) and (s.index == group_merged.index).all()
-        group_merged['__window_idx__'] = s
-        group_merged = group_merged[group_merged['__window_idx__'] >= 0]
-        mask = group_merged['__observation_idx__'] >= 0
-        if (time_col, 'start') in out.columns and (time_col, 'stop') in out.columns:
-            # otherwise, if only "stop" occurs in `out`, `merged` has been sorted wrt. "stop" already => nothing to do
-            group_merged = group_merged.join(
-                pd.Series(data=out[(time_col, 'stop')].values, name='__stop__'),
-                on='__window_idx__'
-            )
-            if include_stop:
-                mask &= group_merged[time_col] <= group_merged['__stop__']
+            take_cols = new_cols = sort_col = []
+        if (time_col, 'start') in out.columns:
+            take_cols.append((time_col, 'start'))
+            new_cols.append('__start__')
+            sort_col.append('__start__')
+        else:
+            sort_col.append('__stop__')
+        if (time_col, 'stop') in out.columns:
+            take_cols.append((time_col, 'stop'))
+            new_cols.append('__stop__')
+        windows = out[take_cols].copy()
+        windows.columns = new_cols
+        windows.reset_index(drop=True, inplace=True)
+        windows.sort_values(sort_col, inplace=True)
+
+        # restrict to non-empty windows
+        if '__start__' in windows.columns:
+            if '__stop__' in windows.columns:
+                if include_start and include_stop:
+                    windows = windows[windows['__start__'] <= windows['__stop__']]
+                else:
+                    windows = windows[windows['__start__'] < windows['__stop__']]
+            elif not include_start:
+                try:
+                    windows = windows[~np.isposinf(windows['__start__'])]
+                except TypeError:
+                    pass
+        elif not include_stop:
+            try:
+                windows = windows[~np.isneginf(windows['__stop__'])]
+            except TypeError:
+                pass
+        # `windows` is a DataFrame view containing only non-empty windows, in canonical order
+        # from here on, order of rows does not change any more, but subsets may be taken
+
+        # analyze windows
+        window_pattern = _analyze_windows(windows, entity_col, '__start__', '__stop__', include_start and include_stop)
+
+        # select strategy for each entity: full join (fast but memory intensive) or group (slow but memory efficient)
+        if entity_col is None:
+            if len(windows) == 1 or (window_pattern['overlapping'] and optimize == 'time'):
+                join_mask = np.ones((len(windows),), dtype=np.bool)
             else:
-                mask &= group_merged[time_col] < group_merged['__stop__']
-        group_merged = group_merged[mask]
-        # `group_merged` has columns "__observation_idx__" and "__window_idx__", mapping former to latter; all entries
-        # are valid, i.e., >= 0; not all windows may appear
+                join_mask = np.zeros((len(windows),), dtype=np.bool)
+        else:
+            join_mask = window_pattern['n'] == 1
+            if optimize == 'time':
+                join_mask |= window_pattern['overlapping']
+            join_mask = windows[entity_col].isin(window_pattern[join_mask].index)
 
-        df0 = df.iloc[group_merged['__observation_idx__'].values].copy()
-        df0.index = group_merged['__window_idx__'].values
+        if not join_mask.all():
+            merged.loc[merged['__window_idx__'] < 0., '__window_idx__'] = np.nan
+            not_join_mask = ~join_mask
 
-        # resample `df0`, using windows as new entities
-        _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
+            # restrict `merged` to relevant entries
+            if attribute_col is not None:
+                mask = df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))
+                if not mask.all():
+                    merged = \
+                        merged[merged['__observation_idx__'].isin(np.where(mask)[0]) | ~merged['__is_observation__']]
+
+            # assign windows to groups s.t. all windows in same group are disjoint
+            group = _group_windows(windows[not_join_mask], window_pattern, entity_col, '__start__', '__stop__',
+                                   include_start and include_stop)
+
+            # Maybe regular windows can be treated more efficiently. But be careful:
+            # - there may be gaps between consecutive windows,
+            # - windows may have 0 length if `include_start` and `include_stop` are True,
+            # - the offset may be 0, too, if all windows have the same start time (and hence are identical),
+            # - the assignment of observations to windows depends on `include_start` and `include_stop`.
+
+            # iterate over groups of disjoint windows
+            for g in group.unique():
+                group_mask = group == g
+                group_merged = merged[merged['__window_idx__'].isin(windows[not_join_mask][group_mask].index) |
+                                      merged['__window_idx__'].isna()].copy()
+                if entity_col is None:
+                    s = group_merged['__window_idx__'].fillna(method=fill_method)
+                else:
+                    s = group_merged.groupby(entity_col)['__window_idx__'].fillna(method=fill_method)
+                s = s.fillna(-1).astype(np.int64)
+                assert len(s) == len(group_merged) and (s.index == group_merged.index).all()
+                group_merged['__window_idx__'] = s
+                group_merged = group_merged[group_merged['__window_idx__'] >= 0]
+                mask = group_merged['__observation_idx__'] >= 0
+                if '__start__' in windows.columns and '__stop__' in windows.columns:
+                    # otherwise, if only "__stop__" occurs in `windows`, `merged` has been sorted wrt. "stop" already
+                    # => nothing to do
+                    group_merged = \
+                        group_merged.join(windows.loc[not_join_mask, '__stop__'], on='__window_idx__', how='left')
+                    if include_stop:
+                        mask &= group_merged[time_col] <= group_merged['__stop__']
+                    else:
+                        mask &= group_merged[time_col] < group_merged['__stop__']
+                group_merged = group_merged[mask]
+                # `group_merged` has columns "__observation_idx__" and "__window_idx__", mapping former to latter;
+                # all entries are valid, i.e., >= 0; not all windows may appear
+
+                df0 = df.iloc[group_merged['__observation_idx__'].values].copy()
+                df0.index = group_merged['__window_idx__'].values
+
+                # resample `df0`, using windows as new entities
+                _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
+
+        if join_mask.any():
+            # restrict `df` to relevant entries
+            # Note that this must happen _after_ the above 'grouping' code path, because otherwise
+            # "__observation_idx__" does not match the rows of `df` any more!
+            if attribute_col is not None:
+                df = df[df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))]
+
+            max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
+            n_to_join = join_mask.sum()
+            if entity_col is None:
+                if n_to_join * len(df) <= max_rows:
+                    partition = np.zeros((n_to_join,), dtype=np.int8)
+                else:
+                    partition = np.arange(n_to_join) % (max_rows // len(df))
+            else:
+                # `n_rows` contains the number of rows of `windows[join_mask].join(df, on=entity_col, how='inner')`
+                # for each entity
+                n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
+                    .join(windows.loc[join_mask, entity_col].value_counts().to_frame(name=entity_col), how='inner') \
+                    .prod(axis=1)
+                if n_rows.sum() <= max_rows:
+                    partition = np.zeros((n_to_join,), dtype=np.int8)
+                else:
+                    partition = partition_series(n_rows, max_rows) \
+                        .reindex(windows.loc[join_mask, entity_col], fill_value=0).values
+
+            start_comp = '__ge__' if include_start else '__gt__'
+            stop_comp = '__le__' if include_stop else '__lt__'
+            for g in range(partition.max() + 1):
+                df0 = inner_or_cross_join(windows[join_mask][partition == g], df, on=entity_col)
+                if '__start__' in df0.columns:
+                    mask = getattr(df0[time_col], start_comp)(df0['__start__'])
+                else:
+                    # in this case "__stop__" needs to occur in `df0` => `mask` is set to proper Series below
+                    mask = True
+                if '__stop__' in df0.columns:
+                    mask = getattr(df0[time_col], stop_comp)(df0['__stop__']) & mask
+
+                # resample `df0[mask]`, using windows as new entities
+                _resample_eav_no_windows(df0[mask], out, standard_agg, mode_agg, quantile_agg,
+                                         attribute_col, value_col)
 
     out.drop(to_drop, axis=1, inplace=True, errors='ignore')
     return out
@@ -481,37 +579,31 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
         out = pd.DataFrame(index=windows.index, columns=attributes, data=0, dtype=np.float32)
     elif (start_col in df.columns or window_start_col in windows.columns) \
             and (stop_col in df.columns or window_stop_col in windows.columns):
+        max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
         if entity_col is None:
-            # get all interval-window combinations, resulting in a DataFrame with `len(windows) * len(df)` rows
-            aux = pd.DataFrame(index=np.tile(windows.index, len(df)),
-                               data={c: np.tile(windows[c].values, len(df)) for c in windows.columns})
-            for c in df.columns:
-                aux[c] = np.repeat(df[c].values, len(windows))
-            out = _resample_interval_aux(aux, start_col, stop_col, value_col, attribute_col, window_start_col,
-                                         window_stop_col, epsilon).reindex(windows.index, fill_value=0)
-            if isinstance(out, pd.Series):
-                out = out.to_frame(attributes[0])
+            if len(windows) * len(df) <= max_rows:
+                partition = np.zeros((len(windows),), dtype=np.int8)
+            else:
+                partition = np.arange(len(windows)) % (max_rows // len(df))
         else:
-            _MAX_ROWS = max(len(df), 10000000)  # maximum number of rows of DataFrame to process at once
-
             # `n_rows` contains the number of rows of `windows.join(df, on=entity_col, how='inner')` for each entity
             n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
                 .join(windows[entity_col].value_counts(), how='inner').prod(axis=1)
-            if n_rows.sum() <= _MAX_ROWS:
+            if n_rows.sum() <= max_rows:
                 partition = np.zeros((len(windows),), dtype=np.int8)
             else:
-                partition = partition_series(n_rows, _MAX_ROWS).reindex(windows[entity_col], fill_value=0).values
+                partition = partition_series(n_rows, max_rows).reindex(windows[entity_col], fill_value=0).values
 
-            # the following could easily be parallelized
-            dfs = [
-                _resample_interval_aux(windows[partition == g].join(df, on=entity_col, how='inner'),
-                                       start_col, stop_col, value_col, attribute_col,
-                                       window_start_col, window_stop_col, epsilon)
-                for g in range(partition.max() + 1)
-            ]
-            out = pd.concat(dfs, axis=0, sort=False).reindex(windows.index, fill_value=0)
-            if isinstance(out, pd.Series):
-                out = out.to_frame(attributes[0])
+        # the following could easily be parallelized
+        dfs = [
+            _resample_interval_aux(inner_or_cross_join(windows[partition == g], df, on=entity_col),
+                                   start_col, stop_col, value_col, attribute_col,
+                                   window_start_col, window_stop_col, epsilon)
+            for g in range(partition.max() + 1)
+        ]
+        out = pd.concat(dfs, axis=0, sort=False).reindex(windows.index, fill_value=0)
+        if isinstance(out, pd.Series):
+            out = out.to_frame(attributes[0])
     else:
         # all intersections are infinite => no need to take windows into account
         if entity_col is None:
@@ -591,101 +683,6 @@ def partition_series(s: pd.Series, n, shuffle: bool = True) -> pd.Series:
     return out
 
 
-def group_windows(windows: pd.DataFrame, entity_col=None, time_col=None, target=None,
-                  include_both_endpoints: bool = False) -> pd.DataFrame:
-    """
-    Group windows such that each group only contains mutually disjoint windows for each entity.
-    :param windows: The windows to group, modified in place. Must have two column index levels.
-    :param entity_col: Name of the column in `windows` containing entity identifiers, or None. Actually, the column is
-    `(entity_col, "")`.
-    :param time_col: Name of the column(s) in `windows` containing start- and end times. Actually, the columns are
-    `(time_col, "start")` and `(time_col, "stop")`.
-    :param target: Name of the new column containing the group indices. If a string, the new column is `(target, "")`.
-    :param include_both_endpoints: Whether both endpoints are part of the respective windows.
-    :return: `windows` with the additional column `target`, with non-negative integer values.
-    Order of rows is preserved.
-    """
-    assert time_col is not None
-    assert entity_col is None or (entity_col, '') in windows.columns
-    if isinstance(target, tuple):
-        assert len(target) == 2
-    else:
-        assert target is not None
-        target = (target, '')
-
-    if (time_col, 'start') in windows.columns and (time_col, 'stop') in windows.columns:
-        data = dict(start=windows[(time_col, 'start')].values, stop=windows[(time_col, 'stop')].values)
-        if target in windows.columns:
-            assert (windows[target] >= 0).all()
-            if not windows[target].dtype.kind == 'i':
-                windows[target] = windows[target].astype(np.int32)
-            data['target'] = windows[target].values
-        if entity_col is None:
-            sort_col = ['start']
-            data['entity'] = 0
-        else:
-            sort_col = ['entity', 'start']
-            data['entity'] = windows[(entity_col, '')].values
-
-        windows_aux = pd.DataFrame(data=data)
-        windows_aux.sort_values(sort_col, inplace=True)
-
-        if 'target' in windows_aux.columns:
-            for g in windows_aux['target'].unique():
-                mask = _check_disjoint(windows_aux[windows_aux['target'] == g], 'entity', 'start', 'stop',
-                                       include_both_endpoints)
-                assert not mask.any(), 'Provided grouping does not make windows mutually disjoint!'
-        else:
-            _pregroup_windows(windows_aux, 'entity', 'start', 'stop', 'pre_group', include_both_endpoints)
-            s = windows_aux.groupby('entity')['pre_group'].agg(['min', 'max'])
-            s = s['max'] > s['min']
-            if s.any():
-                # if offending entities exist, they must be processed manually => SLOW!
-                mask = windows_aux['entity'].isin(s[s].index)
-                windows_grouped = \
-                    windows_aux[mask].groupby('pre_group').agg({'entity': 'first', 'start': 'min', 'stop': 'max'})
-                # `windows_grouped` has "pre_group" on the row index and three columns "entity", "start", "stop"
-
-                grp_idx = 0
-                windows_grouped['target'] = 0
-                windows_grouped['i'] = np.arange(len(windows_grouped))
-                mask0 = np.ones((len(windows_grouped),), dtype=bool)
-                comp = '__gt__' if include_both_endpoints else '__ge__'
-                while mask0.any():
-                    indices = []
-                    sub = windows_grouped[mask0]
-                    mask1 = np.ones((mask0.sum(),), dtype=bool)
-                    while mask1.any():
-                        cur = sub[mask1].groupby('entity')[['stop', 'i']].first()
-                        indices.append(cur['i'])
-                        cur.columns = ['stop', 'j']
-                        tmp = sub[['entity', 'start', 'i']][mask1].join(cur, on='entity', how='left')
-                        mask1 &= (tmp['i'] > tmp['j']) & (getattr(tmp['start'], comp)(tmp['stop']))
-                    indices = np.concatenate(indices)
-                    windows_grouped['target'].values[indices] = grp_idx
-                    grp_idx += 1
-                    mask0[mask0] &= ~sub['i'].isin(indices)
-                # `windows_grouped` now has an additional column "target"
-
-                windows_aux['target'] = windows_grouped['target'].reindex(windows_aux['pre_group'], fill_value=0).values
-                windows_aux.sort_index(inplace=True)
-                windows[target] = windows_aux['target'].values
-            else:
-                # all windows are disjoint => nothing to do here
-                windows[target] = 0
-    else:
-        # replace `target` if it is already present
-        if entity_col is None:
-            windows[target] = np.arange(len(windows))
-        else:
-            s = pd.Series(index=windows[(entity_col, '')].values, data=1).groupby(level=0).cumsum() - 1
-            assert len(s) == len(windows)
-            assert (s.index == windows[(entity_col, '')]).all()
-            windows[target] = s.values
-
-    return windows
-
-
 def grouped_mode(series: pd.Series) -> pd.DataFrame:
     """
     Group the given Series `series` by its row index and compute mode aggregations. If there are more than one most
@@ -718,6 +715,34 @@ def grouped_mode(series: pd.Series) -> pd.DataFrame:
     return df
 
 
+def inner_or_cross_join(left: pd.DataFrame, right: pd.DataFrame, on=None) -> pd.DataFrame:
+    """
+    Return the inner join or cross join of two DataFrames, depending on whether to column to join on actually occurs
+    in the DataFrames.
+    :param left: The first DataFrame.
+    :param right: The second DataFrame.
+    :param on: The column to join on, or None.
+    :return: If `on` is not None and occurs in `left`, return the inner join of `left` (column `on`) and
+    `right` (row index).
+    Otherwise, return the cross join of `left` and `right`; in that case , the index of the result corresponds to the
+    (replicated) index of `left` and the index of `right` is completely ignored.
+
+    Functionally, the cross join operation is equivalent to joining `left` and `right` on a constantly-valued column:
+    >>> left["join_column"] = 0
+    >>> right.index = 0
+    >>> left.join(right, on="join_column").drop("join_column", axis=1)
+    """
+    assert not any(c in right.columns for c in left.columns), 'Columns of `left` and `right` are not disjoint.'
+    if on is None or on not in left.columns:
+        out = pd.DataFrame(index=np.tile(left.index, len(right)),
+                           data={c: np.tile(left[c].values, len(right)) for c in left.columns})
+        for c in right.columns:
+            out[c] = np.repeat(right[c].values, len(left))
+        return out
+    else:
+        return left.join(right, on=on, how='inner')
+
+
 def _get_default_value(dtype):
     if dtype.name == 'category':
         return pd.Categorical.from_codes([-1], dtype=dtype)
@@ -730,8 +755,93 @@ def _get_default_value(dtype):
     return None
 
 
-def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_both_endpoints: bool) -> np.ndarray:
+def _group_windows(windows: pd.DataFrame, window_pattern: Union[pd.DataFrame, dict], entity_col, start_col, stop_col,
+                   include_both_endpoints: bool) -> pd.Series:
+    # assumes `windows` is sorted wrt. `entity_col` (if present) and either `start_col` (if present) or `stop_col`
+    # assumes `windows` has one column index level
+    # `windows` is left unchanged (can be view)
+    # assumes `window_pattern` is dict iff `entity_col` is None
+    # assumes `window_pattern` has entities on row index, if DataFrame
+    # output Series has same row index as `windows`
+
+    if start_col in windows.columns and stop_col in windows.columns:
+        out = pd.Series(index=windows.index, data=0, dtype=np.int32)
+
+        overlap_mask = False
+        pre_group = windows_grouped = None
+        if entity_col is None:
+            if not window_pattern['overlapping']:
+                # no overlapping windows => nothing to do
+                pass
+            elif window_pattern['regular']:
+                out.values[:] = np.arange(len(windows), dtype=out.dtype) % window_pattern['n_shifts_regular']
+            else:
+                overlap_mask = np.ones((len(windows),), dtype=np.bool)      # don't set to True
+                pre_group = _pregroup_windows(windows, entity_col, start_col, stop_col, include_both_endpoints)
+                windows_grouped = windows.groupby(pre_group.values).agg({start_col: 'min', stop_col: 'max'})
+                entity_col = '__entity__'
+                windows_grouped[entity_col] = 0
+        else:
+            overlapping = window_pattern[window_pattern['overlapping'] & ~window_pattern['regular']].index
+            regular_patt_mask = window_pattern['overlapping'] & window_pattern['regular']
+            if len(overlapping) > 0:
+                overlap_mask = windows[entity_col].isin(overlapping)
+                pre_group = _pregroup_windows(windows[overlap_mask], entity_col, start_col, stop_col,
+                                              include_both_endpoints)
+                windows_grouped = windows[overlap_mask].groupby(pre_group.values)\
+                    .agg({entity_col: 'first', start_col: 'min', stop_col: 'max'})
+            if regular_patt_mask.any():
+                regular_mask = windows[entity_col].isin(window_pattern[regular_patt_mask].index)
+                s = pd.Series(index=windows.loc[regular_mask, entity_col].values, data=1).groupby(level=0).cumsum() - 1
+                assert (s.index == windows.loc[regular_mask, entity_col].values).all()
+                out.values[regular_mask] = (s % window_pattern['n_shifts_regular'].reindex(s.index)).values
+
+        if np.any(overlap_mask):   # works if `overlap_mask` is bool
+            # if offending entities exist, they must be processed manually => SLOW!
+            # `windows_grouped` has `pre_group` on the row index and three columns `entity_col`, `start_col`
+            # and `stop_col`
+            # `len(pre_group)` equals `overlap_mask.sum()`
+
+            grp_idx = 0
+            windows_grouped['__grp__'] = 0
+            windows_grouped['__i__'] = np.arange(len(windows_grouped))
+            mask0 = np.ones((len(windows_grouped),), dtype=bool)
+            comp = '__gt__' if include_both_endpoints else '__ge__'
+            while mask0.any():
+                indices = []
+                sub = windows_grouped[mask0]
+                mask1 = np.ones((mask0.sum(),), dtype=bool)
+                while mask1.any():
+                    cur = sub[mask1].groupby(entity_col)[[stop_col, '__i__']].first()
+                    indices.append(cur['__i__'])
+                    cur.columns = [stop_col, '__j__']
+                    tmp = sub[[entity_col, start_col, '__i__']][mask1].join(cur, on=entity_col, how='left')
+                    mask1 &= (tmp['__i__'] > tmp['__j__']) & (getattr(tmp[start_col], comp)(tmp[stop_col]))
+                indices = np.concatenate(indices)
+                windows_grouped['__grp__'].values[indices] = grp_idx
+                grp_idx += 1
+                mask0[mask0] &= ~sub['__i__'].isin(indices)
+            # `windows_grouped` now has an additional column "__grp__"
+
+            out.values[overlap_mask] = windows_grouped['__grp__'].reindex(pre_group.values, fill_value=0).values
+
+        return out
+    else:
+        # replace `target_col` if it is already present
+        if entity_col is None:
+            return pd.Series(index=windows.index, data=np.arange(len(windows)))
+        else:
+            s = pd.Series(index=windows[entity_col].values, data=1).groupby(level=0).cumsum() - 1
+            assert len(s) == len(windows)
+            assert (s.index == windows[entity_col]).all()
+            s.index = windows.index
+            return s
+
+
+def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_both_endpoints: bool,
+                    return_mask: bool = False) -> Union[bool, np.ndarray]:
     # assumes `df` is sorted wrt. `entity_col` and `start_col`
+    # returns either mask or array with entities with overlapping windows
 
     if entity_col is None:
         mask = np.ones((len(df),), dtype=np.bool)
@@ -747,10 +857,15 @@ def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_b
         mask &= (df[stop_col] > next_start)
     # `mask` now indicates whether next entry belongs to same entity and starts before current entry ends
 
-    return mask
+    if return_mask:
+        return mask
+    elif entity_col is None:
+        return mask.any()
+    else:
+        return df.loc[mask, entity_col].unique()
 
 
-def _pregroup_windows(df: pd.DataFrame, entity_col, start_col, stop_col, grp_col, include_both_endpoints: bool):
+def _pregroup_windows(df: pd.DataFrame, entity_col, start_col, stop_col, include_both_endpoints: bool) -> pd.Series:
     # assumes `df` is sorted wrt. `entity_col` and `start_col`
 
     prev_stop = np.roll(df[stop_col].values, 1)
@@ -766,7 +881,97 @@ def _pregroup_windows(df: pd.DataFrame, entity_col, start_col, stop_col, grp_col
     # `mask` now indicates whether previous entry stops after current entry starts,
     # or previous entry belongs to different entity
 
-    df[grp_col] = np.cumsum(mask)
+    return pd.Series(index=df.index, data=np.cumsum(mask))
+
+
+def _analyze_windows(windows: pd.DataFrame, entity_col, start_col, stop_col, include_both_endpoints: bool) \
+        -> Union[pd.DataFrame, dict]:
+    # assumes `windows` is sorted wrt. `entity_col` (if present) and `start_col`
+    # column index may have 1 or 2 levels
+    # `windows` is left unchanged (may be view)
+
+    if entity_col is None:
+        if start_col in windows.columns and stop_col in windows.columns:
+            duration = windows[stop_col] - windows[start_col]
+            min_duration = duration.min()
+            max_duration = duration.max()
+            offset = np.roll(windows[start_col].values, -1) - windows[start_col]
+            min_offset = offset.min()
+            max_offset = offset.max()
+            regular = (min_duration == max_duration) & (min_offset == max_offset)
+            try:
+                regular = regular and np.isfinite(max_duration)
+                regular = regular and np.isfinite(max_offset)
+            except:  # noqa
+                pass
+            if regular:
+                try:
+                    n_shifts = int(np.ceil(max_duration / max_offset))      # `offset` could be 0
+                    if not include_both_endpoints and n_shifts * max_offset <= max_duration:
+                        n_shifts += 1
+                except (ZeroDivisionError, ValueError):
+                    n_shifts = len(windows)
+            else:
+                n_shifts = 0
+            # `n_shifts` indicates how often regular windows must be shifted to obtain a non-overlapping subsequence
+            # if windows are non-overlapping anyway, `n_shifts` is 1
+
+            overlapping = len(windows) > 1 and _check_disjoint(windows, entity_col, start_col, stop_col,
+                                                               include_both_endpoints, return_mask=False)
+            return dict(n=len(windows), first_start=windows[start_col].iloc[0], min_duration=min_duration,
+                        max_duration=max_duration, min_offset=min_offset, max_offset=max_offset, regular=regular,
+                        overlapping=overlapping, n_shifts_regular=n_shifts)
+        else:
+            return dict(n=len(windows), regular=False, overlapping=len(windows) > 1)
+    else:
+        if start_col in windows.columns and stop_col in windows.columns:
+            duration = pd.Series(index=windows[entity_col], data=(windows[stop_col] - windows[start_col]).values)
+            duration = duration.groupby(level=0).agg(['min', 'max'])
+            duration.columns = ['min_duration', 'max_duration']
+            mask = np.roll(windows[entity_col].values, -1) == windows[entity_col].values
+            mask[-1] = False
+            if mask.any():
+                offset = pd.Series(index=windows[entity_col],
+                                   data=np.roll(windows[start_col].values, -1) - windows[start_col].values)
+                offset = offset[mask].groupby(level=0).agg(['min', 'max'])
+                offset.columns = ['min_offset', 'max_offset']
+                offset = offset.reindex(duration.index, fill_value=duration['max_duration'].iloc[0])
+            else:
+                # only one window per entity => we can safely copy durations
+                offset = duration.copy()
+                offset.columns = ['min_offset', 'max_offset']
+            out = pd.concat([duration, offset], axis=1, sort=False)
+            out['first_start'] = windows.groupby([entity_col])[[start_col]].min()[start_col]    # multi-index
+            out['n'] = windows.groupby([entity_col]).size()
+            regular = (out['min_duration'] == out['max_duration']) & (out['min_offset'] == out['max_offset'])
+            try:
+                regular &= np.isfinite(out['max_duration'])
+                regular &= np.isfinite(out['max_offset'])
+            except:     # noqa
+                pass
+
+            out['n_shifts_regular'] = 0
+            if regular.any():
+                n_shifts = np.ceil(out.loc[regular, 'max_duration'] / out.loc[regular, 'max_offset'])
+                finite_mask = np.isfinite(n_shifts)
+                n_shifts[~finite_mask] = out.loc[regular, 'n'][~finite_mask]
+                n_shifts = n_shifts.astype(np.int32)
+                if not include_both_endpoints:
+                    n_shifts[
+                        finite_mask & (n_shifts * out.loc[regular, 'max_offset'] <= out.loc[regular, 'max_duration'])
+                    ] += 1
+                out.loc[regular, 'n_shifts_regular'] = n_shifts
+
+            out['regular'] = regular
+            overlapping = _check_disjoint(windows, entity_col, start_col, stop_col,
+                                          include_both_endpoints, return_mask=False)
+            out['overlapping'] = out.index.isin(overlapping)
+            return out
+        else:
+            out = windows.groupby([entity_col]).size().to_frame('n')
+            out['regular'] = False
+            out['overlapping'] = out['n'] > 1
+            return out
 
 
 def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: dict, mode_agg: dict,
@@ -906,6 +1111,7 @@ def _resample_eav_ranks_2(df: pd.DataFrame, out: pd.DataFrame, agg: dict, entity
     # _extremely_ fast auxiliary function for computing rank-like aggregations per time window
     # same assumptions as in function `_resample_eav_ranks()`, except that timestamps of windows used for sorting are
     #     _stop_ times if ranks are non-negative and _start_ times otherwise
+    # assume that `entity_col` is None or on row index of `df`
     # assumes that windows in `out` are defined by single endpoint
 
     signs = list({r >= 0 for ranks in agg.values() for r in ranks})
@@ -927,10 +1133,7 @@ def _resample_eav_ranks_2(df: pd.DataFrame, out: pd.DataFrame, agg: dict, entity
         df0 = df[df[attribute_col].isin(rank_attrs)]
         group_cols.append(attribute_col)
     if entity_col is not None:
-        if entity_col in df.columns:
-            df0 = df0.copy()
-        else:
-            df0 = df0.reset_index()
+        df0 = df0.reset_index()
         group_cols = [entity_col] + group_cols
 
     if group_cols:
