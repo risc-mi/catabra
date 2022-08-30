@@ -267,7 +267,9 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
             new_cols = [entity_col]
             sort_col = [entity_col]
         else:
-            take_cols = new_cols = sort_col = []
+            take_cols = []
+            new_cols = []
+            sort_col = []
         if (time_col, 'start') in out.columns:
             take_cols.append((time_col, 'start'))
             new_cols.append('__start__')
@@ -847,7 +849,7 @@ def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_b
         mask = np.ones((len(df),), dtype=np.bool)
     else:
         mask = np.roll(df[entity_col].values, -1) == df[entity_col].values
-    mask[-1] = False
+    mask[-1:] = False       # works for empty array, too
     # `mask` now indicates whether next entry belongs to same entity
 
     next_start = np.roll(df[start_col].values, -1)
@@ -877,7 +879,7 @@ def _pregroup_windows(df: pd.DataFrame, entity_col, start_col, stop_col, include
 
     if entity_col is not None:
         mask |= np.roll(df[entity_col].values, 1) != df[entity_col].values
-    mask[0] = False
+    mask[:1] = False        # works for empty array, too
     # `mask` now indicates whether previous entry stops after current entry starts,
     # or previous entry belongs to different entity
 
@@ -991,10 +993,11 @@ def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: 
     for attr, agg in standard_agg.items():
         aux = df[attr_mask if attribute_col is None else (df[attribute_col] == attr)]\
             .groupby(level=0)[value_col].agg(agg)
-        if isinstance(aux, pd.Series):
-            aux = aux.to_frame()
-        for i, a in enumerate(agg):
-            out[(attr, a)].values[aux.index.values] = aux.iloc[:, i].values
+        if not aux.empty:
+            if isinstance(aux, pd.Series):
+                aux = aux.to_frame()
+            for i, a in enumerate(agg):
+                out[(attr, a)].values[aux.index.values] = aux.iloc[:, i].values
 
     for attr, (mode, mode_count) in mode_agg.items():
         aux = grouped_mode(df.loc[attr_mask if attribute_col is None else (df[attribute_col] == attr), value_col])
@@ -1011,8 +1014,9 @@ def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: 
     for attr, quantiles in quantile_agg.items():
         aux = df[attr_mask if attribute_col is None else (df[attribute_col] == attr)] \
             .groupby(level=0)[value_col].quantile(q=[q for q, _ in quantiles]).unstack()
-        for i, (_, a) in enumerate(quantiles):
-            out[(attr, a)].values[aux.index.values] = aux.iloc[:, i].values
+        if not aux.empty:
+            for i, (_, a) in enumerate(quantiles):
+                out[(attr, a)].values[aux.index.values] = aux.iloc[:, i].values
 
 
 def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFrame, agg: dict, entity_col, time_col,
