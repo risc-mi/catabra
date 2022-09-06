@@ -215,8 +215,10 @@ def to_json(x):
         return x.tolist()
     elif hasattr(x, 'to_dict'):
         return to_json(x.to_dict())
-    else:
+    elif x in (None, True, False) or isinstance(x, (str, int, float)):
         return x
+    else:
+        return str(x)
 
 
 def convert_rows_to_str(d: [dict, pd.DataFrame], rowindex_to_convert: list,

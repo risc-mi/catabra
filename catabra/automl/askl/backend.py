@@ -518,12 +518,20 @@ class AutoSklearnBackend(AutoMLBackend):
         if kwargs.get('n_jobs', 1) != 1:
             kwargs['seed'] = 42
 
+        for k, v in specific.items():
+            if k not in ('include', 'exclude', 'resampling_strategy', 'resampling_strategy_arguments'):
+                if k in kwargs:
+                    logging.warn(f'Ignoring auto-sklearn config argument "{k}",'
+                                 ' because it has been set automatically already.')
+                else:
+                    kwargs[k] = v
+
         self.model_ = Estimator(**kwargs)
         self.model_.fit(x_train, y_train, dataset_name=dataset_name)
         if kwargs.get('ensemble_size', 1) > 0:
             if kwargs.get('n_jobs', 1) != 1:
                 # `fit_ensemble()` must be called before `refit()`
-                # not sure whether this is actually needed, but should not take too much time so we do it anyway
+                # not sure whether this is actually needed, but should not take too much time, so we do it anyway
                 self.model_.fit_ensemble(y_train)
             self.model_.refit(x_train, y_train)
         return self
