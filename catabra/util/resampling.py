@@ -7,9 +7,11 @@ import pandas as pd
 MAX_ROWS = 10000000
 
 
-def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, entity_col=None, time_col=None,
-                 attribute_col=None, value_col=None, include_start: bool = True, include_stop: bool = False,
-                 optimize: str = 'time') -> pd.DataFrame:
+def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
+                 windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
+                 agg: dict = None, entity_col=None, time_col=None, attribute_col=None, value_col=None,
+                 include_start: bool = True, include_stop: bool = False, optimize: str = 'time') \
+        -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']:
     """
     Resample data in EAV (entity-attribute-value) format wrt. explicitly passed windows of arbitrary (possibly
     infinite) length.
@@ -18,13 +20,25 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
     values), `time_col` (contains observation times), `attribute_col` (optional; contains attribute identifiers) and
     `entity_col` (optional; contains entity identifiers). Must have one column index level.
     Data types are arbitrary, as long as observation times and entity identifiers can be compared wrt. `<` and `<=`
-    (e.g., float, int, time delta, date time). Entity identifiers must not be NA.
+    (e.g., float, int, time delta, date time). Entity identifiers must not be NA. Observation times may be NA, but such
+    entries are ignored entirely.
+    `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
+    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
+    very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already, the
+    calling function should better take care of this; see
+    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
 
     :param windows: The target windows into which `df` is resampled. Must have two column index levels and columns
     `(time_col, "start")` (optional; contains start times of each window), `(time_col, "stop")` (optional; contains end
     times of each window), `(entity_col, "")` (optional; contains entity identifiers) and `(window_group_col, "")`
-    (optional; contains information for creating groups of mutually disjoint windows).
+    (optional; contains information for creating groups of mutually disjoint windows). Start- and end times may be NA,
+    but such windows are deemed invalid and by definition do not contain any observations.
     At least one of the two endpoint-columns must be given; if one is missing it is assumed to represent +/- inf.
+    `windows` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
+    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
+    very costly both in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already,
+    the calling function should better take care of this; see
+    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
 
     :param agg: The aggregations to apply. Must be a dict mapping attribute identifiers to lists of aggregation
     functions, which are applied to all observed values of the respective attribute in each specified window.
@@ -69,7 +83,10 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
     ("rxx", "txx") can be efficiently computed anyway.
 
     :return: Resampled data. Like `windows`, but with one additional column for each requested aggregation.
-    Order of columns is arbitrary, order of rows is exactly as in `windows`.
+    Order of columns is arbitrary, order of rows is exactly as in `windows` -- unless `windows` is a Dask DataFrame, in
+    which case the order of rows may differ.
+    The output is a (lazy) Dask DataFrame if `windows` is a Dask DataFrame, and a Pandas DataFrame otherwise,
+    regardless of what `df` is.
     """
 
     assert df.columns.nlevels == 1
@@ -82,26 +99,19 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
     assert windows.columns.nlevels == 2
     assert tmp_col not in windows.columns.get_level_values(0)
     assert (time_col, 'start') in windows.columns or (time_col, 'stop') in windows.columns
-    assert (time_col, 'start') not in windows.columns or \
-           (windows[(time_col, 'start')].notna().all() and windows[(time_col, 'start')].dtype == df[time_col].dtype)
-    assert (time_col, 'stop') not in windows.columns or \
-           (windows[(time_col, 'stop')].notna().all() and windows[(time_col, 'stop')].dtype == df[time_col].dtype)
+    assert (time_col, 'start') not in windows.columns or windows[(time_col, 'start')].dtype == df[time_col].dtype
+    assert (time_col, 'stop') not in windows.columns or windows[(time_col, 'stop')].dtype == df[time_col].dtype
     assert entity_col is None or (entity_col, '') in windows.columns or entity_col == windows.index.name
 
-    if not agg or windows.empty:
-        # no aggregations or no windows => nothing to do
-        return windows.copy()
-    else:
+    if agg:
         assert attribute_col is not None or len(agg) == 1
+    else:
+        # no aggregations specified => nothing to do
+        return windows.copy()       # works if `windows` is a Dask DataFrame, too
 
-    # initialize `out` => faster than successive concatenation of partial results
-    data = []
+    # get schema (columns and data types) of output
+    init_values = []
     columns = []
-    to_drop = []
-    if entity_col is not None and (entity_col, '') not in windows.columns:
-        to_drop.append((entity_col, ''))
-        data.append(windows.index)
-        columns.append((entity_col, ''))
     val_val = _get_default_value(df[value_col].dtype)
     time_val = _get_default_value(df[time_col].dtype)
     zero_val = np.array(0, dtype=np.float64)
@@ -129,7 +139,7 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
                         x = float(f[1:])
                         if 0. <= x <= 100.:
                             quant.append((0.01 * x, f))
-                            data.append(val_val)
+                            init_values.append(val_val)
                             columns.append((attr, f))
                         continue
                     except ValueError:
@@ -151,15 +161,15 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
                             else:
                                 aux[1] = True
                             neg_rank[x] = aux
-                        data.append(val_val if f[0] == 'r' else time_val)
+                        init_values.append(val_val if f[0] == 'r' else time_val)
                         columns.append((attr, f[0] + str(x)))
                         continue
                     except ValueError:
                         pass
             if f in ('count', 'size', 'nunique', 'mode_count'):
-                data.append(zero_val)
+                init_values.append(zero_val)
             else:
-                data.append(val_val)
+                init_values.append(val_val)
             columns.append((attr, f))
             if f not in ('mode', 'mode_count'):
                 standard_agg.setdefault(attr, []).append(f)
@@ -170,252 +180,163 @@ def resample_eav(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, enti
         if neg_rank:
             neg_rank_agg[attr] = neg_rank
 
-    # initialize `out`
-    # order of rows in `out` never changes during execution
-    out = pd.DataFrame(index=windows.index, data=dict(enumerate(data)))
-    out.columns = pd.MultiIndex.from_tuples(columns)
-    out = pd.concat([windows, out], axis=1, sort=False, join='inner')
-
-    # restrict `df` to relevant entries
-    if entity_col is not None and entity_col in df.columns:
-        df = df.set_index(entity_col)
-    mask = df[time_col].notna()
-    if entity_col is not None:
-        mask &= df.index.isin(out[(entity_col, '')])
+    # restrict `df` to relevant entries; works if `df` is a Dask DataFrame, too
+    mask = ~df[time_col].isna()     # `.notna()` does not work with Dask DataFrames
     if attribute_col is not None:
         mask &= df[attribute_col].isin(agg.keys())
     df = df[mask]
-    # `entity_col` is either None or the row index of `df`
 
-    # compute aggregations for which observations and windows do not need to be merged
-    if neg_rank_agg:
-        if (time_col, 'stop') not in out.columns:
-            _resample_eav_ranks_2(df, out, neg_rank_agg, entity_col, time_col, attribute_col, value_col, include_start)
-            neg_rank_done = True
-        else:
-            neg_rank_done = False
-    else:
-        neg_rank_done = True
-    if nn_rank_agg:
-        if (time_col, 'start') not in out.columns:
-            _resample_eav_ranks_2(df, out, nn_rank_agg, entity_col, time_col, attribute_col, value_col, include_stop)
-            nn_rank_done = True
-        else:
-            nn_rank_done = False
-    else:
-        nn_rank_done = True
-
-    # return if all requested aggregations have been computed already
-    if neg_rank_done and nn_rank_done and not (standard_agg or mode_agg or quantile_agg):
-        out.drop(to_drop, axis=1, inplace=True, errors='ignore')
-        return out
-
-    # merge windows with observations
-    df0 = df[[time_col]].copy()
-    df0.reset_index(inplace=True, drop=entity_col is None)
-    df0['__observation_idx__'] = np.arange(len(df0))
-    df0['__window_idx__'] = -1.
-    df1 = pd.DataFrame(data=dict(__window_idx__=np.arange(len(out), dtype=np.float64), __observation_idx__=-1))
-
-    if neg_rank_agg and (time_col, 'start') in out.columns and (time_col, 'stop') in out.columns:
-        # special case: sort by "stop" first to handle negative ranks
-        df1[time_col] = out[(time_col, 'stop')].values
-        sort_col = [time_col, '__window_idx__' if include_stop else '__observation_idx__']
-        if entity_col is not None:
-            df1[entity_col] = out[(entity_col, '')].values
-            sort_col = [entity_col] + sort_col
-        merged = pd.concat([df0, df1], axis=0, sort=False, ignore_index=True)
-        merged['__is_observation__'] = merged['__observation_idx__'] >= 0
-        merged.sort_values(sort_col, inplace=True)
-        _resample_eav_ranks(df, out, merged, neg_rank_agg, entity_col, time_col, attribute_col,
-                            value_col, include_start)
-        neg_rank_done = True
-        if not (nn_rank_agg or standard_agg or mode_agg or quantile_agg):
-            out.drop(to_drop, axis=1, inplace=True, errors='ignore')
-            return out
-
-    # now proper sorting wrt. "start" if possible, otherwise "stop"
-    if (time_col, 'start') in out.columns:
-        df1[time_col] = out[(time_col, 'start')].values
-        sort_col = [time_col, '__observation_idx__' if include_start else '__window_idx__']
-        fill_method = 'ffill'
-    else:
-        df1[time_col] = out[(time_col, 'stop')].values
-        sort_col = [time_col, '__window_idx__' if include_stop else '__observation_idx__']
-        fill_method = 'bfill'
-    if entity_col is not None:
-        df1[entity_col] = out[(entity_col, '')].values
-        sort_col = [entity_col] + sort_col
-    merged = pd.concat([df0, df1], axis=0, sort=False, ignore_index=True)
-    merged['__is_observation__'] = merged['__observation_idx__'] >= 0
-    del df0, df1
-    merged.sort_values(sort_col, inplace=True)
-
-    # compute remaining rank aggregations
-    if neg_rank_agg and not neg_rank_done:
-        _resample_eav_ranks(df, out, merged, neg_rank_agg, entity_col, time_col, attribute_col, value_col,
-                            include_start)
-    if nn_rank_agg and not nn_rank_done:
-        _resample_eav_ranks(df, out, merged, nn_rank_agg, entity_col, time_col, attribute_col, value_col,
-                            include_stop)
-
-    if standard_agg or mode_agg or quantile_agg:
-        # set `windows` to a simple DataFrame with columns `entity_col`, "__start__" and "__stop__" (if present)
-        # row index is connected to `out` via `.iloc[]` and to `merged` via "__windows_idx__"
-        if (entity_col, '') in out.columns:
-            take_cols = [(entity_col, '')]
-            new_cols = [entity_col]
-            sort_col = [entity_col]
-        else:
-            take_cols = []
-            new_cols = []
-            sort_col = []
-        if (time_col, 'start') in out.columns:
-            take_cols.append((time_col, 'start'))
-            new_cols.append('__start__')
-            sort_col.append('__start__')
-        else:
-            sort_col.append('__stop__')
-        if (time_col, 'stop') in out.columns:
-            take_cols.append((time_col, 'stop'))
-            new_cols.append('__stop__')
-        windows = out[take_cols].copy()
-        windows.columns = new_cols
-        windows.reset_index(drop=True, inplace=True)
-        windows.sort_values(sort_col, inplace=True)
-
-        # restrict to non-empty windows
-        if '__start__' in windows.columns:
-            if '__stop__' in windows.columns:
-                if include_start and include_stop:
-                    windows = windows[windows['__start__'] <= windows['__stop__']]
-                else:
-                    windows = windows[windows['__start__'] < windows['__stop__']]
-            elif not include_start:
-                try:
-                    windows = windows[~np.isposinf(windows['__start__'])]
-                except TypeError:
-                    pass
-        elif not include_stop:
-            try:
-                windows = windows[~np.isneginf(windows['__stop__'])]
-            except TypeError:
-                pass
-        # `windows` is a DataFrame view containing only non-empty windows, in canonical order
-        # from here on, order of rows does not change any more, but subsets may be taken
-
-        # analyze windows
-        window_pattern = _analyze_windows(windows, entity_col, '__start__', '__stop__', include_start and include_stop)
-
-        # select strategy for each entity: full join (fast but memory intensive) or group (slow but memory efficient)
+    if not (isinstance(df, pd.DataFrame) and isinstance(windows, pd.DataFrame)):
+        # Dask DataFrame
+        assert isinstance(df, pd.DataFrame) or str(type(df)) == "<class 'dask.dataframe.core.DataFrame'>"
+        assert isinstance(windows, pd.DataFrame) or str(type(windows)) == "<class 'dask.dataframe.core.DataFrame'>"
         if entity_col is None:
-            if len(windows) == 1 or (window_pattern['overlapping'] and optimize == 'time'):
-                join_mask = np.ones((len(windows),), dtype=np.bool)
-            else:
-                join_mask = np.zeros((len(windows),), dtype=np.bool)
+            raise NotImplementedError('When passing Dask DataFrames, an entity column must be specified.')
+        elif len(columns) > len(set(columns)):
+            raise ValueError('When passing Dask DataFrames, no duplicate aggregations may be specified.')
+
+        if isinstance(df, pd.DataFrame):
+            if entity_col != df.index.name:
+                df = df.set_index(entity_col)
         else:
-            join_mask = window_pattern['n'] == 1
-            if optimize == 'time':
-                join_mask |= window_pattern['overlapping']
-            join_mask = windows[entity_col].isin(window_pattern[join_mask].index)
-
-        if not join_mask.all():
-            merged.loc[merged['__window_idx__'] < 0., '__window_idx__'] = np.nan
-            not_join_mask = ~join_mask
-
-            # restrict `merged` to relevant entries
-            if attribute_col is not None:
-                mask = df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))
-                if not mask.all():
-                    merged = \
-                        merged[merged['__observation_idx__'].isin(np.where(mask)[0]) | ~merged['__is_observation__']]
-
-            # assign windows to groups s.t. all windows in same group are disjoint
-            group = _group_windows(windows[not_join_mask], window_pattern, entity_col, '__start__', '__stop__',
-                                   include_start and include_stop)
-
-            # Maybe regular windows can be treated more efficiently. But be careful:
-            # - there may be gaps between consecutive windows,
-            # - windows may have 0 length if `include_start` and `include_stop` are True,
-            # - the offset may be 0, too, if all windows have the same start time (and hence are identical),
-            # - the assignment of observations to windows depends on `include_start` and `include_stop`.
-
-            # iterate over groups of disjoint windows
-            for g in group.unique():
-                group_mask = group == g
-                group_merged = merged[merged['__window_idx__'].isin(windows[not_join_mask][group_mask].index) |
-                                      merged['__window_idx__'].isna()].copy()
-                if entity_col is None:
-                    s = group_merged['__window_idx__'].fillna(method=fill_method)
-                else:
-                    s = group_merged.groupby(entity_col)['__window_idx__'].fillna(method=fill_method)
-                s = s.fillna(-1).astype(np.int64)
-                assert len(s) == len(group_merged) and (s.index == group_merged.index).all()
-                group_merged['__window_idx__'] = s
-                group_merged = group_merged[group_merged['__window_idx__'] >= 0]
-                mask = group_merged['__observation_idx__'] >= 0
-                if '__start__' in windows.columns and '__stop__' in windows.columns:
-                    # otherwise, if only "__stop__" occurs in `windows`, `merged` has been sorted wrt. "stop" already
-                    # => nothing to do
-                    group_merged = \
-                        group_merged.join(windows.loc[not_join_mask, '__stop__'], on='__window_idx__', how='left')
-                    if include_stop:
-                        mask &= group_merged[time_col] <= group_merged['__stop__']
-                    else:
-                        mask &= group_merged[time_col] < group_merged['__stop__']
-                group_merged = group_merged[mask]
-                # `group_merged` has columns "__observation_idx__" and "__window_idx__", mapping former to latter;
-                # all entries are valid, i.e., >= 0; not all windows may appear
-
-                df0 = df.iloc[group_merged['__observation_idx__'].values].copy()
-                df0.index = group_merged['__window_idx__'].values
-
-                # resample `df0`, using windows as new entities
-                _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
-
-        if join_mask.any():
-            # restrict `df` to relevant entries
-            # Note that this must happen _after_ the above 'grouping' code path, because otherwise
-            # "__observation_idx__" does not match the rows of `df` any more!
-            if attribute_col is not None:
-                df = df[df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))]
-
-            max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
-            n_to_join = join_mask.sum()
-            if entity_col is None:
-                if n_to_join * len(df) <= max_rows:
-                    partition = np.zeros((n_to_join,), dtype=np.int8)
-                else:
-                    partition = np.arange(n_to_join) % (max_rows // len(df))
+            if entity_col == df.index.name:
+                if not df.known_divisions or df.npartitions + 1 != len(df.divisions):
+                    # could happen if `df` is result of `groupby()` or similar operation
+                    raise NotImplementedError('When passing a Dask DataFrame with entities on the row index,'
+                                              ' its divisions must be known and equal to 1 + number of partitions.')
             else:
-                # `n_rows` contains the number of rows of `windows[join_mask].join(df, on=entity_col, how='inner')`
-                # for each entity
-                n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
-                    .join(windows.loc[join_mask, entity_col].value_counts().to_frame(name=entity_col), how='inner') \
-                    .prod(axis=1)
-                if n_rows.sum() <= max_rows:
-                    partition = np.zeros((n_to_join,), dtype=np.int8)
-                else:
-                    partition = partition_series(n_rows, max_rows) \
-                        .reindex(windows.loc[join_mask, entity_col], fill_value=0).values
+                if df[entity_col].dtype.kind not in 'uif':
+                    raise ValueError('When passing Dask DataFrames, the entity column must have a numeric data type.')
+                # this operation can be _very_ slow and memory intensive; it may even crash if `df` is too large
+                df = df.set_index(entity_col)
+        # `df` is either a Pandas DataFrame or a Dask DataFrame, but in either case has entities on the row index
 
-            start_comp = '__ge__' if include_start else '__gt__'
-            stop_comp = '__le__' if include_stop else '__lt__'
-            for g in range(partition.max() + 1):
-                df0 = inner_or_cross_join(windows[join_mask][partition == g], df, on=entity_col)
-                if '__start__' in df0.columns:
-                    mask = getattr(df0[time_col], start_comp)(df0['__start__'])
-                else:
-                    # in this case "__stop__" needs to occur in `df0` => `mask` is set to proper Series below
-                    mask = True
-                if '__stop__' in df0.columns:
-                    mask = getattr(df0[time_col], stop_comp)(df0['__stop__']) & mask
+        orig_index_name = None
+        change_windows_inplace = False
+        if isinstance(windows, pd.DataFrame):
+            if entity_col != windows.index.name:
+                if windows.index.nlevels > 1:
+                    raise ValueError('When passing Dask DataFrames, `windows` must have 1 row index level.')
+                orig_index_name = windows.index.name
+                windows = windows.reset_index(drop=False)       # don't change `windows` in place
+                orig_index_name = (orig_index_name, windows.columns[0])
+                windows.index = windows[(entity_col, '')].values
+                windows.index.name = entity_col
+                change_windows_inplace = True
 
-                # resample `df0[mask]`, using windows as new entities
-                _resample_eav_no_windows(df0[mask], out, standard_agg, mode_agg, quantile_agg,
-                                         attribute_col, value_col)
+            # restrict `df` further
+            df = df[df.index.to_series().isin(windows.index)]       # doesn't work without `.to_series()`
+        else:
+            if entity_col != windows.index.name:
+                if getattr(windows.index, 'nlevels', 1) > 1:
+                    raise ValueError('When passing Dask DataFrames, `windows` must have 1 row index level.')
+                elif windows[(entity_col, '')].dtype.kind not in 'uif':
+                    raise ValueError('When passing a Dask DataFrame, the entity column must have a numeric data type.')
+                orig_index_name = windows.index.name
+                windows = windows.reset_index(drop=False)
+                orig_index_name = (orig_index_name, windows.columns[0])
+                i = list(windows.columns).index((entity_col, ''))
+                orig_columns = windows.columns
+                windows.columns = pd.RangeIndex(len(windows.columns))
+                # this operation can be costly
+                windows = windows.set_index(i, drop=False)      # does not work with MultiIndex columns => use `i`
+                windows.columns = orig_columns
+                windows.index.name = entity_col
+            elif not windows.known_divisions or windows.npartitions + 1 != len(windows.divisions):
+                # could happen if `windows` is result of `groupby()` or similar operation
+                raise NotImplementedError('When passing a Dask DataFrame with entities on the row index,'
+                                          ' its divisions must be known and equal to 1 + number of partitions.')
+        # `windows` is either a Pandas DataFrame or a Dask DataFrame, but in either case has entities on the row index
+        # `orig_index_name` is either None or a tuple `(name, column_name)`
 
-    out.drop(to_drop, axis=1, inplace=True, errors='ignore')
+        if any(c in columns for c in windows.columns):
+            raise ValueError('When passing Dask DataFrames, `windows` must not contain newly generated column names.')
+
+        meta = {c: windows[c].dtype for c in windows.columns if orig_index_name is None or c != orig_index_name[1]}
+        meta.update({c: getattr(d, 'dtype', 'object') for c, d in zip(columns, init_values)})
+
+        if isinstance(windows, pd.DataFrame):
+            if not change_windows_inplace:
+                windows = windows.copy()
+            windows[('__orig_order__', '')] = np.arange(len(windows))
+            out = df.map_partitions(
+                _resample_eav_pandas,
+                windows,
+                standard_agg=standard_agg,
+                mode_agg=mode_agg,
+                quantile_agg=quantile_agg,
+                nn_rank_agg=nn_rank_agg,
+                neg_rank_agg=neg_rank_agg,
+                entity_col=entity_col,
+                time_col=time_col,
+                attribute_col=attribute_col,
+                value_col=value_col,
+                include_start=include_start,
+                include_stop=include_stop,
+                optimize=optimize,
+                orig_index_name=orig_index_name,
+                columns=columns,
+                init_values=init_values,
+                swap_df_windows=True,
+                # Dask kwargs
+                align_dataframes=True,
+                enforce_metadata=False,
+                meta=meta
+            ).compute()
+            out.sort_values([('__orig_order__', '')], inplace=True)
+            out.drop([('__orig_order__', '')], axis=1, inplace=True)
+        else:
+            out = windows.map_partitions(
+                _resample_eav_pandas,
+                df,
+                standard_agg=standard_agg,
+                mode_agg=mode_agg,
+                quantile_agg=quantile_agg,
+                nn_rank_agg=nn_rank_agg,
+                neg_rank_agg=neg_rank_agg,
+                entity_col=entity_col,
+                time_col=time_col,
+                attribute_col=attribute_col,
+                value_col=value_col,
+                include_start=include_start,
+                include_stop=include_stop,
+                optimize=optimize,
+                orig_index_name=orig_index_name,
+                columns=columns,
+                init_values=init_values,
+                swap_df_windows=False,
+                # Dask kwargs
+                align_dataframes=True,
+                meta=meta
+            )
+    else:
+        if entity_col is not None:
+            # set `entity_col` to row index of `df`
+            if entity_col != df.index.name:
+                df = df.set_index(entity_col)
+
+            # restrict `df` further
+            df = df[df.index.isin(windows.index if entity_col == windows.index.name else windows[(entity_col, '')])]
+
+        out = _resample_eav_pandas(
+            windows,
+            df,
+            standard_agg=standard_agg,
+            mode_agg=mode_agg,
+            quantile_agg=quantile_agg,
+            nn_rank_agg=nn_rank_agg,
+            neg_rank_agg=neg_rank_agg,
+            entity_col=entity_col,
+            time_col=time_col,
+            attribute_col=attribute_col,
+            value_col=value_col,
+            include_start=include_start,
+            include_stop=include_stop,
+            optimize=optimize,
+            columns=columns,
+            init_values=init_values
+        )
+
     return out
 
 
@@ -745,6 +666,293 @@ def inner_or_cross_join(left: pd.DataFrame, right: pd.DataFrame, on=None) -> pd.
         return left.join(right, on=on, how='inner')
 
 
+def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=None, mode_agg=None, quantile_agg=None,
+                         nn_rank_agg=None, neg_rank_agg=None, entity_col=None, time_col=None, attribute_col=None,
+                         value_col=None, include_start: bool = True, include_stop: bool = False, optimize: str = 'time',
+                         orig_index_name=None, columns=None, init_values=None, swap_df_windows: bool = False) \
+        -> pd.DataFrame:
+    # `entity_col` is either None or the row index of `df`, and it may or may not be a column / the index of `windows`
+    # `df` has been restricted to relevant entries
+    # observation times in `df` are not NA
+    # data types of `df` and `windows` have been checked
+    # both `df` and `windows` may be empty
+    # start- and end times in `windows` may be NA
+
+    if swap_df_windows:
+        # if called from `map_partitions()`, `windows` and `df` may be swapped
+        df, windows = windows, df
+
+    # initialize `out` => faster than successive concatenation of partial results
+    out = pd.DataFrame(index=windows.index, data=dict(enumerate(init_values)))
+    out.columns = pd.MultiIndex.from_tuples(columns)
+    out = pd.concat([windows, out], axis=1, sort=False, join='inner')
+    # order of rows in `out` never changes during execution
+
+    if len(df) == 0 or len(out) == 0:
+        # no observations or no windows => nothing to do
+        if orig_index_name is not None:
+            out.set_index(orig_index_name[1], inplace=True, drop=True)
+            out.index.name = orig_index_name[0]
+        return out
+
+    to_drop = []
+    if entity_col is not None and (entity_col, '') not in out.columns:
+        to_drop.append((entity_col, ''))
+        out[(entity_col, '')] = out.index
+
+    # compute aggregations for which observations and windows do not need to be merged
+    if neg_rank_agg:
+        if (time_col, 'stop') not in out.columns:
+            _resample_eav_ranks_2(df, out, neg_rank_agg, entity_col, time_col, attribute_col, value_col,
+                                  include_start)
+            neg_rank_done = True
+        else:
+            neg_rank_done = False
+    else:
+        neg_rank_done = True
+    if nn_rank_agg:
+        if (time_col, 'start') not in out.columns:
+            _resample_eav_ranks_2(df, out, nn_rank_agg, entity_col, time_col, attribute_col, value_col,
+                                  include_stop)
+            nn_rank_done = True
+        else:
+            nn_rank_done = False
+    else:
+        nn_rank_done = True
+
+    # return if all requested aggregations have been computed already
+    if neg_rank_done and nn_rank_done and not (standard_agg or mode_agg or quantile_agg):
+        if orig_index_name is not None:
+            out.set_index(orig_index_name[1], inplace=True, drop=True)
+            out.index.name = orig_index_name[0]
+        out.drop(to_drop, axis=1, inplace=True, errors='ignore')
+        return out
+
+    # merge windows with observations
+    df0 = df[[time_col]].copy()
+    df0.reset_index(inplace=True, drop=entity_col is None)
+    df0['__observation_idx__'] = np.arange(len(df0))
+    df0['__window_idx__'] = -1.
+    df1 = pd.DataFrame(data=dict(__window_idx__=np.arange(len(out), dtype=np.float64), __observation_idx__=-1))
+    merged = None
+
+    if neg_rank_agg and (time_col, 'start') in out.columns and (time_col, 'stop') in out.columns:
+        # special case: sort by "stop" first to handle negative ranks
+        df1[time_col] = out[(time_col, 'stop')].values
+        sort_col = [time_col, '__window_idx__' if include_stop else '__observation_idx__']
+        if entity_col is not None:
+            df1[entity_col] = out[(entity_col, '')].values
+            sort_col = [entity_col] + sort_col
+        merged = pd.concat([df0, df1], axis=0, sort=False, ignore_index=True)
+        merged['__is_observation__'] = merged['__observation_idx__'] >= 0
+        merged.sort_values(sort_col, inplace=True, na_position='first')
+        _resample_eav_ranks(df, out, merged, neg_rank_agg, entity_col, time_col, attribute_col,
+                            value_col, include_start)
+        neg_rank_done = True
+        if not (nn_rank_agg or standard_agg or mode_agg or quantile_agg):
+            if orig_index_name is not None:
+                out.set_index(orig_index_name[1], inplace=True, drop=True)
+                out.index.name = orig_index_name[0]
+            out.drop(to_drop, axis=1, inplace=True, errors='ignore')
+            return out
+
+    # now proper sorting wrt. "start" if possible, otherwise "stop"
+    if merged is None or (time_col, 'start') in out.columns:
+        if (time_col, 'start') in out.columns:
+            df1[time_col] = out[(time_col, 'start')].values
+            sort_col = [time_col, '__observation_idx__' if include_start else '__window_idx__']
+            fill_method = 'ffill'
+            na_position = 'last'
+        else:
+            df1[time_col] = out[(time_col, 'stop')].values
+            sort_col = [time_col, '__window_idx__' if include_stop else '__observation_idx__']
+            fill_method = 'bfill'
+            na_position = 'first'
+        if entity_col is not None:
+            df1[entity_col] = out[(entity_col, '')].values
+            sort_col = [entity_col] + sort_col
+        merged = pd.concat([df0, df1], axis=0, sort=False, ignore_index=True)
+        merged['__is_observation__'] = merged['__observation_idx__'] >= 0
+        merged.sort_values(sort_col, inplace=True, na_position=na_position)
+    del df0, df1
+
+    # compute remaining rank aggregations
+    if neg_rank_agg and not neg_rank_done:
+        _resample_eav_ranks(df, out, merged, neg_rank_agg, entity_col, time_col, attribute_col, value_col,
+                            include_start)
+    if nn_rank_agg and not nn_rank_done:
+        _resample_eav_ranks(df, out, merged, nn_rank_agg, entity_col, time_col, attribute_col, value_col,
+                            include_stop)
+
+    if standard_agg or mode_agg or quantile_agg:
+        # set `windows` to a simple DataFrame with columns `entity_col`, "__start__" and "__stop__" (if present)
+        # row index is connected to `out` via `.iloc[]` and to `merged` via "__windows_idx__"
+        if (entity_col, '') in out.columns:
+            take_cols = [(entity_col, '')]
+            new_cols = [entity_col]
+            sort_col = [entity_col]
+        else:
+            take_cols = []
+            new_cols = []
+            sort_col = []
+        if (time_col, 'start') in out.columns:
+            take_cols.append((time_col, 'start'))
+            new_cols.append('__start__')
+            sort_col.append('__start__')
+        else:
+            sort_col.append('__stop__')
+        if (time_col, 'stop') in out.columns:
+            take_cols.append((time_col, 'stop'))
+            new_cols.append('__stop__')
+        windows = out[take_cols].copy()
+        windows.columns = new_cols
+        windows.reset_index(drop=True, inplace=True)
+        windows.sort_values(sort_col, inplace=True)
+
+        # restrict to non-empty windows, and discard windows with NA endpoints
+        if '__start__' in windows.columns:
+            if '__stop__' in windows.columns:
+                if include_start and include_stop:
+                    windows = windows[windows['__start__'] <= windows['__stop__']]
+                else:
+                    windows = windows[windows['__start__'] < windows['__stop__']]
+            else:
+                windows = windows[windows['__start__'].notna()]
+                if not include_start:
+                    try:
+                        windows = windows[~np.isposinf(windows['__start__'])]
+                    except TypeError:
+                        pass
+        else:
+            windows = windows[windows['__stop__'].notna()]
+            if not include_stop:
+                try:
+                    windows = windows[~np.isneginf(windows['__stop__'])]
+                except TypeError:
+                    pass
+        # `windows` is a DataFrame view containing only non-empty windows, in canonical order
+        # from here on, order of rows does not change anymore, but subsets may be taken
+
+        # analyze windows
+        window_pattern = _analyze_windows(windows, entity_col, '__start__', '__stop__',
+                                          include_start and include_stop)
+
+        # select strategy for each entity: full join (fast but memory intensive) or group (slow but memory efficient)
+        if entity_col is None:
+            if len(windows) == 1 or (window_pattern['overlapping'] and optimize == 'time'):
+                join_mask = np.ones((len(windows),), dtype=np.bool)
+            else:
+                join_mask = np.zeros((len(windows),), dtype=np.bool)
+        else:
+            join_mask = window_pattern['n'] == 1
+            if optimize == 'time':
+                join_mask |= window_pattern['overlapping']
+            join_mask = windows[entity_col].isin(window_pattern[join_mask].index)
+
+        if not join_mask.all():
+            merged.loc[merged['__window_idx__'] < 0., '__window_idx__'] = np.nan
+            not_join_mask = ~join_mask
+
+            # restrict `merged` to relevant entries
+            if attribute_col is not None:
+                mask = df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))
+                if not mask.all():
+                    merged = \
+                        merged[
+                            merged['__observation_idx__'].isin(np.where(mask)[0]) | ~merged['__is_observation__']]
+
+            # assign windows to groups s.t. all windows in same group are disjoint
+            group = _group_windows(windows[not_join_mask], window_pattern, entity_col, '__start__', '__stop__',
+                                   include_start and include_stop)
+
+            # Maybe regular windows can be treated more efficiently. But be careful:
+            # - there may be gaps between consecutive windows,
+            # - windows may have 0 length if `include_start` and `include_stop` are True,
+            # - the offset may be 0, too, if all windows have the same start time (and hence are identical),
+            # - the assignment of observations to windows depends on `include_start` and `include_stop`.
+
+            # iterate over groups of disjoint windows
+            for g in group.unique():
+                group_mask = group == g
+                group_merged = merged[merged['__window_idx__'].isin(windows[not_join_mask][group_mask].index) |
+                                      merged['__window_idx__'].isna()].copy()
+                if entity_col is None:
+                    s = group_merged['__window_idx__'].fillna(method=fill_method)
+                else:
+                    s = group_merged.groupby(entity_col)['__window_idx__'].fillna(method=fill_method)
+                s = s.fillna(-1).astype(np.int64)
+                assert len(s) == len(group_merged) and (s.index == group_merged.index).all()
+                group_merged['__window_idx__'] = s
+                group_merged = group_merged[group_merged['__window_idx__'] >= 0]
+                mask = group_merged['__observation_idx__'] >= 0
+                if '__start__' in windows.columns and '__stop__' in windows.columns:
+                    # otherwise, if only "__stop__" occurs in `windows`, `merged` has been sorted wrt. "stop" already
+                    # => nothing to do
+                    group_merged = \
+                        group_merged.join(windows.loc[not_join_mask, '__stop__'], on='__window_idx__', how='left')
+                    if include_stop:
+                        mask &= group_merged[time_col] <= group_merged['__stop__']
+                    else:
+                        mask &= group_merged[time_col] < group_merged['__stop__']
+                group_merged = group_merged[mask]
+                # `group_merged` has columns "__observation_idx__" and "__window_idx__", mapping former to latter;
+                # all entries are valid, i.e., >= 0; not all windows may appear
+
+                df0 = df.iloc[group_merged['__observation_idx__'].values].copy()
+                df0.index = group_merged['__window_idx__'].values
+
+                # resample `df0`, using windows as new entities
+                _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
+
+        if join_mask.any():
+            # restrict `df` to relevant entries
+            # Note that this must happen _after_ the above 'grouping' code path, because otherwise
+            # "__observation_idx__" does not match the rows of `df` any more!
+            if attribute_col is not None:
+                df = df[df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))]
+
+            max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
+            n_to_join = join_mask.sum()
+            if entity_col is None:
+                if n_to_join * len(df) <= max_rows:
+                    partition = np.zeros((n_to_join,), dtype=np.int8)
+                else:
+                    partition = np.arange(n_to_join) % (max_rows // len(df))
+            else:
+                # `n_rows` contains the number of rows of `windows[join_mask].join(df, on=entity_col, how='inner')`
+                # for each entity
+                n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
+                    .join(windows.loc[join_mask, entity_col].value_counts().to_frame(name=entity_col), how='inner') \
+                    .prod(axis=1)
+                if n_rows.sum() <= max_rows:
+                    partition = np.zeros((n_to_join,), dtype=np.int8)
+                else:
+                    partition = partition_series(n_rows, max_rows) \
+                        .reindex(windows.loc[join_mask, entity_col], fill_value=0).values
+
+            start_comp = '__ge__' if include_start else '__gt__'
+            stop_comp = '__le__' if include_stop else '__lt__'
+            for g in range(partition.max() + 1):
+                df0 = inner_or_cross_join(windows[join_mask][partition == g], df, on=entity_col)
+                if '__start__' in df0.columns:
+                    mask = getattr(df0[time_col], start_comp)(df0['__start__'])
+                else:
+                    # in this case "__stop__" needs to occur in `df0` => `mask` is set to proper Series below
+                    mask = True
+                if '__stop__' in df0.columns:
+                    mask = getattr(df0[time_col], stop_comp)(df0['__stop__']) & mask
+
+                # resample `df0[mask]`, using windows as new entities
+                _resample_eav_no_windows(df0[mask], out, standard_agg, mode_agg, quantile_agg,
+                                         attribute_col, value_col)
+
+    if orig_index_name is not None:
+        out.set_index(orig_index_name[1], inplace=True, drop=True)
+        out.index.name = orig_index_name[0]
+    out.drop(to_drop, axis=1, inplace=True, errors='ignore')
+    return out
+
+
 def _get_default_value(dtype):
     if dtype.name == 'category':
         return pd.Categorical.from_codes([-1], dtype=dtype)
@@ -1041,12 +1249,12 @@ def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFram
     if signs[0]:
         # only non-negative ranks => `(time_col, "start")` was used to sort `windows` in `merged`
         other_endpoint = (time_col, 'stop')
-        comp = 'lt' if include_endpoint else 'le'
+        comp = 'ge' if include_endpoint else 'gt'       # handles NA times correctly
         merged = merged.iloc[::-1]      # revert `merged`, s.t. we can pretend to extract _last_ observations
     else:
         # only negative ranks => `(time_col, "stop")` was used to sort `windows` in `merged`
         other_endpoint = (time_col, 'start')
-        comp = 'gt' if include_endpoint else 'ge'
+        comp = 'le' if include_endpoint else 'lt'       # handles NA times correctly
     if other_endpoint not in out.columns:
         other_endpoint = None
 
@@ -1086,10 +1294,7 @@ def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFram
 
         if other_endpoint is not None:
             start = pd.Series(data=out[other_endpoint].values).reindex(aux.index, copy=False)
-            if include_endpoint:
-                mask = getattr(start, comp)(aux[time_col])
-            else:
-                mask = getattr(start, comp)(aux[time_col])
+            mask = ~getattr(start, comp)(aux[time_col])     # handles NA times correctly
             aux.loc[mask, '__observation_idx__'] = -1
             aux.loc[mask, time_col] = None
 
@@ -1122,10 +1327,10 @@ def _resample_eav_ranks_2(df: pd.DataFrame, out: pd.DataFrame, agg: dict, entity
     assert len(signs) == 1
     if signs[0]:
         other_endpoint = (time_col, 'stop')
-        comp = 'le' if include_endpoint else 'lt'
+        comp = 'le' if include_endpoint else 'lt'       # correctly handles NA times
     else:
         other_endpoint = (time_col, 'start')
-        comp = 'ge' if include_endpoint else 'gt'
+        comp = 'ge' if include_endpoint else 'gt'       # correctly handles NA times
     assert other_endpoint in out.columns
 
     # add ranks to each entity-attribute group
