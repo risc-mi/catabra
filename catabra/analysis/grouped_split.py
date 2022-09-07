@@ -236,7 +236,7 @@ class StratifiedGroupKFold(_BaseKFold):
 
         if self.method == 'automatic':
             self.method = 'brute_force' if self.shuffle and self.n_splits <= 10 \
-                                           and np.unique(groups, return_counts=True)[1] > 1000 else 'exact'
+                                           and len(np.unique(groups)) > 1000 else 'exact'
 
         if self.shuffle and self.method == 'brute_force':
             n_test = int(len(y) / self.n_splits + 0.5)
