@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, Tuple, Iterable
 import shutil
 import inspect
 import re
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import sklearn
@@ -9,6 +10,7 @@ import joblib
 import logging as py_logging
 import time as py_time      # otherwise shadowed by parameter of method `fit()`
 import yaml
+import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
 
@@ -25,9 +27,19 @@ explanation.TransformationExplainer.register_factory('auto-sklearn', explanation
                                                      errors='ignore')
 
 
+# load add-ons
+for _d in (Path(__file__).parent / 'addons').iterdir():
+    if _d.suffix.lower() == '.py':
+        try:
+            importlib.import_module('.addons.' + _d.stem, package=__package__)
+        except ImportError:
+            # required packages are not available => skip
+            pass
+
+
 class _EnsembleLoggingHandler(py_logging.Handler):
     """Logging handler for printing _comprehensible_ messages whenever a new ensemble has been fit.
-    Solution is a bit hacky and can easily break if some of the internals of auto-sklearn change."""
+    Solution is a bit hacky and can easily break if some internals of auto-sklearn change."""
 
     def __init__(self, metric: str = 'cost', optimum: str = '0.', sign: str = '-1.', start_time: str = '0.', **kwargs):
         super(_EnsembleLoggingHandler, self).__init__(**kwargs)
