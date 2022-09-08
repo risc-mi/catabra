@@ -224,16 +224,18 @@ def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, sample_weight: Op
     automatically.
     :return: Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and
     `fractions` is the corresponding array of fractions of positive samples in each bin, of shape `(m - 1,)`. Note that
-    the `i`-th bin ranges from `thresholds[i]` to `thresholds[i + 1]`.
+    the `i`-th bin corresponds to the half-open interval `[thresholds[i], thresholds[i + 1])` if `i < m - 2`, and to
+    the closed interval `[thresholds[i], thresholds[i + 1]]` otherwise (in other words: the last bin is closed).
     """
     assert y_true.shape == y_score.shape
     if thresholds is None:
         thresholds = get_thresholds(y_score, n_max=40, add_half_one=False, sample_weight=sample_weight)
     if len(thresholds) < 2:
         return np.empty((0,), dtype=np.float32), thresholds
-    return \
-        np.array([y_true[(t1 <= y_score) & (y_score < t2)].mean() for t1, t2 in zip(thresholds[:-1], thresholds[1:])]),\
-        np.array(thresholds)
+    fractions = \
+        np.array([y_true[(t1 <= y_score) & (y_score < t2)].mean() for t1, t2 in zip(thresholds[:-1], thresholds[1:])])
+    fractions[-1] = y_true[(thresholds[-2] <= y_score) & (y_score <= thresholds[-1])].mean()
+    return fractions, np.array(thresholds)
 
 
 def roc_pr_curve(y_true: np.ndarray, y_score: np.ndarray, *, pos_label: Union[int, str, None] = None,
@@ -335,7 +337,15 @@ def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool]
     if add_half_one is True or (add_half_one is None and not (y < 0).any() and not (1 < y).any()):
         thresholds.update({0.5, 1.})
     thresholds = list(thresholds)
-    thresholds.sort()
+    if len(thresholds) == 0:
+        return [0, 1]
+    elif len(thresholds) == 1:
+        if 0 <= thresholds[0] <= 1:
+            thresholds = [0, 1]
+        else:
+            thresholds = [np.floor(thresholds[0]), np.floor(thresholds[0]) + 1]
+    else:
+        thresholds.sort()
     return thresholds
 
 
