@@ -273,7 +273,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
                     detailed[detailed.columns[0] + '_pred'] = \
-                        encoder.inverse_transform(y=np.argmax(y_hat, axis=1)).values[:, 0]      # don't use iloc here!
+                        encoder.inverse_transform(y=metrics.multiclass_proba_to_pred(y_hat)).values[:, 0]
                     y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
                     y_hat_decoded.index = detailed.index
                     y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
@@ -836,7 +836,7 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     mask = np.isfinite(y_true) & np.isfinite(y_hat).all(axis=1)
     y_true = y_true[mask]
     y_hat = y_hat[mask]
-    y_pred = np.argmax(y_hat, axis=1).astype(y_true.dtype)
+    y_pred = metrics.multiclass_proba_to_pred(y_hat).astype(y_true.dtype)
     if sample_weight is not None:
         sample_weight = sample_weight[mask]
 

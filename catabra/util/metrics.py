@@ -349,6 +349,23 @@ def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool]
     return thresholds
 
 
+def multiclass_proba_to_pred(y: np.ndarray) -> np.ndarray:
+    """
+    Translate multiclass class probabilities into actual predictions, by returning the class with the highest
+    probability. If two or more classes have the same highest probabilities, the last one is returned. This behavior is
+    consistent with binary classification problems, where the positive class is returned if both classes have equal
+    probabilities and the default threshold of 0.5 is used.
+    :param y: Class probabilities, of shape `(n_classes,)` or `(n_samples, n_classes)`. The values of `y` can be
+    arbitrary, they don't need to be between 0 and 1. `n_classes` must be >= 1.
+    :return: Predicted class indices, either single integer or array of shape `(n_samples,)`.
+    """
+    if y.ndim == 1:
+        return len(y) - np.argmax(y[::-1]) - 1
+    else:
+        assert y.ndim == 2
+        return y.shape[1] - np.argmax(y[:, ::-1], axis=1) - 1
+
+
 def thresholded(func, threshold: float = 0.5, **kwargs):
     """
     Convenience function for converting a classification metric that can only be applied to class predictions into a
@@ -357,14 +374,14 @@ def thresholded(func, threshold: float = 0.5, **kwargs):
     :param threshold: The decision threshold.
     :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
     :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)` in
-    case of binary- or multilabel classification, and `func(y_true, argmax(y_score))` in case of multiclass
-    classification.
+    case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case of
+    multiclass classification.
     """
     def fn(y_true, y_score, **kwargs2):
         kwargs2.update(kwargs)
         if y_score.ndim == 2 and y_score.shape[1] > 1 and (y_true.ndim == 1 or y_true.shape[1] == 1):
             # multiclass classification => `threshold` is not needed
-            return func(y_true, np.argmax(y_score, axis=1), **kwargs2)
+            return func(y_true, multiclass_proba_to_pred(y_score), **kwargs2)
         else:
             # binary- or multilabel classification
             return func(y_true, y_score >= threshold, **kwargs2)

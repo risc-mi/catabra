@@ -5,7 +5,7 @@ import pandas as pd
 import sklearn
 import joblib
 
-from ..util import io
+from ..util import io, metrics
 
 
 def _preprocess(x, pp: list):
@@ -360,7 +360,7 @@ class FittedEnsemble:
             elif self.task == 'multilabel_classification':
                 pred = pred >= 0.5
             else:
-                pred = np.argmax(pred, axis=1)
+                pred = metrics.multiclass_proba_to_pred(pred)
         elif proba:
             pred = self.meta_estimator_.predict_proba(all_predictions)
             np.clip(pred, 0., 1., out=pred)
