@@ -340,9 +340,10 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
     return out
 
 
-def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list = None, entity_col=None,
-                      start_col=None, stop_col=None, attribute_col=None, value_col=None, time_col=None,
-                      epsilon=1e-7) -> pd.DataFrame:
+def resample_interval(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
+                      windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
+                      attributes: list = None, entity_col=None, start_col=None, stop_col=None, attribute_col=None,
+                      value_col=None, time_col=None, epsilon=1e-7) -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']:
     """
     Resample interval-like data wrt. explicitly passed windows of arbitrary (possibly infinite) length. "Interval-like"
     means that each observation is characterized by a start- and stop time rather than a singular timestamp (as in EAV
@@ -361,6 +362,7 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
     The overall value of `W` is the sum of `W_I` over all intervals. Of course, all this is computed separately for
     each entity-attribute combination.
     Some remarks on Eq. (1) are in place:
+        * If `v` is NA, `W_I` is set to 0.
         * If `a = b` both numerator and denominator are 0. In this case the fraction is defined as 1 if `a in W`
             (i.e., `s <= a <= t`) and 0 otherwise.
         * If `I` is infinite and `W n I` is non-empty but finite, `W_I` is set to `epsilon * sign(v)`.
@@ -374,19 +376,30 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
     attribute identifiers) and `entity_col` (optional; contains entity identifiers). Must have one column index level.
     Data types are arbitrary, as long as times and entity identifiers can be compared wrt. `<` and `<=`
     (e.g., float, int, time delta, date time). Entity identifiers must not be NA. Values must be numeric (float, int,
-    bool).
+    bool). Observation times and observed values may be NA, but such entries are ignored entirely.
     Although both `start_col` and `stop_col` are optional, at least one must be present. Missing start- and end
     columns are interpreted as -/+ inf.
     All intervals are closed, i.e., start- and end times are included. This is especially relevant for entries whose
     start time equals their end time.
+    `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
+    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
+    very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already, the
+    calling function should better take care of this; see
+    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
 
     :param windows: The target windows into which `df` is resampled. Must have either one or two columns index level(s).
     If it has one column index level, must have columns `start_col` (optional; contains start times of each window),
     `stop_col` (optional; contains end times of each window) and `entity_col` (optional; contains entity identifiers).
     If it has two column index levels, the columns must be `(time_col, "start")`, `(time_col, "stop")` and
-    `(entity_col, "")`.
+    `(entity_col, "")`. Start- and end times may be NA, but such windows are deemed invalid and by definition do not
+    overlap with any observation intervals.
     At least one of the two endpoint-columns must be present; if one is missing it is assumed to represent -/+ inf.
     All time windows are closed, i.e., start- and end times are included.
+    `windows` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
+    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
+    very costly both in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already,
+    the calling function should better take care of this; see
+    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
 
     :param attributes: The attributes to consider. Must be a list-like of attribute identifiers. None defaults to the
     list of all such identifiers present in column `attribute_col`. If `attribute_col` is None but `attributes` is not,
@@ -415,9 +428,12 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
     :param epsilon: The value to set `W_I` to if `I` is infinite and `W n I` is non-empty and finite; see Eq. (1) and
     the subsequent remarks for details.
 
-    :return: Resampled data. Like `windows`, but with one additional column for each attribute.
-    Order of columns is arbitrary, order of rows is exactly as in `windows`. Number of column index levels is as in
-    `windows`.
+    :return: Resampled data. Like `windows`, but with one additional column for each attribute, and same number of
+    column index levels.
+    Order of columns is arbitrary, order of rows is exactly as in `windows` -- unless `windows` is a Dask DataFrame, in
+    which case the order of rows may differ.
+    The output is a (lazy) Dask DataFrame if `windows` is a Dask DataFrame, and a Pandas DataFrame otherwise,
+    regardless of what `df` is.
     """
 
     # Meaningful aggregations besides "sum" are
@@ -431,17 +447,9 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
     assert df.columns.nlevels == 1
     assert value_col in df.columns
     assert df[value_col].dtype.kind in 'fiub'
+    assert start_col != stop_col
     assert start_col in df.columns or stop_col in df.columns
     assert attribute_col is None or attribute_col in df.columns
-
-    if entity_col is None or entity_col == df.index.name:
-        df = df.drop([c for c in df.columns if c not in (start_col, stop_col, value_col, attribute_col)], axis=1)
-    else:
-        assert entity_col in df.columns
-        df = df.set_index(entity_col)
-        df.drop([c for c in df.columns if c not in (start_col, stop_col, value_col, attribute_col)],
-                axis=1, inplace=True)
-
     if start_col in df.columns:
         time_dtype = df[start_col].dtype
         if stop_col in df.columns:
@@ -450,43 +458,17 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
         assert stop_col in df.columns
         time_dtype = df[stop_col].dtype
 
-    window_start_col = 'window_start'
-    window_stop_col = 'window_stop'
-    windows_orig = windows
-    if windows.columns.nlevels == 2:
-        columns = {c_cur: c_new for c_cur, c_new in [((time_col, 'start'), window_start_col),
-                                                     ((time_col, 'stop'), window_stop_col),
-                                                     ((entity_col, ''), entity_col)] if c_cur in windows.columns}
-    else:
-        assert windows.columns.nlevels == 1
-        columns = {c_cur: c_new for c_cur, c_new in [(start_col, window_start_col), (stop_col, window_stop_col),
-                                                     (entity_col, entity_col)] if c_cur in windows.columns}
-    windows = windows[list(columns)].copy()
-    windows.columns = list(columns.values())
-
-    assert window_start_col in windows.columns or window_stop_col in windows.columns
-    assert window_start_col not in windows.columns or \
-           (windows[window_start_col].notna().all() and windows[window_start_col].dtype == time_dtype)
-    assert window_stop_col not in windows.columns or \
-           (windows[window_stop_col].notna().all() and windows[window_stop_col].dtype == time_dtype)
-
-    if entity_col is None or entity_col in windows.columns:
-        windows.reset_index(drop=True, inplace=True)
-    else:
-        assert entity_col == windows.index.name
-        windows.reset_index(inplace=True)
-
     # restrict `df` to relevant entries
+    mask = ~df[value_col].isna()        # `.notna()` does not work with Dask DataFrames
     if start_col in df.columns:
-        mask = df[start_col].notna()
+        mask &= ~df[start_col].isna()
         if stop_col in df.columns:
-            mask &= df[stop_col].notna() & (df[start_col] <= df[stop_col])
+            mask &= ~df[stop_col].isna() & (df[start_col] <= df[stop_col])
     else:
-        mask = df[stop_col].notna()
-    if entity_col is not None:
-        mask &= df.index.isin(windows[entity_col])
+        mask &= ~df[stop_col].isna()
     if attribute_col in df.columns:
         if attributes is None:
+            # `df` must be a Pandas DataFrame
             attributes = df[attribute_col].unique()
         else:
             mask &= df[attribute_col].isin(attributes)
@@ -495,70 +477,162 @@ def resample_interval(df: pd.DataFrame, windows: pd.DataFrame, attributes: list 
             attributes = ['sum']
         else:
             assert len(attributes) == 1
-    if not mask.all():
-        df = df[mask].copy()
+    df = df[mask]
+    # `attributes` is now an iterable with attribute identifiers
 
-    if df.empty:
-        out = pd.DataFrame(index=windows.index, columns=attributes, data=0, dtype=np.float32)
-    elif (start_col in df.columns or window_start_col in windows.columns) \
-            and (stop_col in df.columns or window_stop_col in windows.columns):
-        max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
-        if entity_col is None:
-            if len(windows) * len(df) <= max_rows:
-                partition = np.zeros((len(windows),), dtype=np.int8)
-            else:
-                partition = np.arange(len(windows)) % (max_rows // len(df))
-        else:
-            # `n_rows` contains the number of rows of `windows.join(df, on=entity_col, how='inner')` for each entity
-            n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
-                .join(windows[entity_col].value_counts(), how='inner').prod(axis=1)
-            if n_rows.sum() <= max_rows:
-                partition = np.zeros((len(windows),), dtype=np.int8)
-            else:
-                partition = partition_series(n_rows, max_rows).reindex(windows[entity_col], fill_value=0).values
-
-        # the following could easily be parallelized
-        dfs = [
-            _resample_interval_aux(inner_or_cross_join(windows[partition == g], df, on=entity_col),
-                                   start_col, stop_col, value_col, attribute_col,
-                                   window_start_col, window_stop_col, epsilon)
-            for g in range(partition.max() + 1)
-        ]
-        out = pd.concat(dfs, axis=0, sort=False).reindex(windows.index, fill_value=0)
-        if isinstance(out, pd.Series):
-            out = out.to_frame(attributes[0])
+    if windows.columns.nlevels == 2:
+        window_start_col = (time_col, 'start')
+        window_stop_col = (time_col, 'stop')
+        window_entity_col = (entity_col, '')
+        window_order_col = ('__orig_order__', '')
+        columns = [(a, '') for a in attributes]
     else:
-        # all intersections are infinite => no need to take windows into account
+        assert windows.columns.nlevels == 1
+        window_start_col = start_col
+        window_stop_col = stop_col
+        window_entity_col = entity_col
+        window_order_col = '__orig_order__'
+        columns = list(attributes)
+    assert window_start_col in windows.columns or window_stop_col in windows.columns
+    assert window_start_col not in windows.columns or windows[window_start_col].dtype == time_dtype
+    assert window_stop_col not in windows.columns or windows[window_stop_col].dtype == time_dtype
+
+    if not (isinstance(df, pd.DataFrame) and isinstance(windows, pd.DataFrame)):
+        # Dask DataFrame
+        assert isinstance(df, pd.DataFrame) or str(type(df)) == "<class 'dask.dataframe.core.DataFrame'>"
+        assert isinstance(windows, pd.DataFrame) or str(type(windows)) == "<class 'dask.dataframe.core.DataFrame'>"
         if entity_col is None:
-            if attribute_col is None:
-                out = pd.DataFrame(index=windows.index, data={attributes[0]: df[value_col].sum()})
-            else:
-                s = df.groupby(attribute_col)[value_col].sum()
-                out = pd.DataFrame(index=windows.index, columns=s.index, dtype=s.dtype)
-                for a, v in s.iteritems():
-                    out[a] = v
+            raise NotImplementedError('When passing Dask DataFrames, an entity column must be specified.')
+
+        if isinstance(df, pd.DataFrame):
+            if entity_col != df.index.name:
+                df = df.set_index(entity_col)
         else:
-            if attribute_col is not None:
-                df.set_index(attribute_col, append=True, inplace=True)
-            s = df.groupby(level=list(range(df.index.nlevels)))[value_col].sum()
-            if s.index.nlevels == 1:
-                s = s.to_frame(attributes[0])
+            if attribute_col in df.columns and attributes is None:
+                raise ValueError('When passing a Dask DataFrame with a column containing attribute identifiers,'
+                                 ' the list of requested attributes must be specified explicitly.')
+            if entity_col == df.index.name:
+                if not df.known_divisions or df.npartitions + 1 != len(df.divisions):
+                    # could happen if `df` is result of `groupby()` or similar operation
+                    raise NotImplementedError('When passing a Dask DataFrame with entities on the row index,'
+                                              ' its divisions must be known and equal to 1 + number of partitions.')
             else:
-                s = s.unstack(level=-1, fill_value=0)
-            out = s.reindex(windows[entity_col], fill_value=0)
-            out.index = windows.index
+                if df[entity_col].dtype.kind not in 'uif':
+                    raise ValueError('When passing Dask DataFrames, the entity column must have a numeric data type.')
+                # this operation can be _very_ slow and memory intensive; it may even crash if `df` is too large
+                df = df.set_index(entity_col)
+        # `df` is either a Pandas DataFrame or a Dask DataFrame, but in either case has entities on the row index
 
-    # `out` is a DataFrame with one column per attribute and the exact same row index as `windows`
-    # (which is a RangeIndex)
+        orig_index_name = None
+        change_windows_inplace = False
+        if isinstance(windows, pd.DataFrame):
+            if entity_col != windows.index.name:
+                if windows.index.nlevels > 1:
+                    raise ValueError('When passing Dask DataFrames, `windows` must have 1 row index level.')
+                orig_index_name = windows.index.name
+                windows = windows.reset_index(drop=False)  # don't change `windows` in place
+                orig_index_name = (orig_index_name, windows.columns[0])
+                windows.index = windows[window_entity_col].values
+                windows.index.name = entity_col
+                change_windows_inplace = True
 
-    # make sure that all requested attributes appear in `out`
-    out = out.reindex(attributes, axis=1, fill_value=0)
+            # restrict `df` further
+            df = df[df.index.to_series().isin(windows.index)]   # doesn't work without `.to_series()`
+        else:
+            if entity_col != windows.index.name:
+                if getattr(windows.index, 'nlevels', 1) > 1:
+                    raise ValueError('When passing Dask DataFrames, `windows` must have 1 row index level.')
+                elif windows[window_entity_col].dtype.kind not in 'uif':
+                    raise ValueError('When passing a Dask DataFrame, the entity column must have a numeric data type.')
+                orig_index_name = windows.index.name
+                windows = windows.reset_index(drop=False)
+                orig_index_name = (orig_index_name, windows.columns[0])
+                i = list(windows.columns).index(window_entity_col)
+                orig_columns = windows.columns
+                windows.columns = pd.RangeIndex(len(windows.columns))
+                # this operation can be costly
+                windows = windows.set_index(i, drop=False)      # does not work with MultiIndex columns => use `i`
+                windows.columns = orig_columns
+                windows.index.name = entity_col
+            elif not windows.known_divisions or windows.npartitions + 1 != len(windows.divisions):
+                # could happen if `windows` is result of `groupby()` or similar operation
+                raise NotImplementedError('When passing a Dask DataFrame with entities on the row index,'
+                                          ' its divisions must be known and equal to 1 + number of partitions.')
+        # `windows` is either a Pandas DataFrame or a Dask DataFrame, but in either case has entities on the row index
+        # `orig_index_name` is either None or a tuple `(name, column_name)`
 
-    out.sort_index(inplace=True)    # to be on the safe side
-    out.index = windows_orig.index
-    if windows_orig.columns.nlevels == 2:
-        out.columns = pd.MultiIndex.from_product([out.columns, ['']])
-    return pd.concat([windows_orig, out], axis=1, sort=False)
+        if any(c in columns for c in windows.columns):
+            raise ValueError('When passing Dask DataFrames, `windows` must not contain newly generated column names.')
+
+        meta = {c: windows[c].dtype for c in windows.columns if orig_index_name is None or c != orig_index_name[1]}
+        meta.update({c: 'float' for c in columns})
+
+        if isinstance(windows, pd.DataFrame):
+            if not change_windows_inplace:
+                windows = windows.copy()
+            windows[window_order_col] = np.arange(len(windows))
+            out = df.map_partitions(
+                _resample_interval_pandas,
+                windows,
+                entity_col=entity_col,
+                time_col=time_col,
+                attribute_col=attribute_col,
+                value_col=value_col,
+                start_col=start_col,
+                stop_col=stop_col,
+                epsilon=epsilon,
+                orig_index_name=orig_index_name,
+                attributes=attributes,
+                swap_df_windows=True,
+                # Dask kwargs
+                align_dataframes=True,
+                enforce_metadata=False,
+                meta=meta
+            ).compute()
+            out.sort_values([window_order_col], inplace=True)
+            out.drop([window_order_col], axis=1, inplace=True)
+        else:
+            out = windows.map_partitions(
+                _resample_interval_pandas,
+                df,
+                entity_col=entity_col,
+                time_col=time_col,
+                attribute_col=attribute_col,
+                value_col=value_col,
+                start_col=start_col,
+                stop_col=stop_col,
+                epsilon=epsilon,
+                orig_index_name=orig_index_name,
+                attributes=attributes,
+                swap_df_windows=False,
+                # Dask kwargs
+                align_dataframes=True,
+                meta=meta
+            )
+    else:
+        if entity_col is not None:
+            # set `entity_col` to row index of `df`
+            if entity_col != df.index.name:
+                assert entity_col in df.columns
+                df = df.set_index(entity_col)
+
+            # restrict `df` further
+            df = df[df.index.isin(windows.index if entity_col == windows.index.name else windows[window_entity_col])]
+
+        out = _resample_interval_pandas(
+            windows,
+            df,
+            entity_col=entity_col,
+            time_col=time_col,
+            attribute_col=attribute_col,
+            value_col=value_col,
+            start_col=start_col,
+            stop_col=stop_col,
+            epsilon=epsilon,
+            attributes=attributes
+        )
+
+    return out
 
 
 def partition_series(s: pd.Series, n, shuffle: bool = True) -> pd.Series:
@@ -951,6 +1025,123 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
         out.index.name = orig_index_name[0]
     out.drop(to_drop, axis=1, inplace=True, errors='ignore')
     return out
+
+
+def _resample_interval_pandas(windows: pd.DataFrame, df: pd.DataFrame, entity_col=None, time_col=None,
+                              attribute_col=None, value_col=None, start_col=None, stop_col=None, epsilon=1e-7,
+                              orig_index_name=None, attributes=None, swap_df_windows: bool = False) -> pd.DataFrame:
+    # `entity_col` is either None or the row index of `df`, and it may or may not be a column / the index of `windows`
+    # `df` has been restricted to relevant entries
+    # start- and end times in `df` are not NA
+    # data types of `df` and `windows` have been checked
+    # both `df` and `windows` may be empty
+    # `windows` may have 1 or 2 column index levels
+    # start- and end times in `windows` may be NA
+
+    if swap_df_windows:
+        # if called from `map_partitions()`, `windows` and `df` may be swapped
+        df, windows = windows, df
+
+    window_start_col = 'window_' + ('start' if start_col is None else start_col)
+    window_stop_col = 'window_' + ('stop' if stop_col is None else stop_col)
+    if window_start_col == window_stop_col:
+        window_stop_col = window_stop_col + '_'
+    windows_orig = windows
+    if windows.columns.nlevels == 2:
+        columns = {c_cur: c_new for c_cur, c_new in [((time_col, 'start'), window_start_col),
+                                                     ((time_col, 'stop'), window_stop_col),
+                                                     ((entity_col, ''), entity_col)] if c_cur in windows.columns}
+    else:
+        assert windows.columns.nlevels == 1
+        columns = {c_cur: c_new for c_cur, c_new in [(start_col, window_start_col), (stop_col, window_stop_col),
+                                                     (entity_col, entity_col)] if c_cur in windows.columns}
+    windows = windows[list(columns)].copy()
+    windows.columns = list(columns.values())
+
+    if orig_index_name is not None:
+        windows_orig.set_index(orig_index_name[1], inplace=True, drop=True)
+        windows_orig.index.name = orig_index_name[0]
+
+    if entity_col is None or entity_col in windows.columns:
+        windows.reset_index(drop=True, inplace=True)
+    else:
+        windows.reset_index(inplace=True)
+
+    if window_start_col in windows.columns:
+        mask = windows[window_start_col].notna()
+    else:
+        mask = True
+    if window_stop_col in windows.columns:
+        mask = windows[window_stop_col].notna() & mask
+    windows = windows[mask]
+
+    if df.empty or windows.empty:
+        out = pd.DataFrame(index=windows.index, columns=attributes, data=0, dtype=np.float32)
+    elif (start_col in df.columns or window_start_col in windows.columns) \
+            and (stop_col in df.columns or window_stop_col in windows.columns):
+        max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
+        if entity_col is None:
+            if len(windows) * len(df) <= max_rows:
+                partition = np.zeros((len(windows),), dtype=np.int8)
+            else:
+                partition = np.arange(len(windows)) % (max_rows // len(df))
+        else:
+            # `n_rows` contains the number of rows of `windows.join(df, on=entity_col, how='inner')` for each entity
+            n_rows = df.index.value_counts().to_frame(name=entity_col + '_') \
+                .join(windows[entity_col].value_counts(), how='inner').prod(axis=1)
+            if n_rows.sum() <= max_rows:
+                partition = np.zeros((len(windows),), dtype=np.int8)
+            else:
+                partition = partition_series(n_rows, max_rows).reindex(windows[entity_col], fill_value=0).values
+
+        df_cols = [c for c in (start_col, stop_col, value_col, attribute_col) if c in df.columns]
+
+        # the following could easily be parallelized
+        dfs = [
+            _resample_interval_aux(inner_or_cross_join(windows[partition == g], df[df_cols], on=entity_col),
+                                   start_col, stop_col, value_col, attribute_col,
+                                   window_start_col, window_stop_col, epsilon)
+            for g in range(partition.max() + 1)
+        ]
+        out = pd.concat(dfs, axis=0, sort=False).reindex(windows.index, fill_value=0)
+        if isinstance(out, pd.Series):
+            out = out.to_frame(attributes[0])
+    else:
+        # all intersections are infinite => no need to take windows into account
+        if entity_col is None:
+            if attribute_col is None:
+                out = pd.DataFrame(index=windows.index, data={attributes[0]: df[value_col].sum()})
+            else:
+                s = df.groupby(attribute_col)[value_col].sum()
+                out = pd.DataFrame(index=windows.index, columns=s.index, dtype=s.dtype)
+                for a, v in s.iteritems():
+                    out[a] = v
+        else:
+            if attribute_col is not None:
+                df = df.set_index(attribute_col, append=True)
+            s = df.groupby(level=list(range(df.index.nlevels)))[value_col].sum()
+            if s.index.nlevels == 1:
+                s = s.to_frame(attributes[0])
+            else:
+                s = s.unstack(level=-1, fill_value=0)
+            out = s.reindex(windows[entity_col], fill_value=0)
+            out.index = windows.index
+
+    # `out` is a DataFrame with one column per attribute
+
+    # make sure that all requested attributes appear in `out`
+    out = out.reindex(attributes, axis=1, fill_value=0)
+
+    # make sure that all rows appear in `out` in the right order
+    if mask.all():
+        out.sort_index(inplace=True)    # to be on the safe side
+    else:
+        out = out.reindex(np.arange(len(windows_orig)), axis=0, fill_value=0)
+
+    if windows_orig.columns.nlevels == 2:
+        out.columns = pd.MultiIndex.from_product([out.columns, ['']])
+    out.index = windows_orig.index
+    return pd.concat([windows_orig, out], axis=1, sort=False)
 
 
 def _get_default_value(dtype):
