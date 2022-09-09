@@ -283,7 +283,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     detailed['__true_proba'] = np.nan
                     detailed.loc[mask, '__true_proba'] = \
                         y_hat[mask][np.arange(mask.sum()), y_test.values[mask, 0].astype(np.int32)]
-                    detailed['__true_rank'] = (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1
+                    detailed['__true_rank'] = \
+                        (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1 + \
+                        ((y_hat == detailed['__true_proba'].values[..., np.newaxis]) &
+                         (np.arange(y_hat.shape[1])[np.newaxis] > y_test.values)).sum(axis=1)
                     detailed.loc[~mask, '__true_rank'] = -1
                     if sample_weights is not None:
                         detailed['__sample_weight'] = sample_weights
