@@ -364,7 +364,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
     if bootstrapping_repetitions > 0:
-        bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in main_metrics}
+        bootstrapping_fn = {k: metrics.maybe_thresholded(metrics.get(k)) for k in main_metrics}
     else:
         bootstrapping_fn = {}
 
@@ -549,7 +549,7 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                  'median_absolute_error', 'mean_absolute_percentage_error', 'max_error', 'explained_variance',
                  'mean_poisson_deviance', 'mean_gamma_deviance']:
         out[name] = np.nan
-        func = getattr(metrics, name)
+        func = metrics.get(name)
         for i, c in enumerate(targets):
             try:
                 # some metrics cannot be computed if `y_true` or `y_hat` contain certain values,
@@ -656,7 +656,7 @@ def calc_binary_classification_metrics(
 
     for m in _BINARY_PROBA_METRICS:
         try:
-            dct[m] = getattr(metrics, m)(y_true, y_hat, sample_weight=sample_weight)
+            dct[m] = metrics.get(m)(y_true, y_hat, sample_weight=sample_weight)
         except:     # noqa
             pass
     try:
@@ -687,7 +687,7 @@ def calc_binary_classification_metrics(
         func = getattr(metrics, m + '_cm', None)
         if func is None:
             s = np.full((len(out),), np.nan)
-            func = getattr(metrics, m)
+            func = metrics.get(m)
             for i, t in enumerate(thresholds):
                 try:
                     s[i] = func(y_true, y_hat >= t, sample_weight=sample_weight)
@@ -864,7 +864,7 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     for i, lbl in enumerate(labels):
         for m in _BINARY_PROBA_METRICS:
             try:
-                per_class[m].values[i] = getattr(metrics, m)(y_true == i, y_hat[:, i], sample_weight=sample_weight)
+                per_class[m].values[i] = metrics.get(m)(y_true == i, y_hat[:, i], sample_weight=sample_weight)
             except:     # noqa
                 pass
         for m in _BINARY_CLASS_METRICS:
@@ -878,7 +878,7 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                 per_class[m].values[i] = jaccard[i]
             else:
                 try:
-                    per_class[m].values[i] = getattr(metrics, m)(y_true == i, y_pred == i, sample_weight=sample_weight)
+                    per_class[m].values[i] = metrics.get(m)(y_true == i, y_pred == i, sample_weight=sample_weight)
                 except:     # noqa
                     pass
     if sample_weight is None:
@@ -894,12 +894,12 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         dct = dict(n=mask.sum(), n_weighted=n)
     for name in ['accuracy', 'balanced_accuracy', 'cohen_kappa', 'matthews_correlation_coefficient']:
         try:
-            dct[name] = getattr(metrics, name)(y_true, y_pred, sample_weight=sample_weight)
+            dct[name] = metrics.get(name)(y_true, y_pred, sample_weight=sample_weight)
         except:  # noqa
             pass
     for name in ['roc_auc_ovr', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc_ovo_weighted']:
         try:
-            dct[name] = getattr(metrics, name)(y_true, y_hat, sample_weight=sample_weight)
+            dct[name] = metrics.get(name)(y_true, y_hat, sample_weight=sample_weight)
         except:  # noqa
             pass
     precision_micro, recall_micro, f1_micro, _ = \
@@ -995,7 +995,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             dct_i.update(n_weighted=sample_weight_i.sum(), n_pos_weighted=n_positive_weighted[i])
         for m in _BINARY_PROBA_METRICS:
             try:
-                dct_i[m] = getattr(metrics, m)(y_true_i, y_hat_i, sample_weight=sample_weight_i)
+                dct_i[m] = metrics.get(m)(y_true_i, y_hat_i, sample_weight=sample_weight_i)
             except:  # noqa
                 pass
         try:
@@ -1018,7 +1018,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         dct_i.update(n_weighted=(mask.sum(axis=1) * sample_weight).sum(), n_pos_weighted=n_positive_weighted.sum())
     for m in _BINARY_PROBA_METRICS:
         try:
-            dct_i[m] = getattr(metrics, m)(y_true_flat, y_hat_flat, sample_weight=sample_weight_flat)
+            dct_i[m] = metrics.get(m)(y_true_flat, y_hat_flat, sample_weight=sample_weight_flat)
         except:  # noqa
             pass
     dct['__micro__'] = dct_i
@@ -1073,7 +1073,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             func = getattr(metrics, m + '_cm', None)
             if func is None:
                 s = np.full((len(out),), np.nan)
-                func = getattr(metrics, m)
+                func = metrics.get(m)
                 for i, t in enumerate(thresholds):
                     try:
                         s[i] = func(y_true_j > 0, y_hat_j >= t, sample_weight=sample_weight_j)
@@ -1112,7 +1112,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         func = getattr(metrics, m + '_cm', None)
         if func is None:
             out[m + '_micro'] = np.nan
-            func = getattr(metrics, m)
+            func = metrics.get(m)
             for i, t in enumerate(thresholds):
                 try:
                     out[m + '_micro'].values[i] = \
@@ -1232,7 +1232,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         if bootstrapping_metrics is None:
             from ..util.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
-        bootstrapping_fn = {k: metrics.maybe_thresholded(getattr(metrics, k)) for k in bootstrapping_metrics}
+        bootstrapping_fn = {k: metrics.maybe_thresholded(metrics.get(k)) for k in bootstrapping_metrics}
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
                                  sample_weight=None if sample_weight is None else sample_weight[na_mask],
                                  bootstrapping_fn=bootstrapping_fn)

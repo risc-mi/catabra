@@ -1,6 +1,7 @@
 from typing import Union, Optional, Tuple
 from functools import partial
 import warnings
+import sys
 import numpy as np
 import pandas as pd
 from sklearn import metrics as skl_metrics
@@ -68,6 +69,24 @@ def _weighted_average(func):
                            for i, w in enumerate(weights)]) / weights.sum()
 
     return _out
+
+
+def get(name):
+    """
+    Retrieve a metric function given by its name.
+    :param name: The name of the requested metric function. It may be of the form "`name` @ `threshold`", where `name`
+    is the name of a thresholded classification metric (e.g., "accuracy") and `threshold` is the desired threshold.
+    :return: Metric function (callable).
+    """
+    if isinstance(name, str):
+        s = name.split('@', 1)
+        fn = getattr(sys.modules[__name__], s[0].strip())
+        if len(s) == 1:
+            return fn
+        else:
+            th = float(s[1])
+            return thresholded(fn, threshold=th)
+    return name
 
 
 def bootstrapped(func, n_repetitions: int = 100, agg='mean', seed=None, replace: bool = True,
