@@ -64,7 +64,17 @@ def resample_eav_slow(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None,
             for fn in func:
                 val = None
                 agg_name = fn
-                if df1.empty:
+                if not isinstance(fn, str):
+                    # custom aggregation
+                    tmp = df1[[time_col, value_col]].copy()
+                    tmp.index = np.zeros(len(tmp), dtype=np.int8)
+                    tmp = fn(tmp)
+                    if isinstance(tmp, pd.Series):
+                        tmp = tmp.to_frame(tmp.name or fn.__name__)
+                    for c in tmp.columns:
+                        new_data.setdefault((attr, c), []).append(None if tmp.empty else tmp.loc[0, c])
+                    continue
+                elif df1.empty:
                     if fn in ('count', 'size', 'nunique', 'mode_count'):
                         val = 0.
                 elif fn == 'mode':

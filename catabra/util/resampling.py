@@ -50,6 +50,10 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
         * "std": Empirical standard deviation of observed non-NA values
         * "var": Empirical variance of observed non-NA values
         * "sum": Sum of observed non-NA values
+        * "prod": Product of observed non-NA values
+        * "skew": Skewness of observed non-NA values
+        * "mad": Mean absolute deviation of observed non-NA values
+        * "sem": Standard error of the mean of observed non-NA values
         * "size": Number of observations, including NA values
         * "count": Number of non-NA observations
         * "nunique": Number of unique observed non-NA values
@@ -58,6 +62,36 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
         * "pxx": Percentile of observed non-NA values; `xx` is an arbitrary float in the interval [0, 100]
         * "rxx": `xx`-th observed value (possibly NA), starting from 0; negative indices count from the end
         * "txx": Time of `xx`-th observed value; negative indices count from the end
+        * callable: Function that takes as input a DataFrame `in` and returns a new DataFrame `out`.
+            `in` has two columns `time_col` and `value_col` (in that order). Its row index specifies which entries
+            belong to the same observation window: entries with the same row index value belong to the same window,
+            entries with different row index values belong to distinct windows. Observation times are guaranteed to be
+            non-NA, values may be NA. Note, however, that `in` is _not_ necessarily sorted wrt. its row index and/or
+            observation times! Also note that the entities the observations in `in` stem from (if `entity_col` is
+            specified) are not known to the function.
+            `out` should have one row per row index value of `in` (with the same row index value), and an arbitrary
+            number of columns with arbitrary names and dtypes. Columns should be consistent in every invocation of the
+            function.
+            The reason why the function is not applied to each row-index-value group individually is that some
+            aggregations can be implemented efficiently using sorting rather than grouping.
+            The function should be stateless and must not modify `in` in place.
+
+            Example 1: A simple aggregation which calculates the fraction of values between 0 and 1 in every window
+            could be passed as
+
+                lambda x: x[value_col].between(0, 1).groupby(level=0).mean().to_frame('frac_between_0_1')
+
+            Example 2: A more sophisticated aggregation which fits a linear regression to the observations in every
+            window and returns the slope of the resulting regression line could be defined as
+
+                def slope(x):
+                    tmp = pd.DataFrame(
+                        index=x.index,
+                        data={time_col: x[time_col].dt.total_seconds(), value_col: x[value_col]}
+                    )
+                    return tmp[tmp[value_col].notna()].groupby(level=0).apply(
+                        lambda g: scipy.stats.linregress(g[time_col], y=g[value_col]).slope
+                    ).to_frame('slope')
 
     :param entity_col: Name of the column in `df` and `windows` containing entity identifiers. If None, all entries
     are assumed to belong to the same entity. Note that entity identifiers may also be on the row index.
@@ -115,9 +149,11 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
     val_val = _get_default_value(df[value_col].dtype)
     time_val = _get_default_value(df[time_col].dtype)
     zero_val = np.array(0, dtype=np.float64)
+    dummy_df = None
 
     # partition aggregations
     standard_agg = {}       # maps attributes to lists of standard aggregation functions
+    custom_agg = {}         # maps attributes to lists of custom aggregation functions
     mode_agg = {}           # maps attributes to pairs `(mode, mode_count)`, where both components have type bool
     quantile_agg = {}       # maps attributes to lists of pairs `(q, f)`, where `q` is scalar and `f` is string
     nn_rank_agg = {}        # maps attributes to dicts with items `r: [val, time]`, where `val` and `time` are bool
@@ -133,46 +169,63 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
         nn_rank = {}
         neg_rank = {}
         for f in func:
-            if isinstance(f, str) and len(f) > 1:
-                if f[0] == 'p':
-                    try:
-                        x = float(f[1:])
-                        if 0. <= x <= 100.:
-                            quant.append((0.01 * x, f))
-                            init_values.append(val_val)
-                            columns.append((attr, f))
-                        continue
-                    except ValueError:
-                        pass
-                elif f[0] in 'rt':
-                    try:
-                        x = int(f[1:])
-                        if x >= 0:
-                            aux = nn_rank.get(x, [False, False])
-                            if f[0] == 'r':
-                                aux[0] = True
+            if isinstance(f, str):
+                if len(f) > 1:
+                    if f[0] == 'p':
+                        try:
+                            x = float(f[1:])
+                            if 0. <= x <= 100.:
+                                quant.append((0.01 * x, f))
+                                init_values.append(val_val)
+                                columns.append((attr, f))
+                            continue
+                        except ValueError:
+                            pass
+                    elif f[0] in 'rt':
+                        try:
+                            x = int(f[1:])
+                            if x >= 0:
+                                aux = nn_rank.get(x, [False, False])
+                                if f[0] == 'r':
+                                    aux[0] = True
+                                else:
+                                    aux[1] = True
+                                nn_rank[x] = aux
                             else:
-                                aux[1] = True
-                            nn_rank[x] = aux
-                        else:
-                            aux = neg_rank.get(x, [False, False])
-                            if f[0] == 'r':
-                                aux[0] = True
-                            else:
-                                aux[1] = True
-                            neg_rank[x] = aux
-                        init_values.append(val_val if f[0] == 'r' else time_val)
-                        columns.append((attr, f[0] + str(x)))
-                        continue
-                    except ValueError:
-                        pass
-            if f in ('count', 'size', 'nunique', 'mode_count'):
-                init_values.append(zero_val)
+                                aux = neg_rank.get(x, [False, False])
+                                if f[0] == 'r':
+                                    aux[0] = True
+                                else:
+                                    aux[1] = True
+                                neg_rank[x] = aux
+                            init_values.append(val_val if f[0] == 'r' else time_val)
+                            columns.append((attr, f[0] + str(x)))
+                            continue
+                        except ValueError:
+                            pass
+                if f in ('count', 'size', 'nunique', 'mode_count'):
+                    init_values.append(zero_val)
+                else:
+                    init_values.append(val_val)
+                columns.append((attr, f))
+                if f not in ('mode', 'mode_count'):
+                    standard_agg.setdefault(attr, []).append(f)
             else:
-                init_values.append(val_val)
-            columns.append((attr, f))
-            if f not in ('mode', 'mode_count'):
-                standard_agg.setdefault(attr, []).append(f)
+                if dummy_df is None:
+                    dummy_df = pd.DataFrame(
+                        index=[0, 0, 0],
+                        data={time_col: _get_values(df[time_col].dtype, n=3),
+                              value_col: _get_values(df[value_col].dtype, n=3)}
+                    )
+                dummy_res = f(dummy_df)
+                if isinstance(dummy_res, pd.Series):
+                    init_values.append(_get_default_value(dummy_res.dtype))
+                    columns.append((attr, dummy_res.name or f.__name__))
+                else:
+                    assert isinstance(dummy_res, pd.DataFrame), type(dummy_res)
+                    init_values += [_get_default_value(dummy_res[_c].dtype) for _c in dummy_res.columns]
+                    columns += [(attr, _c) for _c in dummy_res.columns]
+                custom_agg.setdefault(attr, []).append(f)
         if quant:
             quantile_agg[attr] = quant
         if nn_rank:
@@ -265,6 +318,7 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
                 standard_agg=standard_agg,
                 mode_agg=mode_agg,
                 quantile_agg=quantile_agg,
+                custom_agg=custom_agg,
                 nn_rank_agg=nn_rank_agg,
                 neg_rank_agg=neg_rank_agg,
                 entity_col=entity_col,
@@ -292,6 +346,7 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
                 standard_agg=standard_agg,
                 mode_agg=mode_agg,
                 quantile_agg=quantile_agg,
+                custom_agg=custom_agg,
                 nn_rank_agg=nn_rank_agg,
                 neg_rank_agg=neg_rank_agg,
                 entity_col=entity_col,
@@ -324,6 +379,7 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
             standard_agg=standard_agg,
             mode_agg=mode_agg,
             quantile_agg=quantile_agg,
+            custom_agg=custom_agg,
             nn_rank_agg=nn_rank_agg,
             neg_rank_agg=neg_rank_agg,
             entity_col=entity_col,
@@ -741,10 +797,10 @@ def inner_or_cross_join(left: pd.DataFrame, right: pd.DataFrame, on=None) -> pd.
 
 
 def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=None, mode_agg=None, quantile_agg=None,
-                         nn_rank_agg=None, neg_rank_agg=None, entity_col=None, time_col=None, attribute_col=None,
-                         value_col=None, include_start: bool = True, include_stop: bool = False, optimize: str = 'time',
-                         orig_index_name=None, columns=None, init_values=None, swap_df_windows: bool = False) \
-        -> pd.DataFrame:
+                         custom_agg=None, nn_rank_agg=None, neg_rank_agg=None, entity_col=None, time_col=None,
+                         attribute_col=None, value_col=None, include_start: bool = True, include_stop: bool = False,
+                         optimize: str = 'time', orig_index_name=None, columns=None, init_values=None,
+                         swap_df_windows: bool = False) -> pd.DataFrame:
     # `entity_col` is either None or the row index of `df`, and it may or may not be a column / the index of `windows`
     # `df` has been restricted to relevant entries
     # observation times in `df` are not NA
@@ -795,7 +851,7 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
         nn_rank_done = True
 
     # return if all requested aggregations have been computed already
-    if neg_rank_done and nn_rank_done and not (standard_agg or mode_agg or quantile_agg):
+    if neg_rank_done and nn_rank_done and not (standard_agg or mode_agg or quantile_agg or custom_agg):
         if orig_index_name is not None:
             out.set_index(orig_index_name[1], inplace=True, drop=True)
             out.index.name = orig_index_name[0]
@@ -823,7 +879,7 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
         _resample_eav_ranks(df, out, merged, neg_rank_agg, entity_col, time_col, attribute_col,
                             value_col, include_start)
         neg_rank_done = True
-        if not (nn_rank_agg or standard_agg or mode_agg or quantile_agg):
+        if not (nn_rank_agg or standard_agg or mode_agg or quantile_agg or custom_agg):
             if orig_index_name is not None:
                 out.set_index(orig_index_name[1], inplace=True, drop=True)
                 out.index.name = orig_index_name[0]
@@ -858,7 +914,7 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
         _resample_eav_ranks(df, out, merged, nn_rank_agg, entity_col, time_col, attribute_col, value_col,
                             include_stop)
 
-    if standard_agg or mode_agg or quantile_agg:
+    if standard_agg or mode_agg or quantile_agg or custom_agg:
         # set `windows` to a simple DataFrame with columns `entity_col`, "__start__" and "__stop__" (if present)
         # row index is connected to `out` via `.iloc[]` and to `merged` via "__windows_idx__"
         if (entity_col, '') in out.columns:
@@ -929,7 +985,8 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
 
             # restrict `merged` to relevant entries
             if attribute_col is not None:
-                mask = df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))
+                mask = \
+                    df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg) + list(custom_agg))
                 if not mask.all():
                     merged = \
                         merged[
@@ -976,14 +1033,16 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
                 df0.index = group_merged['__window_idx__'].values
 
                 # resample `df0`, using windows as new entities
-                _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, attribute_col, value_col)
+                _resample_eav_no_windows(df0, out, standard_agg, mode_agg, quantile_agg, custom_agg,
+                                         attribute_col, time_col, value_col)
 
         if join_mask.any():
             # restrict `df` to relevant entries
             # Note that this must happen _after_ the above 'grouping' code path, because otherwise
-            # "__observation_idx__" does not match the rows of `df` any more!
+            # "__observation_idx__" does not match the rows of `df` anymore!
             if attribute_col is not None:
-                df = df[df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg))]
+                df = df[df[attribute_col].isin(list(standard_agg) + list(quantile_agg) + list(mode_agg) +
+                                               list(custom_agg))]
 
             max_rows = max(len(df), MAX_ROWS)  # maximum number of rows of DataFrame to process at once
             n_to_join = join_mask.sum()
@@ -1017,8 +1076,8 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
                     mask = getattr(df0[time_col], stop_comp)(df0['__stop__']) & mask
 
                 # resample `df0[mask]`, using windows as new entities
-                _resample_eav_no_windows(df0[mask], out, standard_agg, mode_agg, quantile_agg,
-                                         attribute_col, value_col)
+                _resample_eav_no_windows(df0[mask], out, standard_agg, mode_agg, quantile_agg, custom_agg,
+                                         attribute_col, time_col, value_col)
 
     if orig_index_name is not None:
         out.set_index(orig_index_name[1], inplace=True, drop=True)
@@ -1154,6 +1213,20 @@ def _get_default_value(dtype):
     elif dtype.kind == 'b':
         return np.array(None, dtype=np.float32)
     return None
+
+
+def _get_values(dtype, n: int = 3):
+    if dtype.name == 'category':
+        return pd.Categorical.from_codes([0] * n, dtype=dtype)
+    elif dtype.kind == 'm':
+        return pd.to_timedelta(np.arange(n, dtype=np.int64), unit='m')
+    elif dtype.kind == 'M':
+        return pd.Timestamp.now() + pd.to_timedelta(np.arange(n, dtype=np.int64), unit='m')
+    elif dtype.kind in 'iuf':
+        return np.arange(n, dtype=dtype)
+    elif dtype.kind == 'b':
+        return np.zeros(n, dtype=dtype)
+    return [None] * n
 
 
 def _group_windows(windows: pd.DataFrame, window_pattern: Union[pd.DataFrame, dict], entity_col, start_col, stop_col,
@@ -1376,7 +1449,7 @@ def _analyze_windows(windows: pd.DataFrame, entity_col, start_col, stop_col, inc
 
 
 def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: dict, mode_agg: dict,
-                             quantile_agg: dict, attribute_col, value_col) -> None:
+                             quantile_agg: dict, custom_agg: dict, attribute_col, time_col, value_col) -> None:
     # auxiliary function for resampling EAV DataFrames without reference to windows, i.e., aggregations are computed
     #     over _all_ observations per entity and attribute
     # assumes that `df` contains no redundant attributes and that row index (single level!) corresponds to entities
@@ -1416,6 +1489,17 @@ def _resample_eav_no_windows(df: pd.DataFrame, out: pd.DataFrame, standard_agg: 
         if not aux.empty:
             for i, (_, a) in enumerate(quantiles):
                 out[(attr, a)].values[aux.index.values] = aux.iloc[:, i].values
+
+    for attr, aggs in custom_agg.items():
+        df0 = df.loc[attr_mask if attribute_col is None else (df[attribute_col] == attr), [time_col, value_col]]
+        for func in aggs:
+            aux = func(df0)
+            if not aux.empty:
+                if isinstance(aux, pd.Series):
+                    out[(attr, aux.name or func.__name__)].values[aux.index.values] = aux.values
+                else:
+                    for c in aux.columns:
+                        out[(attr, c)].values[aux.index.values] = aux[c].values
 
 
 def _resample_eav_ranks(df: pd.DataFrame, out: pd.DataFrame, merged: pd.DataFrame, agg: dict, entity_col, time_col,

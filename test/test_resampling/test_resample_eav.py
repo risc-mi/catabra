@@ -73,7 +73,7 @@ def _test_windows(pattern: str, include_start: bool = True, include_stop: bool =
         windows.drop([('timestamp', 'stop')], axis=1, inplace=True)
         windows.loc[rng.randint(2, size=len(windows), dtype=np.bool), ('timestamp', 'start')] = None
 
-    agg = {'attr_1': ['mean', 'size', 'std'], 'attr_3': ['p25', 'p50', 'p99'], 'attr_4': ['p50', 'r-1', 't0'],
+    agg = {'attr_1': ['mean', 'size', 'skew', 'sem'], 'attr_3': ['p25', 'p50', 'p99'], 'attr_4': ['p50', 'r-1', 't0'],
            'attr_6': ['r0', 't-1', 'r2']}
     kwargs = dict(
         entity_col='entity',
@@ -162,6 +162,28 @@ def test_categorical(seed=None):
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
     compare_dataframes(out2, ground_truth)
+
+
+def test_custom_agg(seed=None):
+    df, windows = create_random_data(100000, 1000, window_pattern='random', seed=seed)
+
+    def frac_between_0_1(x: pd.DataFrame):
+        return x['value'].between(0, 1).groupby(level=0).mean().to_frame('frac_in[0, 1]')
+
+    def frac_between_1_10(x: pd.DataFrame):
+        return x['value'].between(1, 10).groupby(level=0).mean()
+
+    agg = {'attr_1': [frac_between_0_1, frac_between_1_10]}
+    kwargs = dict(
+        entity_col='entity',
+        time_col='timestamp',
+        value_col='value',
+        include_start=True,
+        include_stop=False
+    )
+    out1 = profile(resample_eav, df, windows, agg, **kwargs, _prefix='  ')
+    ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
+    compare_dataframes(out1, ground_truth)
 
 
 def test_include_stop(seed=None):
@@ -298,6 +320,9 @@ def main(seed=None):
 
     s = rng.randint(2 ** 31)
     profile(test_categorical, seed=s, _include_kwargs=['seed'])
+
+    s = rng.randint(2 ** 31)
+    profile(test_custom_agg, seed=s, _include_kwargs=['seed'])
 
     s = rng.randint(2 ** 31)
     profile(test_include_stop, seed=s, _include_kwargs=['seed'])
