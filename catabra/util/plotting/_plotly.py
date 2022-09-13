@@ -166,7 +166,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
 
     n_samples = cm.sum().sum()
     div = cm.sum(axis=1).values
-    cm_rel = cm.values / div[..., np.newaxis]
+    cm_rel = cm.values / np.maximum(1, div[..., np.newaxis])
     thresh = (cm_rel.max() + cm_rel.min()) / 2.0
 
     fig = go.Figure()
@@ -178,8 +178,8 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
 
     pred_totals = np.sum(matrix, axis=0)
     true_totals = np.sum(matrix, axis=1)
-    part_acc = [100 * matrix[i, i] / s for i, s in enumerate(pred_totals)] + \
-               [100 * matrix[i, i] / s for i, s in enumerate(true_totals)] + \
+    part_acc = [100 * matrix[i, i] / max(1, s) for i, s in enumerate(pred_totals)] + \
+               [100 * matrix[i, i] / max(1, s) for i, s in enumerate(true_totals)] + \
                [100 * np.trace(matrix) / n_samples]
     part_totals = list(pred_totals) + list(true_totals) + [n_samples]
 
@@ -191,7 +191,8 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     y_class = mg[1][::-1].flatten()
 
     text = ['<b>{}</b>'.format(np.round(t, 2), 100 * t / n_samples) for t in z]
-    text += ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), a) for t, a in zip(part_totals, part_acc)]
+    text += ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), a) if t > 0 else '<b>{}</b>'.format(np.round(t, 2))
+             for t, a in zip(part_totals, part_acc)]
 
     if n == 2:
         correct_names = ['NPV', 'PPV', 'Specificity', 'Sensitivity']
@@ -200,7 +201,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     correct_names.append('Accuracy')
     hovertext = [f'True label: {j}<br>Predicted label: {i}<br>Count: {k}'
                  for i, j, k in zip(x_class, y_class, z)]
-    hovertext += ['<b>{}</b><br>Count: {}<br>{}: {:.2f}%'.format(
+    hovertext += [('<b>{}</b><br>Count: {}<br>{}: {:.2f}%' if t > 0 else '<b>{}</b><br>Count: {}').format(
         'Total' if i == 2 * n else
         f'Predicted label: {classes[i]}' if i < n else f'True label: {classes[i - n]}', t, cn, a)
         for i, (t, a, cn) in enumerate(zip(part_totals, part_acc, correct_names))]
@@ -212,7 +213,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     cmap_min = _to_color(cmap(0.0))
     cmap_max = _to_color(cmap(1.0))
 
-    text_color = [cmap_max if t < thresh * div[n - i // n - 1] else cmap_min for i, t in enumerate(z)]
+    text_color = [cmap_max if t < thresh * max(1, div[n - i // n - 1]) else cmap_min for i, t in enumerate(z)]
 
     fig.add_trace(go.Scatter(
         x=x,
@@ -242,7 +243,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
                         width=1,
                         color='White'
                     ),
-                    fillcolor=_to_color(cmap(val) if div is None else cmap(val / div[i])),
+                    fillcolor=_to_color(cmap(val) if div is None else cmap(val / max(1, div[i]))),
                     layer='below'
                 )
             )

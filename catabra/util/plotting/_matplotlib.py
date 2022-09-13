@@ -136,7 +136,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
             figsize = (figsize, figsize)
         _, ax = plt.subplots(figsize=figsize)
 
-    cm_rel = 2 * cm.values / cm.values.sum(axis=1, keepdims=True)
+    cm_rel = 2 * cm.values / np.maximum(1, cm.values.sum(axis=1, keepdims=True))
     cm_rel[:, -1] = 0.95
     cm_rel[-1] = 0.95
     cm_rel[-1, -1] = 1.
@@ -152,11 +152,15 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
             color = cmap_max if cm_rel[i, j] < thresh else cmap_min
             ax.text(j, i, text_cm, ha='center', va='center', color=color, weight='bold')
 
-        text_cm = format(cm.iloc[i, -1], fmt) + '\n' + format(100 * cm_rel[i, i], '.2f') + '%'
+        text_cm = format(cm.iloc[i, -1], fmt)
+        if cm.iloc[i, -1] > 0:
+            text_cm += '\n' + format(100 * cm_rel[i, i], '.2f') + '%'
         ax.text(n, i, text_cm, ha='center', va='center', color=cmap_min, weight='bold')
 
     for j in range(n):
-        text_cm = format(cm.iloc[-1, j], fmt) + '\n' + format(100 * cm.iloc[j, j] / cm.iloc[-1, j], '.2f') + '%'
+        text_cm = format(cm.iloc[-1, j], fmt)
+        if cm.iloc[-1, j] > 0:
+            text_cm += '\n' + format(100 * cm.iloc[j, j] / cm.iloc[-1, j], '.2f') + '%'
         ax.text(j, n, text_cm, ha='center', va='center', color=cmap_min, weight='bold')
 
     text_cm = format(cm.iloc[-1, -1], fmt) + '\n' + \
