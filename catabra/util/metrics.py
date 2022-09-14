@@ -76,14 +76,23 @@ def get(name):
     Retrieve a metric function given by its name.
     :param name: The name of the requested metric function. It may be of the form "`name` @ `threshold`", where `name`
     is the name of a thresholded classification metric (e.g., "accuracy") and `threshold` is the desired threshold.
+    Furthermore, some synonyms are recognized as well, most notably "precision" for "positive_predictive_value" and
+    "recall" for "sensitivity".
     :return: Metric function (callable).
     """
     if isinstance(name, str):
         s = name.split('@', 1)
-        fn = getattr(sys.modules[__name__], s[0].strip())
         if len(s) == 1:
-            return fn
+            name = s[0].strip()
+            if name == 'precision' or name.startswith('precision_'):
+                name = 'positive_predictive_value' + name[9:]
+            elif name == 'recall' or name.startswith('recall_'):
+                name = 'sensitivity' + name[6:]
+            elif name == 'mean_average_precision':
+                name = 'average_precision_macro'
+            return getattr(sys.modules[__name__], name)
         else:
+            fn = get(s[0])
             th = float(s[1])
             return thresholded(fn, threshold=th)
     return name
