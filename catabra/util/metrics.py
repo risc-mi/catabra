@@ -8,6 +8,8 @@ from sklearn import metrics as skl_metrics
 
 
 def _micro_average(func):
+    # in case of multilabel problems, this implementation also works with class probabilities
+
     def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
@@ -26,6 +28,8 @@ def _micro_average(func):
 
 
 def _macro_average(func):
+    # in case of multilabel problems, this implementation also works with class probabilities
+
     def _out(y_true, y_pred, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
@@ -38,7 +42,7 @@ def _macro_average(func):
 
 
 def _samples_average(func):
-    # only defined for multilabel problems
+    # only defined for multilabel problems, and works for class probabilities and class indicators alike
 
     def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(2,))
@@ -48,6 +52,8 @@ def _samples_average(func):
 
 
 def _weighted_average(func):
+    # in case of multilabel problems, this implementation also works with class probabilities
+
     def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
@@ -144,7 +150,7 @@ def bootstrapped(func, n_repetitions: int = 100, agg='mean', seed=None, replace:
 r2 = skl_metrics.r2_score
 mean_absolute_error = skl_metrics.mean_absolute_error
 mean_squared_error = skl_metrics.mean_squared_error
-root_mean_squared_error = partial(skl_metrics.mean_squared_error, squared=False),
+root_mean_squared_error = partial(skl_metrics.mean_squared_error, squared=False)
 mean_squared_log_error = skl_metrics.mean_squared_log_error
 median_absolute_error = skl_metrics.median_absolute_error
 mean_absolute_percentage_error = skl_metrics.mean_absolute_percentage_error
@@ -174,13 +180,31 @@ average_precision_macro = partial(average_precision, average='macro')
 average_precision_samples = partial(average_precision, average='samples')
 average_precision_weighted = partial(average_precision, average='weighted')
 brier_loss = skl_metrics.brier_score_loss
+brier_loss_micro = _micro_average(brier_loss)
+brier_loss_macro = _macro_average(brier_loss)
+brier_loss_samples = _samples_average(brier_loss)
+brier_loss_weighted = _weighted_average(brier_loss)
 hinge_loss = skl_metrics.hinge_loss
+hinge_loss_micro = _micro_average(hinge_loss)
+hinge_loss_macro = _macro_average(hinge_loss)
+hinge_loss_samples = _samples_average(hinge_loss)
+hinge_loss_weighted = _weighted_average(hinge_loss)
 log_loss = skl_metrics.log_loss
+log_loss_micro = _micro_average(log_loss)
+log_loss_macro = _macro_average(log_loss)
+log_loss_samples = _samples_average(log_loss)
+log_loss_weighted = _weighted_average(log_loss)
 
 
 def pr_auc(y_true, y_score, **kwargs) -> float:
     precision, recall, _ = skl_metrics.precision_recall_curve(y_true, y_score, **kwargs)
     return skl_metrics.auc(recall, precision)
+
+
+pr_auc_micro = _micro_average(pr_auc)
+pr_auc_macro = _macro_average(pr_auc)
+pr_auc_samples = _samples_average(pr_auc)
+pr_auc_weighted = _weighted_average(pr_auc)
 
 
 def balance_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> Tuple[float, float]:

@@ -144,7 +144,6 @@ This section lists all built-in classification metrics that are implemented in t
 
 * Implementation:
   * binary: `average_precision`
-  * multiclass & multilabel: `average_precision_micro`, `average_precision_macro`, `average_precision_weighted`
   * multilabel: `average_precision_micro`, `average_precision_macro`, `average_precision_samples`,
       `average_precision_weighted`
 * Also known as: AP, mean average precision (mAP) in case of `average_precision_macro`
@@ -161,6 +160,7 @@ This section lists all built-in classification metrics that are implemented in t
 
 * Implementation:
   * binary: `pr_auc`
+  * multilabel: `pr_auc_micro`, `pr_auc_macro`, `pr_auc_samples`, `pr_auc_weighted`
 * Also known as: PR-AUC
 * Range: [0, 1]
 * Optimum: 1
@@ -168,32 +168,39 @@ This section lists all built-in classification metrics that are implemented in t
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_recall_curve.html#sklearn.metrics.precision_recall_curve)
 * **Note**: *Not* equivalent to `average_precision`, but similar.
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
 ### Brier Score
 
 * Implementation:
   * binary: `brier_loss`
+  * multilabel: `brier_loss_micro`, `brier_loss_macro`, `brier_loss_samples`, `brier_loss_weighted`
 * Range: [0, 1]
 * Optimum: 0
 * Accepts probabilities: **yes**
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.brier_score_loss.html#sklearn.metrics.brier_score_loss),
     [Wikipedia](https://en.wikipedia.org/wiki/Brier_score)
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
 ### Hinge Loss
 
 * Implementation:
   * binary: `hinge_loss`
+  * multilabel: `hinge_loss_micro`, `hinge_loss_macro`, `hinge_loss_samples`, `hinge_loss_weighted`
 * Range: [0, inf)
 * Optimum: 0
 * Accepts probabilities: **yes**
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.hinge_loss.html#sklearn.metrics.hinge_loss),
     [Wikipedia](https://en.wikipedia.org/wiki/Hinge_loss)
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
 ### Log Loss
 
-* Implementation: `log_loss`
+* Implementation:
+  * binary: `log_loss`
+  * multilabel: `log_loss_micro`, `log_loss_macro`, `log_loss_samples`, `log_loss_weighted`
 * Also known as: logistic loss, cross-entropy loss
 * Range: [0, inf)
 * Optimum: 0
@@ -201,6 +208,7 @@ This section lists all built-in classification metrics that are implemented in t
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.log_loss.html#sklearn.metrics.log_loss),
     [Wikipedia](https://en.wikipedia.org/wiki/Cross_entropy#Cross-entropy_loss_function_and_logistic_regression)
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
 ### Calibration Curve
 
@@ -468,8 +476,8 @@ a properly suffixed version of the function, or via the `average` parameter of t
     false negatives across all classes.
 * **macro**: Unweighted mean of per-class metric values.
 * **samples**: Unweighted mean of per-sample metric values; only makes sense for multilabel tasks.
-* **weighted**: Weighted mean of per-class metric values, with weights corresponding to the number of positive
-    instances of each class.
+* **weighted**: Weighted mean of per-class metric values, with weights corresponding to the number of instances of each
+    class.
 
 **Note**: Some metrics, like `accuracy`, are defined for multilabel problems even without averaging. What is reported
 in metrics.xlsx are still the averaged versions, though.
