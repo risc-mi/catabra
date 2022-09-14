@@ -253,12 +253,14 @@ def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Opti
     return ax.figure
 
 
-def threshold_metric_curve(th: np.ndarray, ys, name: Optional[str] = None,
+def threshold_metric_curve(th: np.ndarray, ys, threshold: Optional[float] = None, name: Optional[str] = None,
                            title: Optional[str] = 'Threshold-Metric Plot', ax=None, figsize=(10, 5), legend=None):
     """
     Plot threshold-vs.-metric curves, with thresholds on the x- and corresponding thresholded metrics on the y-axis.
     :param th: The thresholds, a single array of shape `(n,)`.
     :param ys: The y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
+    :param threshold: Actual decision threshold used for making predictions, or None. If given, a dashed vertical line
+    is drawn to indicate the threshold.
     :param name: Name of the target variable.
     :param title: The title of the figure.
     :param ax: An existing axis, or None.
@@ -284,8 +286,8 @@ def threshold_metric_curve(th: np.ndarray, ys, name: Optional[str] = None,
         y_max = max(y.max() for y in ys)
         ax.set_xlim(min(-0.05, x_min), max(1.05, x_max))
         ax.set_ylim(min(-0.05, y_min), max(1.05, y_max))
-        if (0 <= th).all() and (th <= 1).all():
-            ax.axvline(0.5, ls='--', c='gray', lw=1.)
+        if threshold is not None:
+            ax.axvline(threshold, ls='--', c='gray', lw=1.)
         for y, lbl in zip(ys, legend):
             ax.plot(th, y, label=lbl)
         if any(lbl is not None for lbl in legend):
