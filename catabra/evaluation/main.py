@@ -1337,6 +1337,94 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
             raise ValueError(f'Unknown prediction task: {encoder.task_}')
 
 
+def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task: str = None, metric_list=None,
+                        threshold: float = 0.5) -> Union[dict, Callable[[np.ndarray, np.ndarray], dict]]:
+    """
+    Summarize the quality of predictions by evaluating a given set of performance metrics. In contrast to functions
+    `calc_regression_metrics()` etc., this function is more "light-weight", for instance in the sense that it only
+    computes binary classification metrics for one particular threshold and only returns aggregate results over all
+    classes in case of multiclass and multilabel classification. It can also be efficiently combined with bootstrapping.
+    :param args: Ground truth and predictions, array-like of shape `(n_samples,)` or `(n_samples, n_targets)`.
+    Should not contain NA values. Predictions must contain class probabilities rather than classes in case of
+    classification tasks. Either none or both must be specified.
+    :param sample_weight: Sample weight, None or array-like of shape `(n_samples,)`.
+    :param task: Prediction task.
+    :param metric_list: List of metrics to evaluate. Metrics that do not fit to the given prediction task are tacitly
+    skipped.
+    :param threshold: Decision threshold for binary- and multilabel classification problems.
+    :return: If `args` is pair `(y_true, y_hat)`: dict whose keys are names of metrics and whose values are the results
+    of the respective metrics evaluated on `y_true` and `y_hat`. Otherwise, if `args` is empty, callable which can be
+    applied to `y_true` and `y_hat` (and optionally `sample_weight`).
+    """
+
+    if len(args) == 0:
+        assert sample_weight is None
+    else:
+        assert len(args) == 2
+
+    default_mapping = []
+    cm_mapping = []
+    for m in metric_list:
+        if not isinstance(m, str):
+            default_mapping.append((m.__name__, m))
+        elif m.endswith('_cm'):
+            cm_mapping.append((m, metrics.get(m), None))
+        elif any(m.endswith(suffix) for suffix in ('_micro', '_macro', '_samples', '_weighted')):
+            if task in ('binary_classification', 'multilabel_classification'):
+                i = m.rfind('_')
+                try:
+                    func = metrics.get(m[:i] + '_cm')
+                    cm_mapping.append((m, func, m[i + 1:]))
+                except:     # noqa
+                    default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m), threshold=threshold)))
+            elif task == 'multiclass_classification':
+                default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m))))
+            else:
+                default_mapping.append((m, metrics.get(m)))
+        elif task in ('binary_classification', 'multilabel_classification'):
+            try:
+                cm_mapping.append((m, metrics.get(m + '_cm'), None))
+            except:     # noqa
+                default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m), threshold=threshold)))
+        elif task == 'multiclass_classification':
+            default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m))))
+        else:
+            default_mapping.append((m, metrics.get(m)))
+
+    def _evaluator(y_true, y_hat, sample_weight=None) -> dict:        # noqa
+        out = {}
+        for n, f in default_mapping:
+            try:
+                # some metrics cannot be computed if `y_true` or `y_hat` contain certain values,
+                # e.g., "mean_squared_log_error" cannot be applied to negative values => skip
+                out[n] = f(y_true, y_hat, sample_weight=sample_weight)
+            except:     # noqa
+                pass
+
+        if cm_mapping:
+            if sample_weight is None:
+                w = 1
+            else:
+                w = sample_weight
+            tp = (((y_hat >= threshold) & (y_true > 0)) * w).sum(axis=0)
+            fp = (((y_hat >= threshold) & (y_true < 1)) * w).sum(axis=0)
+            tn = (((y_hat < threshold) & (y_true < 1)) * w).sum(axis=0)
+            fn = (((y_hat < threshold) & (y_true > 0)) * w).sum(axis=0)
+
+            for n, f, avg in cm_mapping:
+                try:
+                    out[n] = f(tp=tp, fp=fp, tn=tn, fn=fn, average=avg)
+                except:  # noqa
+                    pass
+
+        return out
+
+    if len(args) == 2:
+        return _evaluator(*args, sample_weight=sample_weight)
+    else:
+        return _evaluator
+
+
 def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: float = 0.5, neg_label: str = 'negative',
                                           pos_label: str = 'positive') -> Tuple[pd.DataFrame, float]:
     i = (thresholds['threshold'] - threshold).abs().idxmin()
