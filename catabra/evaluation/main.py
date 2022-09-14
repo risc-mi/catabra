@@ -1,4 +1,4 @@
-from typing import Union, Optional, Tuple
+from typing import Union, Optional, Tuple, Callable
 from pathlib import Path
 import shutil
 import numpy as np
@@ -16,7 +16,8 @@ from ..util.bootstrapping import Bootstrapping
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
              glob: Optional[bool] = False, split: Optional[str] = None, sample_weight: Optional[str] = None,
              out: Union[str, Path, None] = None, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-             from_invocation: Union[str, Path, dict, None] = None):
+             threshold: Optional[float] = None, bootstrapping_repetitions: Optional[int] = None,
+             bootstrapping_metrics: Optional[list] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
     :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
@@ -37,6 +38,13 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     should be replaced; otherwise, it is automatically created.
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for applying the prediction model.
+    :param threshold: Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and
+    bootstrapped performance results are reported for this particular threshold.
+    :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
+    "bootstrapping_repetitions" config param.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
+    of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
+    current prediction task are computed. Ignored if bootstrapping is disabled.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
@@ -64,6 +72,12 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             out = from_invocation.get('out')
         if jobs is None:
             jobs = from_invocation.get('jobs')
+        if threshold is None:
+            threshold = from_invocation.get('threshold')
+        if bootstrapping_repetitions is None:
+            bootstrapping_repetitions = from_invocation.get('bootstrapping_repetitions')
+        if bootstrapping_metrics is None:
+            bootstrapping_metrics = from_invocation.get('bootstrapping_metrics')
 
     if len(table) == 0:
         raise ValueError('No table specified.')
@@ -115,6 +129,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             sample_weight=sample_weight,
             out=out,
             jobs=jobs,
+            threshold=threshold,
+            bootstrapping_repetitions=bootstrapping_repetitions,
+            bootstrapping_metrics=bootstrapping_metrics,
             timestamp=start
         )
         io.dump(io.to_json(invocation), out / 'invocation.json')
@@ -209,7 +226,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             # `explain` is now either None or a list: None => explain all models; list => explain only these models
 
             main_metrics = config.get(encoder.task_ + '_metrics', [])
-            bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
+            if bootstrapping_repetitions is None:
+                bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
                 if y_hat.ndim == 1:
@@ -227,6 +245,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                    sample_weight=None if sample_weights is None else sample_weights[mask],
                                    static_plots=static_plots, interactive_plots=interactive_plots,
                                    bootstrapping_repetitions=bootstrapping_repetitions,
+                                   bootstrapping_metrics=bootstrapping_metrics,
                                    split=(None if directory == out else directory.stem), verbose=True)
 
                 y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
@@ -244,6 +263,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     io.write_df(detailed[mask], directory / 'predictions.xlsx')
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                if threshold is None:
+                    threshold = 0.5
                 if encoder.task_ == 'multilabel_classification':
                     # decoded ground truth and predictions for each target
                     y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
@@ -266,28 +287,32 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                        main_metrics=main_metrics,
                                        sample_weight=None if sample_weights is None else sample_weights[mask],
+                                       threshold=threshold,
                                        static_plots=static_plots, interactive_plots=interactive_plots,
                                        bootstrapping_repetitions=bootstrapping_repetitions,
+                                       bootstrapping_metrics=bootstrapping_metrics,
                                        split=(None if directory == out else directory.stem), verbose=True)
                 else:
                     # decoded ground truth and predictions for each target
                     detailed = encoder.inverse_transform(y=y_test, inplace=False)
-                    detailed[detailed.columns[0] + '_pred'] = \
-                        encoder.inverse_transform(y=metrics.multiclass_proba_to_pred(y_hat)).values[:, 0]
+                    if encoder.task_ == 'multiclass_classification':
+                        detailed[detailed.columns[0] + '_pred'] = \
+                            encoder.inverse_transform(y=metrics.multiclass_proba_to_pred(y_hat)).values[:, 0]
                     y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
                     y_hat_decoded.index = detailed.index
                     y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
                     detailed = detailed.join(y_hat_decoded)
                     del y_hat_decoded
-                    mask = np.isfinite(y_test.values[:, 0])
-                    detailed['__true_proba'] = np.nan
-                    detailed.loc[mask, '__true_proba'] = \
-                        y_hat[mask][np.arange(mask.sum()), y_test.values[mask, 0].astype(np.int32)]
-                    detailed['__true_rank'] = \
-                        (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1 + \
-                        ((y_hat == detailed['__true_proba'].values[..., np.newaxis]) &
-                         (np.arange(y_hat.shape[1])[np.newaxis] > y_test.values)).sum(axis=1)
-                    detailed.loc[~mask, '__true_rank'] = -1
+                    if encoder.task_ == 'multiclass_classification':
+                        mask = np.isfinite(y_test.values[:, 0])
+                        detailed['__true_proba'] = np.nan
+                        detailed.loc[mask, '__true_proba'] = \
+                            y_hat[mask][np.arange(mask.sum()), y_test.values[mask, 0].astype(np.int32)]
+                        detailed['__true_rank'] = \
+                            (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1 + \
+                            ((y_hat == detailed['__true_proba'].values[..., np.newaxis]) &
+                             (np.arange(y_hat.shape[1])[np.newaxis] > y_test.values)).sum(axis=1)
+                        detailed.loc[~mask, '__true_rank'] = -1
                     if sample_weights is not None:
                         detailed['__sample_weight'] = sample_weights
 
@@ -297,8 +322,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                         evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                        main_metrics=main_metrics,
                                        sample_weight=None if sample_weights is None else sample_weights[mask],
+                                       threshold=threshold,
                                        static_plots=static_plots, interactive_plots=interactive_plots,
                                        bootstrapping_repetitions=bootstrapping_repetitions,
+                                       bootstrapping_metrics=bootstrapping_metrics,
                                        split=(None if directory == out else directory.stem), verbose=True)
 
         end = pd.Timestamp.now()
@@ -314,9 +341,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
 def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,
                    y_true_decoded=None, y_hat_decoded=None, sample_weight: Optional[np.ndarray] = None,
-                   static_plots: bool = True, interactive_plots: bool = False,
-                   bootstrapping_repetitions: int = 0, split: Optional[str] = None,
-                   verbose: bool = False) -> Optional[dict]:
+                   threshold: float = 0.5, static_plots: bool = True, interactive_plots: bool = False,
+                   bootstrapping_repetitions: int = 0, bootstrapping_metrics: Optional[list] = None,
+                   split: Optional[str] = None, verbose: bool = False) -> Optional[dict]:
     """
     Evaluate a single split, given by ground truth and predictions.
     :param y_true: Ground truth, encoded DataFrame.
@@ -329,9 +356,13 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
     :param y_hat_decoded: Decoded predictions for creating regression plots. If None, `encoder` is applied to decode
     `y_hat`.
     :param sample_weight: Sample weights, optional. If None, uniform weights are used.
+    :param threshold: Decision threshold for binary- and multilabel classification problems.
     :param static_plots: Whether to create static plots.
     :param interactive_plots: Whether to create interactive plots.
     :param bootstrapping_repetitions: Number of bootstrapping repetitions.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
+    `bootstrapping_repetitions` is > 0. Defaults to `main_metrics`. Can also be "__all__", in which case all standard
+    metrics for the current prediction task are computed. Ignored if `bootstrapping_repetitions` is 0.
     :param split: Name of the current split, or None. Only used for logging.
     :param verbose: Whether to log key performance metrics.
     :return: None if `directory` is given, else dict with evaluation results.
@@ -364,9 +395,12 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
     if bootstrapping_repetitions > 0:
-        bootstrapping_fn = {k: metrics.maybe_thresholded(metrics.get(k)) for k in main_metrics}
+        if bootstrapping_metrics is None:
+            bootstrapping_metrics = main_metrics
+        elif bootstrapping_metrics == '__all__':
+            bootstrapping_metrics = _get_default_metrics(encoder.task_)
     else:
-        bootstrapping_fn = {}
+        bootstrapping_metrics = None
 
     if encoder.task_ == 'regression':
         met = calc_regression_metrics(y_true, y_hat, sample_weight=sample_weight)
@@ -394,19 +428,19 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                         'interactive_plots')
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
                                  sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                 bootstrapping_fn=bootstrapping_fn)
+                                 task=encoder.task_, metric_list=bootstrapping_metrics)
         if bs is not None:
-            _save(bs.describe(), 'bootstrapping')
+            _save(bs, 'bootstrapping')
     elif encoder.task_ == 'multilabel_classification':
         labels = pd.DataFrame({t: encoder.get_dtype(t)['categories'] for t in encoder.target_names_})
         overall, thresh, thresh_per_class, roc_curves, pr_curves = \
-            calc_multilabel_metrics(y_true, y_hat, sample_weight=sample_weight)
+            calc_multilabel_metrics(y_true, y_hat, sample_weight=sample_weight, ensure_thresholds=[threshold])
         if verbose:
             msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
             for m in main_metrics:
                 if m in thresh.columns:
                     if 'threshold' in thresh.columns:
-                        i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                        i = np.argmin((thresh['threshold'] - threshold).abs().values)
                         msg.append('    {} @ {}: {}'.format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
                 elif m.endswith('_micro'):
                     if '__micro__' in overall.index and m[:-6] in overall.columns:
@@ -421,34 +455,35 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 logging.log('\n'.join(msg))
         if static_plots:
             _save_plots(
-                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
-                                interactive=False, labels=labels),
+                plot_multilabel(overall, thresh_per_class, threshold=threshold, roc_curves=roc_curves,
+                                pr_curves=pr_curves, interactive=False, labels=labels),
                 'static_plots'
             )
         if interactive_plots:
             _save_plots(
-                plot_multilabel(overall, thresh_per_class, roc_curves=roc_curves, pr_curves=pr_curves,
-                                interactive=True, labels=labels),
+                plot_multilabel(overall, thresh_per_class, threshold=threshold, roc_curves=roc_curves,
+                                pr_curves=pr_curves, interactive=True, labels=labels),
                 'interactive_plots'
             )
         overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
         _save(dict(overall=overall, thresholded=thresh, **thresh_per_class), 'metrics')
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
                                  sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                 bootstrapping_fn=bootstrapping_fn)
+                                 task=encoder.task_, metric_list=bootstrapping_metrics, threshold=threshold)
         if bs is not None:
-            _save(bs.describe(), 'bootstrapping')
+            _save(bs, 'bootstrapping')
     else:
         labels = encoder.get_dtype(encoder.target_names_[0])['categories']
         if encoder.task_ == 'binary_classification':
             overall, thresh, calib, roc_curve, pr_curve = \
-                calc_binary_classification_metrics(y_true, y_hat, sample_weight=sample_weight)
+                calc_binary_classification_metrics(y_true, y_hat, sample_weight=sample_weight,
+                                                   ensure_thresholds=[threshold])
             if verbose:
                 msg = ['Evaluation results' + (':' if split is None else ' for {}:'.format(split))]
                 for m in main_metrics:
                     if m in thresh.columns:
                         if 'threshold' in thresh.columns:
-                            i = np.argmin((thresh['threshold'] - 0.5).abs().values)
+                            i = np.argmin((thresh['threshold'] - threshold).abs().values)
                             msg.append('    {} @ {}: {}'.format(m, thresh['threshold'].iloc[i], thresh[m].iloc[i]))
                     else:
                         v = overall.get(m)
@@ -464,15 +499,18 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 y_true[na_mask].iloc[:, 0],
                 y_hat[na_mask, -1],
                 sample_weight=None if sample_weight is None else sample_weight[na_mask],
+                task=encoder.task_,
                 calib=calib,
-                bootstrapping_fn=bootstrapping_fn,
+                metric_list=bootstrapping_metrics,
+                threshold=threshold,
                 calc_roc_pr_calibration=static_plots or interactive_plots
             )
             if bs is not None:
-                _save(bs.describe(), 'bootstrapping')
+                _save(bs, 'bootstrapping')
             if static_plots:
                 _save_plots(
-                    plot_binary_classification(overall, thresh, calibration=calib, interactive=False,
+                    plot_binary_classification(overall, thresh, threshold=threshold, calibration=calib,
+                                               interactive=False,
                                                neg_label=str(labels[0]), pos_label=str(labels[1]),
                                                roc_curve=roc_curve, pr_curve=pr_curve,
                                                roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
@@ -481,7 +519,8 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 )
             if interactive_plots:
                 _save_plots(
-                    plot_binary_classification(overall, thresh, calibration=calib, interactive=True,
+                    plot_binary_classification(overall, thresh, threshold=threshold, calibration=calib,
+                                               interactive=True,
                                                neg_label=str(labels[0]), pos_label=str(labels[1]),
                                                roc_curve=roc_curve, pr_curve=pr_curve,
                                                roc_curve_bs=roc_curve_bs, pr_curve_bs=pr_curve_bs,
@@ -507,9 +546,9 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 _save_plots(plot_multiclass(conf_mat, interactive=True), 'interactive_plots')
             bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].iloc[:, 0], y_hat[na_mask],
                                      sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                     bootstrapping_fn=bootstrapping_fn)
+                                     task=encoder.task_, metric_list=bootstrapping_metrics)
             if bs is not None:
-                _save(bs.describe(), 'bootstrapping')
+                _save(bs, 'bootstrapping')
 
     return out
 
@@ -545,9 +584,7 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         out['n_weighted'] = (mask.all(axis=1) * sample_weight).sum()
         out['n_weighted'].values[:-1] = (mask * sample_weight[..., np.newaxis]).sum(axis=0)
 
-    for name in ['r2', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error', 'mean_squared_log_error',
-                 'median_absolute_error', 'mean_absolute_percentage_error', 'max_error', 'explained_variance',
-                 'mean_poisson_deviance', 'mean_gamma_deviance']:
+    for name in _REGRESSION_METRICS:
         out[name] = np.nan
         func = metrics.get(name)
         for i, c in enumerate(targets):
@@ -602,6 +639,7 @@ def calc_binary_classification_metrics(
         y_hat: Union[pd.DataFrame, np.ndarray],
         sample_weight: Optional[np.ndarray] = None,
         thresholds: Optional[list] = None,
+        ensure_thresholds: Optional[list] = None,
         calibration_thresholds: Optional[np.ndarray] = None) \
         -> Tuple[dict, pd.DataFrame, pd.DataFrame, Tuple[np.ndarray, np.ndarray, np.ndarray],
                  Tuple[np.ndarray, np.ndarray, np.ndarray]]:
@@ -612,6 +650,8 @@ def calc_binary_classification_metrics(
     :param sample_weight: Sample weights. If given, must have shape `(len(y_true),)`.
     :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
     depending on the values of `y_hat` is constructed.
+    :param ensure_thresholds: List of thresholds that must appear among the used thresholds, if `thresholds` is set to
+    None. Ignored if `thresholds` is a list.
     :param calibration_thresholds: Thresholds to use for calibration curves. If None, a default list depending on the
     values of `y_hat` is constructed.
     :return: 5-tuple `(overall, threshold, calibration, roc_curve, pr_curve)`:
@@ -666,7 +706,8 @@ def calc_binary_classification_metrics(
         pass
 
     if thresholds is None:
-        thresholds = metrics.get_thresholds(y_hat, n_max=100, add_half_one=None, sample_weight=sample_weight)
+        thresholds = metrics.get_thresholds(y_hat, n_max=100, add_half_one=None, ensure=ensure_thresholds,
+                                            sample_weight=sample_weight)
     out = pd.DataFrame(data=dict(threshold=thresholds, true_positive=0, true_negative=0))
     for i, t in enumerate(thresholds):
         out['true_positive'].values[i] = ((y_true > 0) & (y_hat >= t)).sum()
@@ -712,15 +753,17 @@ def calc_binary_classification_metrics(
     return dct, out, calibration, roc_pr_curve[:3], roc_pr_curve[3:]
 
 
-def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibration: Optional[pd.DataFrame] = None,
-                               name: Optional[str] = None, neg_label: str = 'negative', pos_label: str = 'positive',
-                               roc_curve=None, pr_curve=None, roc_curve_bs=None, pr_curve_bs=None,
-                               calibration_curve_bs=None, interactive: bool = False) -> dict:
+def plot_binary_classification(overall: dict, thresholded: pd.DataFrame, threshold: float = 0.5,
+                               calibration: Optional[pd.DataFrame] = None, name: Optional[str] = None,
+                               neg_label: str = 'negative', pos_label: str = 'positive', roc_curve=None, pr_curve=None,
+                               roc_curve_bs=None, pr_curve_bs=None, calibration_curve_bs=None,
+                               interactive: bool = False) -> dict:
     """
     Plot evaluation results of binary classification tasks.
     :param overall: Overall, non-thresholded performance metrics, as returned by function
     `calc_binary_classification_metrics()`.
-    :param threshold: Thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
+    :param thresholded: Thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
+    :param threshold: Decision threshold.
     :param calibration: Calibration curve, as returned by function `calc_binary_classification_metrics()`.
     :param name: Name of the classified variable.
     :param neg_label: Name of the negative class.
@@ -742,8 +785,9 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
     else:
         pos_prevalence = overall.get('n_pos', 0) / overall.get('n', 1)
     th_metrics = [m for m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity',
-                              'positive_predictive_value', 'negative_predictive_value') if m in threshold.columns]
-    cm, th = _get_confusion_matrix_from_thresholds(threshold, neg_label=neg_label, pos_label=pos_label)
+                              'positive_predictive_value', 'negative_predictive_value') if m in thresholded.columns]
+    cm, th = _get_confusion_matrix_from_thresholds(thresholded, threshold=threshold,
+                                                   neg_label=neg_label, pos_label=pos_label)
     if interactive:
         if plotting.plotly_backend is None:
             logging.warn(plotting.PLOTLY_WARNING)
@@ -754,7 +798,7 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
         backend = plotting.mpl_backend
 
     if roc_curve is None:
-        roc_curve = (1 - threshold['specificity'].values, threshold['sensitivity'].values)
+        roc_curve = (1 - thresholded['specificity'].values, thresholded['sensitivity'].values)
     else:
         roc_curve = roc_curve[:2]
     if roc_curve_bs is None:
@@ -768,7 +812,7 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
         deviation_legend_roc = '95% CI=[{:.4f}, {:.4f}]'.format(auc[0], auc[1])
 
     if pr_curve is None:
-        pr_curve = (threshold['sensitivity'].values, threshold['positive_predictive_value'].values)
+        pr_curve = (thresholded['sensitivity'].values, thresholded['positive_predictive_value'].values)
     else:
         pr_curve = pr_curve[1::-1]
     if pr_curve_bs is None:
@@ -788,9 +832,9 @@ def plot_binary_classification(overall: dict, threshold: pd.DataFrame, calibrati
         pr_curve=backend.roc_pr_curve(*pr_curve, deviation=deviation_pr, roc=False, name=name,
                                       legend='AUC={:.4f}'.format(overall.get('pr_auc', pos_prevalence)),
                                       deviation_legend=deviation_legend_pr, positive_prevalence=pos_prevalence),
-        threshold=backend.threshold_metric_curve(threshold['threshold'], [threshold[m] for m in th_metrics],
-                                                 legend=th_metrics, name=name),
-        confusion_matrix=backend.confusion_matrix(cm, title='Confusion Matrix @ {:.2f}'.format(th), name=name)
+        threshold=backend.threshold_metric_curve(thresholded['threshold'], [thresholded[m] for m in th_metrics],
+                                                 threshold=threshold, legend=th_metrics, name=name),
+        confusion_matrix=backend.confusion_matrix(cm, title=f'Confusion Matrix @ {th}', name=name)
     )
     if calibration is not None:
         if calibration_curve_bs is None:
@@ -945,8 +989,9 @@ def plot_multiclass(confusion_matrix: pd.DataFrame, interactive: bool = False) -
 
 
 def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.ndarray],
-                            sample_weight: Optional[np.ndarray] = None,
-                            thresholds: Optional[list] = None) -> Tuple[pd.DataFrame, pd.DataFrame, dict, dict, dict]:
+                            sample_weight: Optional[np.ndarray] = None, thresholds: Optional[list] = None,
+                            ensure_thresholds: Optional[list] = None) \
+        -> Tuple[pd.DataFrame, pd.DataFrame, dict, dict, dict]:
     """
     Calculate all metrics suitable for multilabel classification.
     :param y_true: Ground truth. Must have `n_classes` columns with float data type and values among 0, 1 and NaN.
@@ -954,6 +999,8 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     :param sample_weight: Sample weights. If given, must have shape `(len(y_true),)`.
     :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
     depending on the values of `y_hat` is constructed.
+    :param ensure_thresholds: List of thresholds that must appear among the used thresholds, if `thresholds` is set to
+    None. Ignored if `thresholds` is a list.
     :return: 5-tuple `(overall, threshold, threshold_per_class, roc_curves, pr_curves)`:
     * `overall` is a DataFrame containing non-thresholded metrics per class and for all classes combined
         ("__micro__", "__macro__" and "__weighted__"). Weights are the number of positive samples per class.
@@ -1041,7 +1088,7 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
             overall.loc['__weighted__', c] = (overall[n_pos_col].iloc[:-3] * overall[c].iloc[:-3]).sum() / div
 
     if thresholds is None:
-        thresholds = metrics.get_thresholds(y_hat_flat, n_max=100, add_half_one=None,
+        thresholds = metrics.get_thresholds(y_hat_flat, n_max=100, add_half_one=None, ensure=ensure_thresholds,
                                             sample_weight=sample_weight_flat)
 
     per_class = {}
@@ -1129,12 +1176,13 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
     return overall, out, per_class, roc_curves, pr_curves
 
 
-def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, roc_curves=None, pr_curves=None,
-                    interactive: bool = False) -> dict:
+def plot_multilabel(overall: pd.DataFrame, thresholded: dict, threshold: float = 0.5, labels=None, roc_curves=None,
+                    pr_curves=None, interactive: bool = False) -> dict:
     """
     Plot evaluation results of multilabel classification tasks.
     :param overall: Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
-    :param threshold: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    :param thresholded: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    :param threshold: Decision threshold.
     :param labels: Class names. None or a DataFrame with `n_class` columns and 2 rows.
     :param roc_curves: ROC-curves, dict mapping classes to triples `(fpr, tpr, thresholds)` or None.
     :param pr_curves: Precision-recall-curves, dict mapping classes to triples `(precision, recall, thresholds)` or
@@ -1149,26 +1197,29 @@ def plot_multilabel(overall: pd.DataFrame, threshold: dict, labels=None, roc_cur
         roc_curves = {}
     if pr_curves is None:
         pr_curves = {}
-    for name, th in threshold.items():
+    for name, th in thresholded.items():
         if labels is not None:
             kwargs = dict(neg_label=str(labels[name].iloc[0]), pos_label=str(labels[name].iloc[1]))
         out[name] = \
-            plot_binary_classification(overall.loc[name].to_dict(), th, name=name, roc_curve=roc_curves.get(name),
-                                       pr_curve=pr_curves.get(name), interactive=interactive, **kwargs)
+            plot_binary_classification(overall.loc[name].to_dict(), th, threshold=threshold, name=name,
+                                       roc_curve=roc_curves.get(name), pr_curve=pr_curves.get(name),
+                                       interactive=interactive, **kwargs)
     return out
 
 
-def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', bootstrapping_repetitions: int = 0,
-                 bootstrapping_metrics: Optional[list] = None,
+def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', threshold: float = 0.5,
+                 bootstrapping_repetitions: int = 0, bootstrapping_metrics: Optional[list] = None,
                  sample_weight: Union[str, np.ndarray] = 'from_predictions') -> Tuple[dict, Optional[pd.DataFrame]]:
     """
     Calculate performance metrics from raw sample-wise predictions and corresponding ground-truth.
     :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
     :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
     object and calling its `get_encoder()` method.
+    :param threshold: Decision threshold for binary- and multilabel classification problems.
     :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform.
     :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
-    `bootstrapping_repetitions` is > 0. Defaults to the list of main metrics specified in the default config.
+    `bootstrapping_repetitions` is > 0. Defaults to the list of main metrics specified in the default config. Can also
+    be "__all__", in which case all standard metrics for the current prediction task are computed.
     Ignored if `bootstrapping_repetitions` is 0.
     :param sample_weight: Sample weights, one of "from_predictions" (to use sample weights stored in `predictions`),
     "uniform" (to use uniform sample weights) or an array.
@@ -1202,14 +1253,16 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         y_hat = encoder.transform(y=y_hat, inplace=False)
         met = dict(metrics=calc_regression_metrics(y_true, y_hat, sample_weight=sample_weight))
     elif encoder.task_ == 'multilabel_classification':
-        overall, thresh, thresh_per_class, _, _ = calc_multilabel_metrics(y_true, y_hat, sample_weight=sample_weight)
+        overall, thresh, thresh_per_class, _, _ = \
+            calc_multilabel_metrics(y_true, y_hat, ensure_thresholds=[threshold], sample_weight=sample_weight)
         overall.insert(0, 'pos_label',
                        [encoder.get_dtype(t)['categories'][1] for t in encoder.target_names_] + [None] * 3)
         met = dict(overall=overall, thresholded=thresh, **thresh_per_class)
     elif encoder.task_ == 'binary_classification':
         pos_label = encoder.get_dtype(encoder.target_names_[0])['categories'][1]
         overall, thresh, calib, roc_curve, pr_curve = \
-            calc_binary_classification_metrics(y_true, y_hat, sample_weight=sample_weight)
+            calc_binary_classification_metrics(y_true, y_hat, ensure_thresholds=[threshold],
+                                               sample_weight=sample_weight)
         overall_df = pd.DataFrame(data=overall, index=[y_true.columns[0]])
         overall_df.insert(0, 'pos_label', pos_label)
         met = dict(overall=overall_df, thresholded=thresh, calibration=calib)
@@ -1229,14 +1282,14 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         raise ValueError(f'Unknown prediction task: {encoder.task_}')
 
     if bootstrapping_repetitions > 0:
-        if bootstrapping_metrics is None:
+        if bootstrapping_metrics == '__all__':
+            bootstrapping_metrics = _get_default_metrics(encoder.task_)
+        elif bootstrapping_metrics is None:
             from ..util.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
-        bootstrapping_fn = {k: metrics.maybe_thresholded(metrics.get(k)) for k in bootstrapping_metrics}
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
-                                 sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                 bootstrapping_fn=bootstrapping_fn)
-        bs = bs.describe()
+                                 sample_weight=sample_weight, task=encoder.task_, metric_list=bootstrapping_metrics,
+                                 threshold=threshold)
     else:
         bs = None
 
@@ -1244,7 +1297,8 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
 
 
 def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[str, Path, pd.DataFrame, dict],
-                 encoder: 'Encoder', interactive: bool = False, bootstrapping_repetitions: int = 0) -> dict:
+                 encoder: 'Encoder', interactive: bool = False, threshold: float = 0.5,
+                 bootstrapping_repetitions: int = 0) -> dict:
     """
     Plot the results of an evaluation. This happens automatically if config params "static_plots" or
     "interactive_plots" are set to True. This function does not save the resulting plots to disk, but instead returns
@@ -1254,6 +1308,7 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
     :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
     object and calling its `get_encoder()` method.
     :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
+    :param threshold: Decision threshold for binary- and multilabel classification problems.
     :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform for adding confidence intervals
     to ROC-, PR- and calibration curves in binary classification tasks.
     :return: (Nested) dict of Matplotlib or plotly figure objects, depending on the value of `interactive`.
@@ -1291,7 +1346,8 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
             return plot_binary_classification(
                 metrics_['overall'].iloc[0].to_dict(),
                 metrics_['thresholded'],
-                calib,
+                threshold=threshold,
+                calibration=calib,
                 name=target_name,
                 neg_label=labels[0],
                 pos_label=labels[1],
@@ -1328,6 +1384,7 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
             return plot_multilabel(
                 overall,
                 {k: metrics_[k] for k in labels.columns},
+                threshold=threshold,
                 roc_curves={k: v[:3] for k, v in roc_pr_curves.items()},
                 pr_curves={k: v[3:] for k, v in roc_pr_curves.items()},
                 labels=labels,
@@ -1446,10 +1503,14 @@ def _get_confusion_matrix_from_thresholds(thresholds: pd.DataFrame, threshold: f
 
 
 def _bootstrap(n_repetitions: int, y_true, y_hat, sample_weight: Optional[np.ndarray] = None,
-               bootstrapping_fn: Optional[dict] = None, calib: Optional[pd.DataFrame] = None,
-               calc_roc_pr_calibration: bool = False):
+               task: str = None, metric_list: Optional[list] = None, threshold: float = 0.5,
+               calib: Optional[pd.DataFrame] = None, calc_roc_pr_calibration: bool = False):
     if n_repetitions > 0:
-        if bootstrapping_fn is None:
+        if isinstance(metric_list, str):
+            metric_list = [metric_list]
+        if metric_list:
+            bootstrapping_fn = dict(main=performance_summary(task=task, metric_list=metric_list, threshold=threshold))
+        else:
             bootstrapping_fn = {}
         if calc_roc_pr_calibration:
             bootstrapping_fn['roc_pr_curve'] = metrics.roc_pr_curve
@@ -1478,7 +1539,15 @@ def _bootstrap(n_repetitions: int, y_true, y_hat, sample_weight: Optional[np.nda
             calibration_bs = None
         else:
             calibration_bs = np.stack(aux[0])
-        return bs, roc_curve_bs, pr_curve_bs, calibration_bs
+        if 'main' in bs.results:
+            summary = pd.DataFrame(bs.results['main']).describe()
+            if task in ('binary_classification', 'multilabel_classification'):
+                summary['__threshold'] = threshold
+                summary.loc['count', '__threshold'] = n_repetitions
+                summary.loc['std', '__threshold'] = 0
+        else:
+            summary = bs.describe()
+        return summary, roc_curve_bs, pr_curve_bs, calibration_bs
     else:
         return None, None, None, None
 
@@ -1526,6 +1595,23 @@ def _get_y_true_hat_weight_from_predictions(predictions: Union[pd.DataFrame, str
     return y_true, y_hat, sample_weight
 
 
+def _get_default_metrics(task: str, average: str = 'macro') -> list:
+    if task == 'regression':
+        return _REGRESSION_METRICS
+    elif task == 'binary_classification':
+        return _BINARY_PROBA_METRICS + _BINARY_CLASS_METRICS
+    elif task == 'multiclass_classification':
+        return ['roc_auc_ovr', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc_ovo_weighted', 'accuracy',
+                'balanced_accuracy', 'cohen_kappa', 'matthews_correlation_coefficient'] + \
+               [m + '_' + average for m in ('precision', 'recall', 'f1', 'jaccard')]
+    elif task == 'multilabel_classification':
+        return [m + '_' + average for m in _BINARY_PROBA_METRICS + _BINARY_CLASS_METRICS]
+    return []
+
+
+_REGRESSION_METRICS = ['r2', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error',
+                       'mean_squared_log_error', 'median_absolute_error', 'mean_absolute_percentage_error',
+                       'max_error', 'explained_variance', 'mean_poisson_deviance', 'mean_gamma_deviance']
 # metrics for binary classification, which require probabilities of positive class
 _BINARY_PROBA_METRICS = ['roc_auc', 'average_precision', 'pr_auc', 'brier_loss', 'hinge_loss', 'log_loss']
 # metrics for binary classification, which require predicted classes

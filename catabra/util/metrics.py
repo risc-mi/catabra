@@ -360,7 +360,7 @@ def roc_pr_curve(y_true: np.ndarray, y_score: np.ndarray, *, pos_label: Union[in
 
 
 def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool] = None,
-                   sample_weight: Optional[np.ndarray] = None) -> list:
+                   ensure: Optional[list] = None, sample_weight: Optional[np.ndarray] = None) -> list:
     n = min(np.isfinite(y).sum(), n_max)
     if n == 0:
         thresholds = set()
@@ -388,6 +388,8 @@ def get_thresholds(y: np.ndarray, n_max: int = 100, add_half_one: Optional[bool]
         thresholds = set(y0[indices])
     if add_half_one is True or (add_half_one is None and not (y < 0).any() and not (1 < y).any()):
         thresholds.update({0.5, 1.})
+    if ensure is not None:
+        thresholds.update(ensure)
     thresholds = list(thresholds)
     if len(thresholds) == 0:
         return [0, 1]

@@ -147,6 +147,12 @@ In addition, there optional arguments as well:
     be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.
 * `--batch-size BATCH_SIZE`: Batch size used for applying the prediction model.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
+* `--threshold THRESHOLD`: Decision threshold for binary- and multilabel classification. Defaults to 0.5, unless
+    specified in `FROM`.
+* `--bootstrapping-repetitions BS_REPETITIONS`: Number of bootstrapping repetitions. Set to 0 to disable bootstrapping.
+    Overwrites config param `"bootstrapping_repetitions"`.
+* `--bootstrapping-metrics M_1 [M_2 M_3 ...]`: Metrics for which to report bootstrapped results. Can also be
+    `__all__`, in which case all suitable metrics are included. Ignored if bootstrapping is disabled.
 * `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
     this file; this also includes `SOURCE` and `TABLE`.
     

@@ -50,9 +50,13 @@ def make_parser():
         expl = args.explain
         if expl is not None and len(expl) == 0:
             expl = '__all__'
+        bs_metrics = args.bootstrapping_metrics
+        if bs_metrics == ['__all__']:
+            bs_metrics = '__all__'
         evaluate(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
                  model_id=args.model_id, explain=expl, glob=getattr(args, 'global'), out=args.out, jobs=args.jobs,
-                 batch_size=args.batch_size, from_invocation=getattr(args, 'from', None))
+                 batch_size=args.batch_size, threshold=args.threshold, bootstrapping_metrics=bs_metrics,
+                 bootstrapping_repetitions=args.bootstrapping_repetitions, from_invocation=getattr(args, 'from', None))
 
     def _explain(args: argparse.Namespace):
         from .explanation import explain
@@ -192,6 +196,30 @@ def make_parser():
         metavar='MODEL_ID',
         help='The ID of the prediction model to evaluate. If no MODEL_ID is given, the sole trained model or the whole'
              ' ensemble is evaluated.'
+    )
+    evaluator.add_argument(
+        '-t', '--threshold',
+        type=float,
+        default=None,
+        metavar='THRESHOLD',
+        help='Decision threshold for binary- and multilabel classification. Defaults to 0.5, unless specified in FROM.'
+    )
+    evaluator.add_argument(
+        '-br', '--bootstrapping-repetitions',
+        type=int,
+        default=None,
+        metavar='BS_REPETITIONS',
+        help='Number of bootstrapping repetitions. Set to 0 to disable bootstrapping.'
+             ' Overwrites config param "bootstrapping_repetitions".'
+    )
+    evaluator.add_argument(
+        '-bm', '--bootstrapping-metrics',
+        type=str,
+        nargs='+',
+        default=None,
+        metavar='BS_METRICS',
+        help='Metrics for which to report bootstrapped results. Can also be __all__, in which case all suitable'
+             ' metrics are included. Ignored if bootstrapping is disabled.'
     )
     evaluator.add_argument(
         '-e', '--explain',
