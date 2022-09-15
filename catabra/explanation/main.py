@@ -258,9 +258,9 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     return out
 
 
-def plot_beeswarms(explanations: Union[dict, str, Path], features: Optional[pd.DataFrame] = None,
+def plot_beeswarms(explanations: Union[dict, str, Path, pd.DataFrame], features: Optional[pd.DataFrame] = None,
                    interactive: bool = False, title: Optional[str] = None, max_features: Optional[int] = None,
-                   add_sum_of_remaining: bool = True) -> dict:
+                   add_sum_of_remaining: bool = True) -> Union[dict, pd.DataFrame]:
     """
     Create beeswarm plots of local explanations.
     :param explanations: Local explanations to plot, a dict as returned by `EnsembleExplainer.explain()`, i.e., 1-2
@@ -270,7 +270,7 @@ def plot_beeswarms(explanations: Union[dict, str, Path], features: Optional[pd.D
     :param title: The title of the plots.
     :param max_features: Maximum number of features to plot, or None to determine this number automatically.
     :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
-    :return: Dict with plots.
+    :return: Dict with plots or single plot.
     """
     if interactive:
         if plotting.plotly_backend is None:
@@ -281,12 +281,17 @@ def plot_beeswarms(explanations: Union[dict, str, Path], features: Optional[pd.D
     else:
         backend = plotting.mpl_backend
 
+    key = None
     if isinstance(explanations, (str, Path)):
         aux = {k: v for k, v in io.read_dfs(explanations).items() if isinstance(v, pd.DataFrame)}
         if aux:
             explanations = aux
         else:
-            explanations = {'table': io.read_df(explanations)}
+            key = 'table'
+            explanations = {key: io.read_df(explanations)}
+    elif isinstance(explanations, pd.DataFrame):
+        key = 'table'
+        explanations = {key: explanations}
 
     out = {}
     for k, v in explanations.items():
@@ -307,11 +312,14 @@ def plot_beeswarms(explanations: Union[dict, str, Path], features: Optional[pd.D
                                  colors=features if features is None or len(features) == len(v) else None,
                                  color_name='Feature value', title=title, x_label='Importance')
 
+    if key is not None:
+        return out[key]
     return out
 
 
-def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, title: Optional[str] = None,
-              max_features: int = 10, add_sum_of_remaining: bool = True) -> dict:
+def plot_bars(explanations: Union[dict, str, Path, pd.DataFrame], interactive: bool = False,
+              title: Optional[str] = None, max_features: int = 10, add_sum_of_remaining: bool = True) \
+        -> Union[dict, pd.DataFrame]:
     """
     Create bar plots of global explanations.
     :param explanations: Global explanations to plot, a dict as returned by `EnsembleExplainer.explain_global()`, i.e.,
@@ -320,7 +328,7 @@ def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, t
     :param title: The title of the plots.
     :param max_features: Maximum number of features to plot.
     :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
-    :return: Dict with plots.
+    :return: Dict with plots or single plot.
     """
     if interactive:
         if plotting.plotly_backend is None:
@@ -331,12 +339,17 @@ def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, t
     else:
         backend = plotting.mpl_backend
 
+    key = None
     if isinstance(explanations, (str, Path)):
         aux = {k: v for k, v in io.read_dfs(explanations).items() if isinstance(v, pd.DataFrame)}
         if aux:
             explanations = aux
         else:
-            explanations = {'table': io.read_df(explanations)}
+            key = 'table'
+            explanations = {key: io.read_df(explanations)}
+    elif isinstance(explanations, pd.DataFrame):
+        key = 'table'
+        explanations = {key: explanations}
 
     out = {}
     for k, v in explanations.items():
@@ -344,6 +357,9 @@ def plot_bars(explanations: Union[dict, str, Path], interactive: bool = False, t
             v = io.read_df(v)
         df, groups = _prepare_for_bar(v, max_features, add_sum_of_remaining)
         out[str(k)] = backend.horizontal_bar(df, groups=groups, title=title, x_label='Importance')
+
+    if key is not None:
+        return out[key]
     return out
 
 
