@@ -88,8 +88,11 @@ def repr_timedelta(delta, subsecond_resolution: int = 0) -> str:
     minutes, delta = divmod(delta, 60)
     minutes = int(minutes)
     out += '{:02d}:'.format(minutes)
-    if delta < 10:
-        out += '0'
-    fmt = '{:.' + str(subsecond_resolution) + 'f}'
-    out += fmt.format(delta)
+    sec = ('{:.' + str(subsecond_resolution) + 'f}').format(delta)
+    comma = sec.find('.')
+    if comma < 0:
+        comma = len(sec)
+    if comma < 2:
+        out += '0' * (2 - comma)
+    out += sec
     return out
