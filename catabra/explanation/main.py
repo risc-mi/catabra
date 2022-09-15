@@ -391,13 +391,21 @@ def average_local_explanations(explanations: Union[pd.DataFrame, dict], sample_w
                 return pd.DataFrame()
     else:
         if sample_weight is None:
-            positive = (explanations * (explanations > 0)).sum(axis=0) / len(explanations)
-            negative = (explanations * (explanations < 0)).sum(axis=0) / len(explanations)
+            w = 1
+            div = len(explanations)
         else:
+            w = sample_weight[..., np.newaxis]
             div = sample_weight.sum()
-            positive = ((explanations * (explanations > 0)) * sample_weight[..., np.newaxis]).sum(axis=0) / div
-            negative = ((explanations * (explanations < 0)) * sample_weight[..., np.newaxis]).sum(axis=0) / div
-        return positive.to_frame('>0').join(negative.to_frame('<0'))
+        positive = ((explanations * (explanations > 0)) * w).sum(axis=0) / div
+        negative = ((explanations * (explanations < 0)) * w).sum(axis=0) / div
+        positive_std = np.sqrt((np.square(((explanations * (explanations > 0)) - positive)) * w).sum(axis=0) / div)
+        negative_std = np.sqrt((np.square(((explanations * (explanations < 0)) - negative)) * w).sum(axis=0) / div)
+        return pd.concat(
+            [positive.to_frame('>0'), negative.to_frame('<0'),
+             positive_std.to_frame('>0 std'), negative_std.to_frame('<0 std')],
+            axis=1,
+            sort=False
+        )
 
 
 def _prepare_for_beeswarm(df: pd.DataFrame, max_features: Optional[int], add_sum_of_remaining: bool) -> pd.DataFrame:
@@ -423,6 +431,9 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
     else:
         if df.shape[1] == 2 and '<0' in df.columns and '>0' in df.columns:
             groups = {'': list(df.columns)}
+        elif df.shape[1] == 4 and '<0' in df.columns and '>0' in df.columns \
+                and '<0 std' in df.columns and '>0 std' in df.columns:
+            groups = {'': ['<0', '>0']}
         else:
             cols = {c[:-3] if isinstance(c, str) and (c.endswith('_>0') or c.endswith('_<0')) else c
                     for c in df.columns}
