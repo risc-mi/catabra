@@ -578,6 +578,13 @@ class AutoSklearnBackend(AutoMLBackend):
             jobs = self.config.get('jobs')
         return self._predict_all(x, -1 if jobs is None else jobs, batch_size, True)
 
+    @classmethod
+    def get_versions(cls) -> dict:
+        from autosklearn import __version__ as askl_version
+        from smac import __version__ as smac_version
+        return {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
+                'scikit-learn': sklearn.__version__}
+
     def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
         # get predictions of a single constituent model
 

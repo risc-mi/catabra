@@ -126,6 +126,10 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
 
+    @classmethod
+    def get_versions(cls) -> dict:
+        return {'shap': shap.__version__, 'pandas': pd.__version__}
+
     def _explain_single(self, model_id, x: pd.DataFrame, jobs: int, batch_size: int, glob: bool,
                         silent: bool) -> np.ndarray:
         func = _explain_single_global if glob else _explain_single

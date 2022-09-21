@@ -96,3 +96,39 @@ def repr_timedelta(delta, subsecond_resolution: int = 0) -> str:
         out += '0' * (2 - comma)
     out += sec
     return out
+
+
+def get_versions() -> dict:
+    import sys
+    from ..__version__ import __version__ as catabra_version
+
+    out = dict(
+        python='.'.join([str(sys.version_info.major), str(sys.version_info.minor), str(sys.version_info.micro)]),
+        catabra=catabra_version
+    )
+
+    try:
+        import numpy
+        out['numpy'] = numpy.__version__
+    except ImportError:
+        pass
+
+    try:
+        import pandas
+        out['pandas'] = pandas.__version__
+    except ImportError:
+        pass
+
+    try:
+        import sklearn
+        out['scikit-learn'] = sklearn.__version__
+    except ImportError:
+        pass
+
+    return out
+
+
+def save_versions(versions: dict, file: str):
+    with open(file, mode='wt') as f:
+        for pkg, v in versions.items():
+            f.write(f'{pkg}=={v}\n')

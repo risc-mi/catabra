@@ -143,6 +143,14 @@ class AutoMLBackend:
         """
         raise NotImplementedError()
 
+    @classmethod
+    def get_versions(cls) -> dict:
+        """
+        Get the versions of all key packages and libraries this AutoML backend depends upon.
+        :return: Dict whose keys are package names and whose values are version strings.
+        """
+        raise NotImplementedError()
+
 
 for _d in Path(__file__).parent.iterdir():
     if _d.is_dir() and (_d / '__init__.py').exists():

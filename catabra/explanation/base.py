@@ -228,6 +228,14 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
+    @classmethod
+    def get_versions(cls) -> dict:
+        """
+        Get the versions of all key packages and libraries this explanation backend depends upon.
+        :return: Dict whose keys are package names and whose values are version strings.
+        """
+        raise NotImplementedError()
+
 
 # load explanation backends
 for _d in Path(__file__).parent.iterdir():

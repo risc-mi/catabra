@@ -147,6 +147,10 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             return
     out.mkdir(parents=True)
 
+    # version info
+    versions = cu.get_versions()
+    cu.save_versions(versions, (out / 'versions.txt').as_posix())
+
     with logging.LogMirror((out / 'console.txt').as_posix()):
         logging.log(f'### Analysis started at {start}')
         invocation = dict(
@@ -344,6 +348,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 if backend is None:
                     raise ValueError(f'Unknown AutoML backend: {automl}')
                 logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
+                versions.update(backend.get_versions())
+                cu.save_versions(versions, (out / 'versions.txt').as_posix())   # overwrite existing file
                 backend.fit(x_train, y_train, groups=group, sample_weights=sample_weights, time=time, jobs=jobs,
                             dataset_name=dataset_name)
                 io.dump(backend, out / 'model.joblib')
@@ -389,6 +395,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                         if explainer is None:
                             logging.warn(f'Unknown explanation backend: {config["explainer"]}')
                         else:
+                            versions.update(explainer.get_versions())
+                            cu.save_versions(versions, (out / 'versions.txt').as_posix())  # overwrite existing file
                             (out / explainer.name()).mkdir(exist_ok=True, parents=True)
                             io.dump(explainer.params_, out / explainer.name() / 'params.joblib')
 
