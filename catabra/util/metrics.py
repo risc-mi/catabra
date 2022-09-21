@@ -99,7 +99,7 @@ def get(name):
             return getattr(sys.modules[__name__], name)
         else:
             fn = get(s[0])
-            th = float(s[1])
+            th = s[1] if s[1] in ('argmin', 'argmax') else float(s[1])
             return thresholded(fn, threshold=th)
     return name
 
@@ -420,22 +420,40 @@ def multiclass_proba_to_pred(y: np.ndarray) -> np.ndarray:
         return y.shape[1] - np.argmax(y[:, ::-1], axis=1) - 1
 
 
-def thresholded(func, threshold: float = 0.5, **kwargs):
+def thresholded(func, threshold: Union[float, str] = 0.5, **kwargs):
     """
     Convenience function for converting a classification metric that can only be applied to class predictions into a
     metric that can be applied to probabilities. This proceeds by specifying a fixed decision threshold.
     :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
-    :param threshold: The decision threshold.
+    :param threshold: The decision threshold. Can also be "argmax" and "argmin", in which case the threshold leading to
+    the maximum/minimum value of `func` when applied to given `y_true` and `y_hat` is chosen. Note that in the case of
+    multilabel classification, one common threshold for all labels is selected.
     :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
     :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)` in
     case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case of
     multiclass classification.
     """
+
+    if not isinstance(threshold, (int, float)) or threshold in ('argmin', 'argmax'):
+        raise ValueError(f'Threshold must be a float or "argmin" or "argmax", but is {threshold}')
+
     def fn(y_true, y_score, **kwargs2):
         kwargs2.update(kwargs)
         if y_score.ndim == 2 and y_score.shape[1] > 1 and (y_true.ndim == 1 or y_true.shape[1] == 1):
             # multiclass classification => `threshold` is not needed
             return func(y_true, multiclass_proba_to_pred(y_score), **kwargs2)
+        elif isinstance(threshold, str):
+            if threshold == 'argmin':
+                opt = np.inf
+                comp = '__lt__'
+            else:
+                opt = -np.inf
+                comp = '__gt__'
+            for t in get_thresholds(np.reshape(y_score, -1), n_max=100, sample_weight=kwargs2.get('sample_weight')):
+                res = func(y_true, y_score >= t, **kwargs2)
+                if getattr(res, comp)(opt):
+                    opt = res
+            return opt
         else:
             # binary- or multilabel classification
             return func(y_true, y_score >= threshold, **kwargs2)
@@ -443,7 +461,7 @@ def thresholded(func, threshold: float = 0.5, **kwargs):
     return fn
 
 
-def maybe_thresholded(func, threshold: float = 0.5, **kwargs):
+def maybe_thresholded(func, threshold: Union[float, str] = 0.5, **kwargs):
     """
     Convenience function for converting a classification metric into its "thresholded" version IF NECESSARY.
     That means, if the given metric can be applied to class probabilities, it is returned unchanged. Otherwise,
