@@ -1,5 +1,5 @@
 from typing import Optional
-import joblib
+from multiprocessing import Pool
 import numpy as np
 import pandas as pd
 import shap
@@ -137,16 +137,20 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         if len(x) <= batch_size or glob:
             return func(preprocessing, estimator, x)
         else:
-            explanations = joblib.Parallel(n_jobs=jobs)(
-                joblib.delayed(func)(
-                    preprocessing,
-                    estimator,
-                    x.iloc[i * batch_size:(i + 1) * batch_size],
-                    copy=True
-                )
-                for i in progress_bar(range((len(x) + batch_size - 1) // batch_size), disable=silent,
-                                      desc='Sample batches')
-            )
+            # joblib with loky backend may lead to segmentation faults, when existing explainers are "shared" among
+            # processes. Built-in multiprocessing module works just fine.
+            # https://github.com/slundberg/shap/issues/1204
+            with Pool(processes=jobs) as pool:
+                async_results = [
+                    pool.apply_async(
+                        func,
+                        args=(preprocessing, estimator, x.iloc[i * batch_size:(i + 1) * batch_size]),
+                        kwds=dict(copy=True)
+                    )
+                    for i in range((len(x) + batch_size - 1) // batch_size)
+                ]
+                explanations = [async_result.get() for async_result in progress_bar(async_results, disable=silent,
+                                                                                    desc='Sample batches')]
             return np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
 
     def _explain_multi(self, model_id: Optional[list], x: pd.DataFrame, sample_weight: Optional[np.ndarray], jobs: int,
@@ -164,14 +168,20 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             if len(keys) <= 1:
                 all_explanations = [func(*self._explainers[key], x) for key in keys]
             else:
-                all_explanations = joblib.Parallel(n_jobs=jobs)(
-                    joblib.delayed(func)(
-                        *self._explainers[key],
-                        x,
-                        copy=True
-                    )
-                    for key in progress_bar(keys, disable=silent, desc='Models')
-                )
+                # joblib with loky backend may lead to segmentation faults, when existing explainers are "shared" among
+                # processes. Built-in multiprocessing module works just fine.
+                # https://github.com/slundberg/shap/issues/1204
+                with Pool(processes=jobs) as pool:
+                    async_results = [
+                        pool.apply_async(
+                            func,
+                            args=(*self._explainers[key], x),
+                            kwds=dict(copy=True)
+                        )
+                        for key in keys
+                    ]
+                    all_explanations = [async_result.get()
+                                        for async_result in progress_bar(async_results, disable=silent, desc='Models')]
         else:
             all_explanations = []
             for i, key in enumerate(keys):
