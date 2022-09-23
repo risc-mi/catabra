@@ -6,6 +6,8 @@ import joblib
 import pandas as pd
 from csv import Sniffer
 
+from catabra.util.paths import CaTabRaPaths
+
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
     """
@@ -268,13 +270,13 @@ class CaTabRaLoader:
         return self._path
 
     def get_config(self) -> Optional[dict]:
-        return self._load('config.json')
+        return self._load(CaTabRaPaths.Config)
 
     def get_invocation(self) -> Optional[dict]:
-        return self._load('invocation.json')
+        return self._load(CaTabRaPaths.Invocation)
 
     def get_model_summary(self) -> Optional[dict]:
-        return self._load('model_summary.json')
+        return self._load(CaTabRaPaths.ModelSummary)
 
     def get_training_history(self) -> Optional[pd.DataFrame]:
         if (self._path / 'training_history.xlsx').exists():
@@ -283,10 +285,13 @@ class CaTabRaLoader:
     def get_encoder(self) -> Optional['Encoder']:
         if (self._path / 'encoder.json').exists():
             from .encoding import Encoder
-            return Encoder.load(self._path / 'encoder.json')
+            return Encoder.load(self._path / CaTabRaPaths.Encoder)
 
     def get_model(self) -> Optional['AutoMLBackend']:
         return self._load('model.joblib')
+
+    def get_ood(self) -> Optional['OODDetector']:
+        return self._load(CaTabRaPaths.OODModel)
 
     def get_fitted_ensemble(self, from_model: bool = False) -> Optional['FittedEnsemble']:
         """
@@ -325,8 +330,8 @@ class CaTabRaLoader:
         Get the training data copied into the directory, "train_data.h5". In contrast to `get_table()`, this is only
         the data actually used for training.
         """
-        if (self._path / 'train_data.h5').exists():
-            return read_df(self._path / 'train_data.h5')
+        if (self._path / CaTabRaPaths.TrainData).exists():
+            return read_df(self._path / CaTabRaPaths.TrainData)
 
     def get_table(self, keep_singleton: bool = False) -> Union[pd.DataFrame, List[pd.DataFrame], None]:
         """

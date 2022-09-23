@@ -45,6 +45,15 @@ DEFAULT_CONFIG = {
         "mean_squared_error"
     ],
 
+    "ood": {
+        "class": "SoftBrownianOffset",
+        # Import from CaTabRa OODDetector subclasses ('internal') or PyOD ('pyod')
+        "source": "internal",
+        # Keyword arguments for different OOD detectors in the form 'name': value.
+        # If none are specified default values are used.
+        "kwargs": {}
+    },
+
     # auto-sklearn specific config; see https://automl.github.io/auto-sklearn/master/api.html
     "auto-sklearn": {
         "include": None,

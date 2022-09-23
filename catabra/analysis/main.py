@@ -5,6 +5,7 @@ import shutil
 import numpy as np
 import pandas as pd
 
+from ..ood.base import OODDetector
 from ..util import io
 from ..util import logging
 from ..util import table as tu
@@ -14,6 +15,7 @@ from ..util import plotting
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
 from ..util import statistics
+from ..util.paths import CaTabRaPaths
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -120,6 +122,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     if default_config in (None, ''):
         default_config = 'full'
 
+
     if isinstance(config, (str, Path)):
         config = io.make_path(config, absolute=True)
         # if `config` is in `out`, it's better to load it before deleting `out`
@@ -127,6 +130,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         config_value = io.load(config)
     else:
         config_value = config
+
 
     if out is None:
         out = table[0]
@@ -151,7 +155,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     versions = cu.get_versions()
     cu.save_versions(versions, (out / 'versions.txt').as_posix())
 
-    with logging.LogMirror((out / 'console.txt').as_posix()):
+    with logging.LogMirror((out / CaTabRaPaths.ConsoleLogs).as_posix()):
         logging.log(f'### Analysis started at {start}')
         invocation = dict(
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
@@ -168,7 +172,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             jobs=jobs,
             timestamp=start
         )
-        io.dump(io.to_json(invocation), out / 'invocation.json')
+        io.dump(io.to_json(invocation), out / CaTabRaPaths.Invocation)
 
         config = config_value
         if config is None:
@@ -183,7 +187,9 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             raise ValueError('Default config must be one of "full", "basic" or "interpretable",'
                              f' but found {default_config}.')
         config = cfg.add_defaults(config)
-        io.dump(config, out / 'config.json')
+        io.dump(config, out / CaTabRaPaths.Config)
+
+        print(config)
 
         # merge tables
         df, id_cols = tu.merge_tables(table)
@@ -260,7 +266,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         if isinstance(copy_data, (int, float)):
             copy_data = df_train.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
         if copy_data:
-            io.write_df(df_train, out / 'train_data.h5')
+            io.write_df(df_train, out / CaTabRaPaths.TrainData)
 
         # grouping
         if group is None and df_train.index.name is not None:
@@ -333,12 +339,12 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
         # descriptive statistics for overall dataset
         statistics.save_descriptive_statistics(df=df.drop(ignore, axis=1, errors='ignore'),
-                                               target=target, classify=classify, fn=out / 'statistics')
+                                               target=target, classify=classify, fn =out / CaTabRaPaths.Statistics)
 
         # encoder
         encoder = Encoder(classify=classify)
         x_train, y_train = encoder.fit_transform(df_train, y=y_train)
-        encoder.dump(out / 'encoder.json')
+        encoder.dump(out / CaTabRaPaths.Encoder)
 
         # backend = None
         if y_train is not None and (config.get('time_limit') if time is None else time) != 0:
@@ -352,10 +358,10 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                 cu.save_versions(versions, (out / 'versions.txt').as_posix())   # overwrite existing file
                 backend.fit(x_train, y_train, groups=group, sample_weights=sample_weights, time=time, jobs=jobs,
                             dataset_name=dataset_name)
-                io.dump(backend, out / 'model.joblib')
-                io.dump(io.to_json(backend.summary()), out / 'model_summary.json')
+                io.dump(backend, out / CaTabRaPaths.Model)
+                io.dump(io.to_json(backend.summary()), out / CaTabRaPaths.ModelSummary)
                 hist = backend.training_history()
-                io.write_df(hist, out / 'training_history.xlsx')
+                io.write_df(hist, out / CaTabRaPaths.TrainingHistory)
                 if hist.empty:
                     sub = pd.Series([], dtype=np.float32)
                 else:
@@ -400,7 +406,10 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                             (out / explainer.name()).mkdir(exist_ok=True, parents=True)
                             io.dump(explainer.params_, out / explainer.name() / 'params.joblib')
 
-        # ood_detection(x_train, y_train, backend.fitted_ensemble() if backend else None)
+        ood_config = config['ood']
+        ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
+        ood.fit(x_train, y_train, verbose=True)
+        io.dump(ood, out / CaTabRaPaths.OODModel)
 
         end = pd.Timestamp.now()
         logging.log(f'### Analysis finished at {end}')

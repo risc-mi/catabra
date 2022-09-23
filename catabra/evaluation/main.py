@@ -11,6 +11,7 @@ from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
+from ..util.paths import CaTabRaPaths
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -117,7 +118,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     if sample_weight == '':
         sample_weight = None
 
-    with logging.LogMirror((out / 'console.txt').as_posix()):
+    with logging.LogMirror((out / CaTabRaPaths.ConsoleLogs).as_posix()):
         logging.log(f'### Evaluation started at {start}')
         invocation = dict(
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
@@ -134,7 +135,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             bootstrapping_metrics=bootstrapping_metrics,
             timestamp=start
         )
-        io.dump(io.to_json(invocation), out / 'invocation.json')
+        io.dump(io.to_json(invocation), out / CaTabRaPaths.Invocation)
 
         # merge tables
         df, _ = tu.merge_tables(table)
@@ -146,7 +147,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         if isinstance(copy_data, (int, float)):
             copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
         if copy_data:
-            io.write_df(df, out / 'test_data.h5')
+            io.write_df(df, out / CaTabRaPaths.TestData)
 
         # split
         if split is None:
@@ -183,8 +184,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             logging.warn(plotting.PLOTLY_WARNING)
             interactive_plots = False
 
-        # TODO: Perform OOD checks.
-
         # descriptive statistics for each train/test split
         if encoder.task_ is not None:
             target = list(y_test.columns)
@@ -195,6 +194,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                                        fn=directory / 'statistics')
 
         model = loader.get_model_or_fitted_ensemble()
+        ood = loader.get_ood()
+
         if encoder.task_ is None or model is None:
             explain = []
         else:
@@ -230,6 +231,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                ood_predictions = pd.DataFrame(ood.predict_proba(x_test))
+                ood_predictions = pd.DataFrame(ood.predict(x_test))
+                io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
                 if y_hat.ndim == 1:
                     y_hat = y_hat.reshape(-1, 1)
 
@@ -260,9 +264,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     detailed['__sample_weight'] = sample_weights
 
                 for mask, directory in _iter_splits():
-                    io.write_df(detailed[mask], directory / 'predictions.xlsx')
+                    io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
+                ood_predictions = pd.DataFrame(ood.predict(x_test))
+                io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
                 if threshold is None:
                     threshold = 0.5
                 if encoder.task_ == 'multilabel_classification':
@@ -283,7 +289,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
                     for mask, directory in _iter_splits():
                         directory.mkdir(exist_ok=True, parents=True)
-                        io.write_df(detailed[mask], directory / 'predictions.xlsx')
+                        io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
                         evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                        main_metrics=main_metrics,
                                        sample_weight=None if sample_weights is None else sample_weights[mask],
@@ -318,7 +324,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
                     for mask, directory in _iter_splits():
                         directory.mkdir(exist_ok=True, parents=True)
-                        io.write_df(detailed[mask], directory / 'predictions.xlsx')
+                        io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
                         evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                        main_metrics=main_metrics,
                                        sample_weight=None if sample_weights is None else sample_weights[mask],
