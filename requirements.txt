@@ -7,3 +7,5 @@ xlsxwriter
 openpyxl
 matplotlib
 shap
+numpy
+sklearn
