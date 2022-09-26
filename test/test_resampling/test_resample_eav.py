@@ -3,7 +3,7 @@ import numpy as np
 
 from ..util import profile
 from .util import resample_eav_slow, compare_dataframes, create_random_data
-from catabra.util.resampling import resample_eav
+from catabra.util.time_series import resample_eav
 
 
 def test_corner_cases():
