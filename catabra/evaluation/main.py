@@ -231,9 +231,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
             if encoder.task_ == 'regression':
                 y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                ood_predictions = pd.DataFrame(ood.predict_proba(x_test))
-                ood_predictions = pd.DataFrame(ood.predict(x_test))
-                io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
                 if y_hat.ndim == 1:
                     y_hat = y_hat.reshape(-1, 1)
 
@@ -267,8 +264,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                     io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
             else:
                 y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                ood_predictions = pd.DataFrame(ood.predict(x_test))
-                io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
                 if threshold is None:
                     threshold = 0.5
                 if encoder.task_ == 'multilabel_classification':
@@ -333,6 +328,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                        bootstrapping_repetitions=bootstrapping_repetitions,
                                        bootstrapping_metrics=bootstrapping_metrics,
                                        split=(None if directory == out else directory.stem), verbose=True)
+
+            ood_predictions = pd.DataFrame(ood.predict_proba(x_test)[:,1], columns=['proba'])
+            ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
+            io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')

@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from catabra.ood.pyod import PyODDetector
 from catabra.util import logging
 
 
@@ -29,6 +28,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
                 raise ValueError(name + ' is not a valid OODDetector.')
             ood = ood(**kwargs)
         elif source == 'pyod':
+            from catabra.ood.pyod import PyODDetector
             ood = PyODDetector(name, kwargs=kwargs)
         else:
             # TODO allow customs sources
@@ -57,13 +57,14 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         pass
 
     def fit(self, X: pd.DataFrame, y: pd.Series=None):
+        X_fit = X.copy(deep=True)
         if self._subset < 1:
-            X = np.random.choice(X, np.round(X.shape[0] * self._subset))
+            X_fit = np.random.choice(X, np.round(X.shape[0] * self._subset))
         if self._verbose:
             logging.log('Fitting out-of-distribution detector...')
         self._fit_transformer(X)
-        X = self._transform(X)
-        self._fit_transformed(X, y)
+        X_fit = self._transform(X_fit.copy(deep=True))
+        self._fit_transformed(X_fit, y)
         if self._verbose:
             logging.log('Out-of-distribution detector fitted.')
 
@@ -72,17 +73,17 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         pass
 
     def predict(self, X):
-        X = self._transform(X)
-        return self._predict_transformed(X)
+        X_trans = self._transform(X)
+        return self._predict_transformed(X_trans)
 
     @abstractmethod
     def _predict_proba_transformed(self, X):
         pass
 
     def predict_proba(self, X):
-        X = self._transform(X)
+        X_trans = self._transform(X)
         logging.log('Predicting out-of-distribution samples.')
-        return self._predict_proba_transformed(X)
+        return self._predict_proba_transformed(X_trans)
 
 
 

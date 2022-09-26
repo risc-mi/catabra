@@ -3,13 +3,14 @@ import inspect
 
 import pandas as pd
 
-from catabra.ood.utils import StandardTransformer
-from catabra.ood.base import OODDetector
+from .utils import StandardTransformer
+from .base import OODDetector
 
 
 class PyODDetector(OODDetector):
     """
     class to transform pyod ood class into a OODDetector
+    Requires sbo to be installed.
     """
 
     @property

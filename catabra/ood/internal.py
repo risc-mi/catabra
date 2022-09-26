@@ -5,11 +5,11 @@ from typing import List
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 
 from catabra.ood.base import OODDetector
 from catabra.ood.utils import StandardTransformer
-from catabra.util.table import train_test_split
 
 
 class Autoencoder(OODDetector):
@@ -142,6 +142,7 @@ class SoftBrownianOffset(OODDetector):
     Out-of-Distribution detector using soft brownian offset.
     Transforms samples into a lower dimensional space and generates synthetic OOD samples in this subspace.
     A classifier is trained to detect the OOD samples.
+    Requires sbo to be installed.
     """
 
     def __init__(
@@ -167,12 +168,11 @@ class SoftBrownianOffset(OODDetector):
         """
 
         super().__init__(subset, verbose)
-        import sbo
 
         autoenc_kwargs = kwargs.get('autoencoder', {})
         classifier_kwargs = kwargs.get('classifier', {})
 
-        self._autoencoder = Autoencoder(**autoenc_kwargs)
+        self._autoencoder = Autoencoder(**autoenc_kwargs, verbose=False)
         self._classifier = classifier(**classifier_kwargs)
         self._transformer = StandardTransformer()
 
@@ -189,7 +189,8 @@ class SoftBrownianOffset(OODDetector):
         self._autoencoder.fit(X)
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
-        n_samples = X.shape[0] * self._samples
+        n_samples = int(X.shape[0] * self._samples)
+        import sbo
         syn_samples = sbo.soft_brownian_offset(X, d_min=self._dist_min, d_off=self._dist_off,
                                                n_samples=n_samples, random_state=self._random_state,
                                                softness=self._softness)

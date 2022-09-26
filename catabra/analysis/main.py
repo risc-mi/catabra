@@ -408,7 +408,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
         ood_config = config['ood']
         ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
-        ood.fit(x_train, y_train, verbose=True)
+        ood.fit(x_train, y_train)
         io.dump(ood, out / CaTabRaPaths.OODModel)
 
         end = pd.Timestamp.now()
