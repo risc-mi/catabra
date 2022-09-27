@@ -1,10 +1,8 @@
-# More advanced version in PyOD - but it needs Tensorflow/Torch
 from copy import deepcopy
 from typing import List
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 
@@ -71,12 +69,12 @@ class Autoencoder(OODDetector):
         return self._regressor.extract(num_layers)
 
     def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, p_val=0.05,
-                 random_state: int=None, verbose=True, **mlp_kwargs):
+                 random_state: int=None, verbose=True, mlp_kwargs=None):
         """
-        Intialization of Autoencoder
-        @param target_dim_factor: how
-        @param reduction_factor: how much each layer reduces the dimensionality
-        @param p_val: p-value to decide when a sample is out of distribution
+        Initialization of Autoencoder
+        :param: target_dim_factor: how
+        :param: reduction_factor: how much each layer reduces the dimensionality
+        :param: p_val: p-value to decide when a sample is out of distribution
         """
         super().__init__(subset=subset, verbose=verbose)
         self._target_dim_factor = target_dim_factor
@@ -97,8 +95,8 @@ class Autoencoder(OODDetector):
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
         """
-        @param: X: samples to fit autoencoder on
-        @param y: ignored. Only for interface consistency
+        :param: X: samples to fit autoencoder on
+        :param y: ignored. Only for interface consistency
         """
         num_layers = np.log(self._target_dim_factor) // np.log(self._reduction_factor)
         self._encoder_layers = np.round(np.power(np.repeat(self._reduction_factor, num_layers),
@@ -127,78 +125,11 @@ class Autoencoder(OODDetector):
 
     def _predict_transformed(self, X):
         p_vals = self._predict_pvals(X)
-        return (p_vals <= self._p_val).astype(int)
+        return (np.min(p_vals, axis=1) <= self._p_val).astype(int)
 
     def _predict_proba_transformed(self, X):
         p_vals = self._predict_pvals(X)
-        return 1 - p_vals
+        return 1 - np.min(p_vals, axis=1)
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
-
-
-class SoftBrownianOffset(OODDetector):
-    """
-    Out-of-Distribution detector using soft brownian offset.
-    Transforms samples into a lower dimensional space and generates synthetic OOD samples in this subspace.
-    A classifier is trained to detect the OOD samples.
-    Requires sbo to be installed.
-    """
-
-    def __init__(
-            self,
-            subset: float = 1,
-            classifier=RandomForestClassifier,
-            dist_min: float = 0.5,
-            dist_off: float = 0.1,
-            softness: float = 0,
-            samples: float = 1,
-            random_state: int = None,
-            verbose: bool = True,
-            **kwargs
-    ):
-
-        """
-        Initialize SoftBrownianOffset
-        @param classifier: classifier for training to differentiate in- (ID) and out-of-distribution (OOD) samples
-        @param dist_min: (Likely) Minimum distance to ID data
-        @param dist_off: Offset distance used in each iteration
-        @param softness: Describes softness of minimum distance. Parameter between 0 (hard) and 1 (soft)
-        @param samples: Number of samples to return in proportion to original samples
-        """
-
-        super().__init__(subset, verbose)
-
-        autoenc_kwargs = kwargs.get('autoencoder', {})
-        classifier_kwargs = kwargs.get('classifier', {})
-
-        self._autoencoder = Autoencoder(**autoenc_kwargs, verbose=False)
-        self._classifier = classifier(**classifier_kwargs)
-        self._transformer = StandardTransformer()
-
-        self._dist_min = dist_min
-        self._dist_off = dist_off
-        self._samples = samples
-        self._softness = softness
-        self._random_state = random_state
-
-    def _transform(self, X: pd.DataFrame):
-        return self._autoencoder.encoder.predict(self._autoencoder._transform(X))
-
-    def _fit_transformer(self, X: pd.DataFrame):
-        self._autoencoder.fit(X)
-
-    def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
-        n_samples = int(X.shape[0] * self._samples)
-        import sbo
-        syn_samples = sbo.soft_brownian_offset(X, d_min=self._dist_min, d_off=self._dist_off,
-                                               n_samples=n_samples, random_state=self._random_state,
-                                               softness=self._softness)
-        self._y = [0] * X.shape[0] + [1] * n_samples
-        self._classifier.fit(X=np.vstack((X, syn_samples)), y=self._y)
-
-    def _predict_transformed(self, X):
-        return self._classifier.predict(X)
-
-    def _predict_proba_transformed(self, X):
-        return self._classifier.predict_proba(X)

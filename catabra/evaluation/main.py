@@ -329,7 +329,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                        bootstrapping_metrics=bootstrapping_metrics,
                                        split=(None if directory == out else directory.stem), verbose=True)
 
-            ood_predictions = pd.DataFrame(ood.predict_proba(x_test)[:,1], columns=['proba'])
+            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
             ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
             io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
 

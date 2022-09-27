@@ -1,4 +1,6 @@
 import abc
+import importlib
+import inspect
 from abc import abstractmethod
 
 import numpy as np
@@ -17,22 +19,36 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     def create(cls, name: str, source: str = 'internal', **kwargs) -> 'OODDetector':
         """
         factory method for creating OODDetector subclasses or PyOD classes from strings
-        @param name: if source is 'internal' name of OODDetector class;
-                     if source is 'pyod' name of pyod detector in snake_case
-        @param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
-        @param kwargs: keyword arguments for the detector class
+        :param name: if source is 'internal' name of OODDetector module in snake_case;
+                     if source is 'pyod' name of pyod detector module in snake_case;
+                     if source is 'external' full path to the OODDetector (module1.module2.CustomOOD)
+        :param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
+        :param kwargs: keyword arguments for the detector class
         """
+        kwargs = kwargs['kwargs']
         if source == 'internal':
-            ood = next((sc for sc in cls.__subclasses__() if name.lower() == sc.__name__.lower()), None)
+            module = importlib.import_module('catabra.ood.internal.' + name)
+            module_classes = inspect.getmembers(module, inspect.isclass)
+            ood_class = next(
+                class_ for class_name, class_ in module_classes if class_name.lower() == name.replace('_', '')
+            )
+            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
             if ood is None:
                 raise ValueError(name + ' is not a valid OODDetector.')
-            ood = ood(**kwargs)
+
         elif source == 'pyod':
             from catabra.ood.pyod import PyODDetector
             ood = PyODDetector(name, kwargs=kwargs)
-        else:
-            # TODO allow customs sources
-            raise ValueError(source + 'is not a valid OOD source.')
+
+        elif source == 'external':
+            path_split = name.split('.')
+            module_name = '.'.join(path_split[:-1])
+            class_name = path_split[-1]
+            module = importlib.import_module('.'.join(module_name))
+            module_classes = inspect.getmembers(module, inspect.isclass)
+            ood_class = next(class_ for cn, class_ in module_classes if cn == class_name)
+            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
+            # raise ValueError(source + 'is not a valid OOD source.')
 
         return ood
 

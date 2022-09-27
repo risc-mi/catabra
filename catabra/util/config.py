@@ -46,7 +46,7 @@ DEFAULT_CONFIG = {
     ],
 
     "ood": {
-        "class": "SoftBrownianOffset",
+        "class": "autoencoder",
         # Import from CaTabRa OODDetector subclasses ('internal') or PyOD ('pyod')
         "source": "internal",
         # Keyword arguments for different OOD detectors in the form 'name': value.
