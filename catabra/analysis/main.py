@@ -402,10 +402,11 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                             (out / explainer.name()).mkdir(exist_ok=True, parents=True)
                             io.dump(explainer.params_, out / explainer.name() / 'params.joblib')
 
-        ood_config = config['ood']
-        ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
-        ood.fit(x_train, y_train)
-        io.dump(ood, out / CaTabRaPaths.OODModel)
+        ood_config = config.get('ood', None)
+        if ood_config is not None:
+            ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
+            ood.fit(x_train, y_train)
+            io.dump(ood, out / CaTabRaPaths.OODModel)
 
         end = pd.Timestamp.now()
         logging.log(f'### Analysis finished at {end}')

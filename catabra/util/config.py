@@ -46,8 +46,13 @@ DEFAULT_CONFIG = {
     ],
 
     "ood": {
+        # name of module/class for OOD detector
+        # if 'source' is 'internal': name of one of the modules in catabra.ood.internal (e.g. soft_brownian_offset)
+        # if 'source' is 'pyod': name of one of the modules in pyod.models (e.g. kde)
+        # if 'source' is 'external': full import path consisting of modules and class (e.g. custom.module.CustomOOD)
+        # if value is <None> no OOD detection is performed
         "class": "autoencoder",
-        # Import from CaTabRa OODDetector subclasses ('internal') or PyOD ('pyod')
+        # Import from CaTabRa OODDetector subclasses ('internal'), PyOD ('pyod') or custom source ('external')
         "source": "internal",
         # Keyword arguments for different OOD detectors in the form 'name': value.
         # If none are specified default values are used.

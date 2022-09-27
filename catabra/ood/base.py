@@ -48,7 +48,9 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             module_classes = inspect.getmembers(module, inspect.isclass)
             ood_class = next(class_ for cn, class_ in module_classes if cn == class_name)
             ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
-            # raise ValueError(source + 'is not a valid OOD source.')
+
+        else:
+            raise ValueError(source + 'is not a valid OOD source.')
 
         return ood
 

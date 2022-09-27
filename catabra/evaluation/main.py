@@ -184,7 +184,15 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             logging.warn(plotting.PLOTLY_WARNING)
             interactive_plots = False
 
+        model = loader.get_model_or_fitted_ensemble()
+        ood = loader.get_ood()
+        apply_odd = ood is not None
+        if apply_odd:
+            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
+            ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
+
         # descriptive statistics for each train/test split
+        print(encoder.task_)
         if encoder.task_ is not None:
             target = list(y_test.columns)
             for mask, directory in _iter_splits():
@@ -192,9 +200,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                                        target=target,
                                                        classify=encoder.task_ != 'regression',
                                                        fn=directory / CaTabRaPaths.Statistics)
-
-        model = loader.get_model_or_fitted_ensemble()
-        ood = loader.get_ood()
+                if apply_odd:
+                    print(directory / CaTabRaPaths.OODStats)
+                    io.write_df(ood_predictions.loc[mask,:], directory / CaTabRaPaths.OODStats)
 
         if encoder.task_ is None or model is None:
             explain = []
@@ -329,9 +337,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                                        bootstrapping_metrics=bootstrapping_metrics,
                                        split=(None if directory == out else directory.stem), verbose=True)
 
-            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
-            ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
-            io.write_df(ood_predictions, out / CaTabRaPaths.OODStats)
 
         end = pd.Timestamp.now()
         logging.log(f'### Evaluation finished at {end}')
