@@ -13,3 +13,4 @@ class CaTabRaPaths:
     ConsoleLogs = 'console.txt'
     Invocation = 'invocation.json'
     Predictions = 'predictions.xlsx'
+    FittedEnsemble = 'fitted_ensemble.joblib'

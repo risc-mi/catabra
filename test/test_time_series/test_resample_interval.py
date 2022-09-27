@@ -3,7 +3,7 @@ import numpy as np
 
 from ..util import profile
 from .util import resample_interval_slow, compare_dataframes, create_random_data
-from catabra.util.resampling import resample_interval
+from catabra.util.time_series import resample_interval
 
 
 def _test_windows(pattern: str, include_df_start: bool = True, include_df_stop: bool = True, seed=None,

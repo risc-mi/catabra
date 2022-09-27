@@ -8,6 +8,7 @@ from ..util import table as tu
 from ..util import io
 from ..util import logging
 from ..util import plotting
+from ..util.paths import CaTabRaPaths
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -106,7 +107,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     if glob is None:
         glob = not (global_behavior.get('mean_of_local', False) or len(table) > 0)
 
-    with logging.LogMirror((out / 'console.txt').as_posix()):
+    with logging.LogMirror((out / CaTabRaPaths.ConsoleLogs).as_posix()):
         logging.log(f'### Explanation started at {start}')
         invocation = dict(
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
@@ -119,7 +120,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             jobs=jobs,
             timestamp=start
         )
-        io.dump(io.to_json(invocation), out / 'invocation.json')
+        io.dump(io.to_json(invocation), out / CaTabRaPaths.Invocation)
 
         encoder = loader.get_encoder()
 

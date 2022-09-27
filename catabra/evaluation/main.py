@@ -191,7 +191,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
                 statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
                                                        target=target,
                                                        classify=encoder.task_ != 'regression',
-                                                       fn=directory / 'statistics')
+                                                       fn=directory / CaTabRaPaths.Statistics)
 
         model = loader.get_model_or_fitted_ensemble()
         ood = loader.get_ood()

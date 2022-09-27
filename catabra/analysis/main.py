@@ -122,7 +122,6 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     if default_config in (None, ''):
         default_config = 'full'
 
-
     if isinstance(config, (str, Path)):
         config = io.make_path(config, absolute=True)
         # if `config` is in `out`, it's better to load it before deleting `out`
@@ -130,7 +129,6 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         config_value = io.load(config)
     else:
         config_value = config
-
 
     if out is None:
         out = table[0]
@@ -188,8 +186,6 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
                              f' but found {default_config}.')
         config = cfg.add_defaults(config)
         io.dump(config, out / CaTabRaPaths.Config)
-
-        print(config)
 
         # merge tables
         df, id_cols = tu.merge_tables(table)

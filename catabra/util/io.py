@@ -279,16 +279,16 @@ class CaTabRaLoader:
         return self._load(CaTabRaPaths.ModelSummary)
 
     def get_training_history(self) -> Optional[pd.DataFrame]:
-        if (self._path / 'training_history.xlsx').exists():
-            return read_df(self._path / 'training_history.xlsx')
+        if (self._path / CaTabRaPaths.TrainingHistory).exists():
+            return read_df(self._path / CaTabRaPaths.TrainingHistory)
 
     def get_encoder(self) -> Optional['Encoder']:
-        if (self._path / 'encoder.json').exists():
+        if (self._path / CaTabRaPaths.Encoder).exists():
             from .encoding import Encoder
             return Encoder.load(self._path / CaTabRaPaths.Encoder)
 
     def get_model(self) -> Optional['AutoMLBackend']:
-        return self._load('model.joblib')
+        return self._load(CaTabRaPaths.Model)
 
     def get_ood(self) -> Optional['OODDetector']:
         return self._load(CaTabRaPaths.OODModel)
@@ -299,9 +299,9 @@ class CaTabRaLoader:
         :param from_model: Whether to convert a plain model of type AutoMLBackend into a FittedEnsemble object, if
         such an object does not exist in the directory.
         """
-        if (self._path / 'fitted_ensemble.joblib').exists():
+        if (self._path / CaTabRaPaths.FittedEnsemble).exists():
             from ..automl.fitted_ensemble import FittedEnsemble
-            return FittedEnsemble.load(self._path / 'fitted_ensemble.joblib')
+            return FittedEnsemble.load(self._path / CaTabRaPaths.FittedEnsemble)
         elif from_model:
             model = self.get_model()
             if hasattr(model, 'fitted_ensemble'):
