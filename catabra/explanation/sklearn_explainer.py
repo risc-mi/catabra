@@ -30,7 +30,7 @@ def sklearn_explainer_factory(obj, params=None):
     elif isinstance(obj, (sklearn.preprocessing.RobustScaler, sklearn.preprocessing.StandardScaler,
                           sklearn.preprocessing.QuantileTransformer, sklearn.preprocessing.PowerTransformer,
                           sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.Normalizer,
-                          sklearn.preprocessing.OrdinalEncoder)):
+                          sklearn.preprocessing.Binarizer, sklearn.preprocessing.OrdinalEncoder)):
         return IdentityTransformationExplainer(transformer=obj, params=params)
     elif isinstance(obj, str):
         if obj == 'passthrough':
@@ -277,6 +277,38 @@ class OneHotEncoderExplainer(TransformationExplainer):
         return self.backward(s)
 
 
+class KBinsDiscretizerExplainer(TransformationExplainer):
+
+    def __init__(self, transformer: sklearn.preprocessing.KBinsDiscretizer, params=None):
+        super(KBinsDiscretizerExplainer, self).__init__(transformer=transformer, params=params)
+        if self._transformer.encode in ('onehot', 'onehot-dense'):
+            self._n_features_out = self._transformer.n_bins_
+        else:
+            self._n_features_out = [1] * len(self._transformer.n_bins_)
+
+    def fit_forward(self, x, y):
+        return self.forward(x)
+
+    def forward(self, x):
+        return self.transform(x)
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        if s.shape[-1] != sum(self._n_features_out):
+            raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__,
+                                                          sum(self._n_features_out)))
+
+        out = np.zeros(s.shape[:-1] + (len(self._n_features_out),), dtype=s.dtype)
+        j = 0
+        for i, n in enumerate(self._n_features_out):
+            out[..., i] = s[..., j:j + n].sum(axis=-1)
+            j += n
+
+        return out
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        return self.backward(s)
+
+
 class SimpleImputerExplainer(TransformationExplainer):
 
     def __init__(self, transformer: sklearn.impute.SimpleImputer, params=None):
@@ -490,7 +522,7 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
 
 class _LinearTransformationExplainer(TransformationExplainer):
     """
-    Linear transformations are tricky. Assume that x_1, ..., x_m are the input features and that an new feature z is
+    Linear transformations are tricky. Assume that x_1, ..., x_m are the input features and that a new feature z is
     constructed as a linear combination of the x_i:
 
           z = sum_{i=1}^m alpha_i * x_i + b
