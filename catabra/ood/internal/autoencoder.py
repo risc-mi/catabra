@@ -130,26 +130,30 @@ class Autoencoder(OODDetector):
         _, X_val, _, _ = train_test_split(X, X, random_state=self._random_state,
                                           test_size=self._regressor.validation_fraction)
         # TODO: validate that X_val is same X_val as during training
-        self._errors = X_val - self._regressor.predict(X_val)
+        self._errors = np.abs(X_val - self._regressor.predict(X_val))
 
     def _predict_pvals(self, X):
         X_reconstructed = self._regressor.predict(X)
-        errors = X - X_reconstructed
+        errors = np.abs(X - X_reconstructed)
 
         p_val = np.zeros_like(errors)
-        for r in range(errors.shape[0]):
-            for c, name in enumerate(errors.columns):
-                p_val[r,c] = np.sum(self._errors.iloc[:,c] >= errors.iloc[r,c]) / self._errors.shape[0]
+        batch_size = max(1, int(50000000 / self._errors.shape[0]))
+        for c, name in enumerate(errors.columns):
+            i = 0
+            while i < len(errors):
+                j = min(i + batch_size, len(errors))
+                p_val[i:j, c] = \
+                    (self._errors[name].values.reshape(-1, 1) <= errors[name].values[i:j].reshape(1, -1)).mean(axis=0)
+                i = j
 
         return p_val
 
     def _predict_transformed(self, X):
-        p_vals = self._predict_pvals(X)
-        return (np.min(p_vals, axis=1) <= self._p_val).astype(int)
+        return (self._predict_proba_transformed(X) >= self._p_val).astype(int)
 
     def _predict_proba_transformed(self, X):
         p_vals = self._predict_pvals(X)
-        return 1 - np.min(p_vals, axis=1)
+        return np.max(p_vals, axis=1)
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
