@@ -192,7 +192,6 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
             ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
 
         # descriptive statistics for each train/test split
-        print(encoder.task_)
         if encoder.task_ is not None:
             target = list(y_test.columns)
             for mask, directory in _iter_splits():

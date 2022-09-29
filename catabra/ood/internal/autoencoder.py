@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 
 from catabra.ood.base import OODDetector
-from catabra.ood.utils import StandardTransformer
+from catabra.ood.utils import make_standard_transformer
 
 
 class Autoencoder(OODDetector):
@@ -83,7 +83,7 @@ class Autoencoder(OODDetector):
         self._random_state = np.random.randint(1000) if random_state is None else random_state
 
         self._regressor = None
-        self._transformer = StandardTransformer()
+        self._transformer = make_standard_transformer()
         if mlp_kwargs and len(mlp_kwargs) > 0:
             self._mlp_kwargs = mlp_kwargs
 

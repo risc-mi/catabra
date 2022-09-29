@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 from catabra.ood.base import OODDetector
 from catabra.ood.internal.autoencoder import Autoencoder
-from catabra.ood.utils import StandardTransformer
+from catabra.ood.utils import make_standard_transformer
 
 
 class SoftBrownianOffset(OODDetector):
@@ -45,7 +45,7 @@ class SoftBrownianOffset(OODDetector):
 
         self._autoencoder = Autoencoder(**autoenc_kwargs, verbose=False)
         self._classifier = classifier(**classifier_kwargs)
-        self._transformer = StandardTransformer()
+        self._transformer = make_standard_transformer()
 
         self._dist_min = dist_min
         self._dist_off = dist_off
