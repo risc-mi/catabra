@@ -188,8 +188,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         ood = loader.get_ood()
         apply_odd = ood is not None
         if apply_odd:
-            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
-            ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
+            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'], index=x_test.index)
+            ood_predictions['decision'] = pd.DataFrame(data=ood.predict(x_test), index=x_test.index)
 
         # descriptive statistics for each train/test split
         if encoder.task_ is not None:

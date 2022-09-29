@@ -1,7 +1,15 @@
 import importlib
 import inspect
-
 import pandas as pd
+
+try:
+    import pyod
+except ImportError:
+    raise ImportError(
+        'Package pyod is required for out-of-distribution detection with class PyODDetector. You can install it either'
+        ' through pip (`pip install pyod`) or conda (`conda install -c conda-forge pyod`).'
+        ' Visit https://github.com/yzhao062/pyod for details.'
+    )
 
 from .utils import make_standard_transformer
 from .base import OODDetector

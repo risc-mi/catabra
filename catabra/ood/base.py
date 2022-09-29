@@ -16,7 +16,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     """
 
     @classmethod
-    def create(cls, name: str, source: str = 'internal', **kwargs) -> 'OODDetector':
+    def create(cls, name: str, source: str = 'internal', kwargs: dict = None) -> 'OODDetector':
         """
         factory method for creating OODDetector subclasses or PyOD classes from strings
         :param name: if source is 'internal' name of OODDetector module in snake_case;
@@ -25,7 +25,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         :param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
         :param kwargs: keyword arguments for the detector class
         """
-        kwargs = kwargs['kwargs']
+        kwargs = kwargs or {}
         if source == 'internal':
             module = importlib.import_module('catabra.ood.internal.' + name)
             module_classes = inspect.getmembers(module, inspect.isclass)
@@ -61,6 +61,14 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         self._verbose = verbose
         if verbose:
             logging.log('Initialized out-of-distribution detector of type ' + self.__class__.__name__)
+
+    @property
+    def subset(self):
+        return self._subset
+
+    @property
+    def verbose(self):
+        return self._verbose
 
     @abstractmethod
     def _transform(self, X: pd.DataFrame):
@@ -99,6 +107,13 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         pass
 
     def predict_proba(self, X):
+        """
+        Get o.o.d. probabilities of the given samples. Note that despite its name, this function does not necessarily
+        return probabilities between 0 and 1, but in any case larger values correspond to an increased likelihood of
+        being o.o.d.
+        :param X: The data to analyze.
+        :return: O.o.d. probabilities.
+        """
         X_trans = self._transform(X)
         logging.log('Predicting out-of-distribution samples.')
         return self._predict_proba_transformed(X_trans)

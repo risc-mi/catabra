@@ -87,6 +87,26 @@ class Autoencoder(OODDetector):
         if mlp_kwargs and len(mlp_kwargs) > 0:
             self._mlp_kwargs = mlp_kwargs
 
+    @property
+    def mlp_kwargs(self):
+        return self._mlp_kwargs
+
+    @property
+    def p_val(self):
+        return self._p_val
+
+    @property
+    def random_state(self):
+        return self._random_state
+
+    @property
+    def reduction_factor(self):
+        return self._reduction_factor
+
+    @property
+    def target_dim_factor(self):
+        return self._target_dim_factor
+
     def _fit_transformer(self, X: pd.DataFrame):
         self._transformer.fit(X)
 
