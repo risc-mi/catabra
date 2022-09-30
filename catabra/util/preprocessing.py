@@ -6,6 +6,68 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.base import TransformerMixin, BaseEstimator, clone
 
 
+class MinMaxScaler(skl_preprocessing.MinMaxScaler):
+
+    def __init__(self, fit_bool: bool = True, **kwargs):
+        """
+        Transform data by scaling each feature to a given range. The only difference to
+        `sklearn.preprocessing.MinMaxScaler` is parameter `fit_bool` that, when set to False, does not fit this scaler
+        on boolean features but rather uses 0 and 1 as fixed minimum and maximum values. This ensures that False is
+        always mapped to `feature_range[0]` and True is always mapped to `feature_range[1]`. Otherwise, if the training
+        data only contains True values, True would be mapped to `feature_range[0]` and False to
+        `feature_range[0] - feature_range[1]`.
+        The behavior on other numerical data types is not affected by this.
+
+        Note that `sklearn.preprocessing.MaxAbsScaler` always maps False to 0 and True to 1, so there is no need for
+        an analogous subclass.
+
+        :param fit_bool: Whether to fit this scaler on boolean features. If True, the behavior is identical to
+        `sklearn.preprocessing.MinMaxScaler`.
+        """
+        super(MinMaxScaler, self).__init__(**kwargs)
+        self.fit_bool = fit_bool
+
+    def partial_fit(self, X: Union[np.ndarray, pd.DataFrame], y=None) -> 'MinMaxScaler':
+        if isinstance(X, np.ndarray):
+            if self.fit_bool or X.dtype.kind != 'b':
+                super(MinMaxScaler, self).partial_fit(X, y=y)
+            else:
+                if hasattr(self, 'n_samples_seen_'):
+                    self.data_min_ = np.minimum(self.data_min_, 0.)
+                    self.data_max_ = np.maximum(self.data_max_, 1.)
+                    self.n_samples_seen_ += X.shape[0]
+                else:
+                    self.data_min_ = np.zeros(X.shape[1], dtype=np.float64)
+                    self.data_max_ = np.ones(X.shape[1], dtype=np.float64)
+                    self.n_samples_seen_ = X.shape[0]
+
+                self.data_range_ = self.data_max_ - self.data_min_
+                self.scale_ = ((self.feature_range[1] - self.feature_range[0]) / self.data_range_)
+                self.min_ = self.feature_range[0] - self.data_min_ * self.scale_
+        else:
+            updates = []
+            if not self.fit_bool:
+                for i, c in enumerate(X.columns):
+                    if X[c].dtype.kind == 'b':
+                        data_min = 0
+                        data_max = 1
+                        if hasattr(self, 'data_min_'):
+                            data_min = np.minimum(self.data_min_[i], data_min)
+                            data_max = np.maximum(self.data_max_[i], data_max)
+                        updates.append((i, data_min, data_max))
+
+            super(MinMaxScaler, self).partial_fit(X, y=y)
+
+            for i, data_min, data_max in updates:
+                self.data_min_[i] = data_min
+                self.data_max_[i] = data_max
+                self.data_range_[i] = data_max - data_min
+                self.scale_[i] = ((self.feature_range[1] - self.feature_range[0]) / self.data_range_[i])
+                self.min_[i] = self.feature_range[0] - data_min * self.scale_[i]
+
+        return self
+
+
 class OneHotEncoder(skl_preprocessing.OneHotEncoder):
 
     def __init__(self, drop_na: bool = False, drop=None, handle_unknown=None, **kwargs):

@@ -1,8 +1,7 @@
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.impute import SimpleImputer
 
-from ..util.preprocessing import NumCatTransformer, OneHotEncoder
+from ..util.preprocessing import NumCatTransformer, MinMaxScaler, OneHotEncoder
 
 
 def make_standard_transformer() -> NumCatTransformer:
@@ -13,13 +12,13 @@ def make_standard_transformer() -> NumCatTransformer:
     """
     return NumCatTransformer(
         num_transformer=make_pipeline(
-            MinMaxScaler(),
+            MinMaxScaler(fit_bool=False),
             SimpleImputer(strategy='constant', fill_value=-1),
             'passthrough'
         ),
         cat_transformer=OneHotEncoder(drop_na=True),
-        obj='passthrough',
-        bool='passthrough',
+        obj='drop',
+        bool='num',     # cast to float by setting False to 0 and True to 1
         timedelta='[s]',
         timestamp='[s]'
     )
