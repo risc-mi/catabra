@@ -32,13 +32,13 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             ood_class = next(
                 class_ for class_name, class_ in module_classes if class_name.lower() == name.replace('_', '')
             )
-            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
+            ood = ood_class(**kwargs)
             if ood is None:
                 raise ValueError(name + ' is not a valid OODDetector.')
 
         elif source == 'pyod':
             from catabra.ood.pyod import PyODDetector
-            ood = PyODDetector(name, kwargs=kwargs)
+            ood = PyODDetector(name, **kwargs)
 
         elif source == 'external':
             path_split = name.split('.')
@@ -47,7 +47,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             module = importlib.import_module('.'.join(module_name))
             module_classes = inspect.getmembers(module, inspect.isclass)
             ood_class = next(class_ for cn, class_ in module_classes if cn == class_name)
-            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
+            ood = ood_class(**kwargs)
 
         else:
             raise ValueError(source + 'is not a valid OOD source.')

@@ -56,4 +56,7 @@ class PyODDetector(OODDetector):
         return self._pyod_detector.predict(X)
 
     def _predict_proba_transformed(self, X):
-        return self._pyod_detector.predict_proba(X)
+        proba = self._pyod_detector.predict_proba(X)
+        if proba.ndim == 2 and proba.shape[1] > 1:
+            proba = proba[:, -1]    # only probability of positive=OOD class
+        return proba
