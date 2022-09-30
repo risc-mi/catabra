@@ -158,10 +158,12 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         if batch_size is None:
             batch_size = min(32, len(x))
         if model_id is None:
-            model_id = self._ensemble.meta_input_
+            keys = self._ensemble.meta_input_
         elif not isinstance(model_id, (list, set)):
-            model_id = [model_id]
-        keys = [k for k in model_id if k in self._explainers]
+            keys = [model_id]
+        else:
+            keys = model_id
+        keys = [k for k in keys if k in self._explainers]
 
         if len(x) <= batch_size:
             func = _explain_single      # explain locally, average at very end if `glob` is True
@@ -191,13 +193,17 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                 all_explanations.append(self._explain_single(key, x, jobs, batch_size, False, silent))
 
         out = {k: s for k, s in zip(keys, all_explanations)}
-        if isinstance(self._ensemble.meta_estimator_, (list, tuple)) \
-                and len(all_explanations) == len(self._ensemble.meta_estimator_) \
-                and (len(all_explanations) <= 1 or self._ensemble.task == 'regression'):
-            # in a classification setting, shap might explain class probabilities in some cases and log-odds ratios
-            # in other cases => cannot be compared, and in particular cannot be averaged
-            # https://github.com/slundberg/shap/issues/112
-            out['__ensemble__'] = sum(w * s for w, s in zip(self._ensemble.meta_estimator_, all_explanations))
+        if model_id is None and isinstance(self._ensemble.meta_estimator_, (list, tuple)) \
+                and len(all_explanations) == len(self._ensemble.meta_estimator_):
+            # all constituent models of soft voting ensemble have been explained
+            if len(out) == 1 and self._ensemble.meta_estimator_[0] == 1:
+                # ensemble consists of single model => rename key to "__ensemble__"
+                out = {'__ensemble__': s for s in out.values()}
+            elif len(out) == 1 or (len(out) > 1 and self._ensemble.task == 'regression'):
+                # in a classification setting, shap might explain class probabilities in some cases and log-odds ratios
+                # in other cases => cannot be compared, and in particular cannot be averaged
+                # https://github.com/slundberg/shap/issues/112
+                out['__ensemble__'] = sum(w * s for w, s in zip(self._ensemble.meta_estimator_, all_explanations))
 
         if glob:
             # reason for explaining everything locally and averaging at end is that we want to distinguish between
