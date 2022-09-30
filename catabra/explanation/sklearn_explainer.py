@@ -29,7 +29,8 @@ def sklearn_explainer_factory(obj, params=None):
         return PipelineExplainer(obj, params=params)
     elif isinstance(obj, (sklearn.preprocessing.RobustScaler, sklearn.preprocessing.StandardScaler,
                           sklearn.preprocessing.QuantileTransformer, sklearn.preprocessing.PowerTransformer,
-                          sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.Normalizer,
+                          sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.MaxAbsScaler,
+                          sklearn.preprocessing.Normalizer,
                           sklearn.preprocessing.Binarizer, sklearn.preprocessing.OrdinalEncoder)):
         return IdentityTransformationExplainer(transformer=obj, params=params)
     elif isinstance(obj, str):
