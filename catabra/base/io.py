@@ -6,7 +6,7 @@ import joblib
 import pandas as pd
 from csv import Sniffer
 
-from catabra.util.paths import CaTabRaPaths
+from catabra.base.paths import CaTabRaPaths
 
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
@@ -284,7 +284,7 @@ class CaTabRaLoader:
 
     def get_encoder(self) -> Optional['Encoder']:
         if (self._path / CaTabRaPaths.Encoder).exists():
-            from .encoding import Encoder
+            from ..util.encoding import Encoder
             return Encoder.load(self._path / CaTabRaPaths.Encoder)
 
     def get_model(self) -> Optional['AutoMLBackend']:

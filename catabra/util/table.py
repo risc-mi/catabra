@@ -2,7 +2,7 @@ from typing import Tuple, List, Dict, Union, Optional, Iterable
 import numpy as np
 import pandas as pd
 
-from . import io
+from ..base import io
 
 
 def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories: int = 100) -> pd.DataFrame:

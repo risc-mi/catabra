@@ -14,8 +14,7 @@ import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
 
-from ...util import io
-from ...util import logging
+from ...base import logging, io
 from ...util.common import repr_timedelta
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
@@ -517,13 +516,13 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['logging_config'] = logging_config
 
         # logging 2: individual models
-        if metric is not None:
-            kwargs['get_trials_callback'] = _SMACLoggingCallback(
-                (metric.name, metric._optimum, metric._sign),
-                [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
-                self._get_estimator_name(),
-                start_time=py_time.time()
-            )
+        # if metric is not None:
+            # kwargs['get_trials_callback'] = _SMACLoggingCallback(
+            #     (metric.name, metric._optimum, metric._sign),
+            #     [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
+            #     self._get_estimator_name(),
+            #     start_time=py_time.time()
+            # )
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 

@@ -5,13 +5,12 @@ import numpy as np
 import pandas as pd
 
 from ..util import table as tu
-from ..util import io
-from ..util import logging
+from ..base import logging, io
 from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
-from ..util.paths import CaTabRaPaths
+from catabra.base.paths import CaTabRaPaths
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -400,7 +399,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             plotting.save(_obj, directory / _name)
 
     if main_metrics is None:
-        from ..util.config import DEFAULT_CONFIG
+        from catabra.catabra.base.config import DEFAULT_CONFIG
         main_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
@@ -1295,7 +1294,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         if bootstrapping_metrics == '__all__':
             bootstrapping_metrics = _get_default_metrics(encoder.task_)
         elif bootstrapping_metrics is None:
-            from ..util.config import DEFAULT_CONFIG
+            from catabra.catabra.base.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
                                  sample_weight=sample_weight, task=encoder.task_, metric_list=bootstrapping_metrics,

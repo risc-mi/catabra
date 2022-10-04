@@ -1,4 +1,4 @@
-from .main import analyze, plot_training_history
+from .main import Analyzer, plot_training_history
 
 
-__all__ = ['analyze', 'plot_training_history']
+__all__ = ['Analyzer', 'plot_training_history']

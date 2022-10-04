@@ -1,7 +1,6 @@
 from typing import Optional
 import copy
 
-
 DEFAULT_CONFIG = {
     "automl": "auto-sklearn",       # AutoML backend; currently, only "auto-sklearn" is supported
     "ensemble_size": 10,            # maximum size of final ensemble
@@ -160,6 +159,12 @@ INTERPRETABLE_CONFIG = {
             ]
         }
     }
+}
+
+DEFAULT_CONFIGS = {
+    None: {},
+    'basic': BASIC_CONFIG,
+    'interpretable': INTERPRETABLE_CONFIG,
 }
 
 

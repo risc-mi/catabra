@@ -5,7 +5,8 @@ import pandas as pd
 import sklearn
 import joblib
 
-from ..util import io, metrics
+from ..util import metrics
+from ..base import io
 
 
 def _preprocess(x, pp: list):

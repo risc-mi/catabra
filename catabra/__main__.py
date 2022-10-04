@@ -40,10 +40,21 @@ def make_parser():
         )
 
     def _analyze(args: argparse.Namespace):
-        from .analysis import analyze
-        analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
-                sample_weight=args.sample_weight, ignore=args.ignore, time=args.time, out=args.out, config=args.config,
-                default_config=args.default_config, jobs=args.jobs, from_invocation=getattr(args, 'from', None))
+        from .analysis import Analyzer
+
+        analyze = Analyzer(
+            *args.table,
+            classify=args.classify,
+            regress=args.regress,
+            group=args.group,
+            split=args.split,
+            sample_weight=args.sample_weight,
+            ignore=args.ignore, time=args.time,
+            out=args.out, config=args.config,
+            default_config=args.default_config,
+            jobs=args.jobs,
+            from_invocation=getattr(args, 'from', None))
+        analyze()
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
