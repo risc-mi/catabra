@@ -81,7 +81,6 @@ class Analyzer(CaTabRaBase):
             from_invocation=from_invocation
         )
 
-        print(config)
         self._classify = classify
         self._regress = regress
         if self._classify is None and self._regress is None:
@@ -96,35 +95,15 @@ class Analyzer(CaTabRaBase):
     def __call__(self):
         if len(self._table) == 0:
             raise ValueError('No table specified.')
-        if self._classify is None:
-            if self._regress is None:
-                target = []
-            else:
-                target = [self._regress] if isinstance(self._regress, str) else list(self._regress)
-            self._classify = False
-        elif self._regress is None:
-            target = [self._classify] if isinstance(self._classify, str) else list(self._classify)
-            self._classify = True
-        else:
-            raise ValueError('At least one of `classify` and `regress` must be None.')
 
         start = pd.Timestamp.now()
+
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
         if isinstance(self._table[0], Path):
             dataset_name = self._table[0].stem
         else:
             dataset_name = None
-
-        if self._group == '':
-            self._group = None
-        if self._split == '':
-            self._split = None
-        if self._sample_weight == '':
-            self._sample_weight = None
-        if self._config == '':
-            self._config = None
-        if self._default_config in (None, ''):
-            self._default_config = 'full'
+        target = self._get_target()
 
         if isinstance(self._config, (str, Path)):
             self._config = io.make_path(self._config, absolute=True)
@@ -136,7 +115,6 @@ class Analyzer(CaTabRaBase):
 
         if self._out is None:
             self._out = self._table[0]
-            print(self._out)
             if isinstance(self._out, pd.DataFrame):
                 raise ValueError('Output directory must be specified when passing a DataFrame.')
             self._out = self._out.parent / (self._out.stem + '_catabra_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
@@ -172,13 +150,11 @@ class Analyzer(CaTabRaBase):
             if isinstance(self._config, dict):
                 self._config = copy.deepcopy(self._config)
             else:
-                print(self._config)
-                cfg.BASIC_CONFIG
-                self._config = cfg.add_defaults(self._config, default=DEFAULT_CONFIGS.get('basic', {}))
-            # elif self._default_config != 'full':
-            #     # TODO: Full???
-            #     raise ValueError('Default config must be one of "full", "basic" or "interpretable",'
-            #                      f' but found {self._default_config}.')
+                if self._default_config not in DEFAULT_CONFIGS.keys():
+                    raise ValueError('Default config must be one of "full", "basic" or "interpretable",'
+                                      f' but found {self._default_config}.')
+                self._config = cfg.add_defaults(self._config, default=DEFAULT_CONFIGS.get(self._default_config, {}))
+
             self._config = cfg.add_defaults(self._config)
             io.dump(self._config, self._out / CaTabRaPaths.Config)
 
@@ -188,54 +164,14 @@ class Analyzer(CaTabRaBase):
                 raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
 
             # set target column(s)
-            if len(target) > 0:
-                if len(target) == 1:
-                    if isinstance(target[0], str) and target[0] not in df.columns:
-                        target_path = Path(target[0])
-                        if target_path.exists():
-                            target = target_path
-                    elif isinstance(target[0], (Path, pd.DataFrame)):
-                        target = target[0]
-                if isinstance(target, Path):
-                    df_target = io.read_df(target)
-                elif isinstance(target, pd.DataFrame):
-                    df_target = target.copy()
-                else:
-                    df_target = None
-                if df_target is None:
-                    missing = [c for c in target if c not in df.columns]
-                    if missing:
-                        raise ValueError(
-                            f'{len(missing)} target columns do not appear in the specified table: ' +
-                            cu.repr_list(missing, brackets=False)
-                        )
-                else:
-                    df_target = tu.convert_object_dtypes(df_target, inplace=True)
-                    df_target.columns = cu.fresh_name(list(df_target.columns), df.columns)
-                    if df_target.index.name is None:
-                        if df_target.index.nlevels == 1 and len(df) == len(df_target) \
-                                and (df_target.index == pd.RangeIndex(len(df_target))).all():
-                            df_target.index = df.index
-                            df = df.join(df_target, how='left')
-                        else:
-                            raise RuntimeError('Cannot join target table with features table.')
-                    elif df_target.index.name == df.index.name:
-                        df = df.join(df_target, how='left')
-                    elif df_target.index.name in id_cols:
-                        df = df.join(df_target, how='left', on=df_target.name)
-                    else:
-                        raise RuntimeError('Cannot join target table with features table.')
-                    target = list(df_target.columns)
+            df, target = self.set_target_columns(target, df, id_cols)
             self._ignore = set() if self._ignore is None else set(self._ignore)
             ignore_target = [c for c in target if c in self._ignore]
             if ignore_target:
-                logging.log(f'Ignoring {len(ignore_target)} target columns:', cu.repr_list(ignore_target, brackets=False))
+                logging.log(f'Ignoring {len(ignore_target)} target columns:',
+                            cu.repr_list(ignore_target, brackets=False))
                 target = [c for c in target if c not in ignore_target]
-            obj_cols = [c for c in df.columns if df[c].dtype.name == 'object' and c in target]
-            if obj_cols:
-                raise ValueError(
-                    f'{len(obj_cols)} target columns have object data type: ' + cu.repr_list(obj_cols, brackets=False)
-                )
+
             # train-test split
             if self._split is None:
                 split_masks = {}
@@ -260,43 +196,13 @@ class Analyzer(CaTabRaBase):
                 io.write_df(df_train, self._out / CaTabRaPaths.TrainData)
 
             # grouping
-            if self._group is None and df_train.index.name is not None:
-                self._group = df_train.index.name
-                logging.log(f'Grouping by row index "{self._group}"')
-            if self._group is not None:
-                if self._group == df_train.index.name:
-                    for k, m in split_masks.items():
-                        n = len(np.intersect1d(df_train.index, df[m].index))
-                        if n > 0:
-                            logging.warn(f'{n} groups in "{k}" overlap with training set')
-                    if df_train.index.is_unique:
-                        self._group = None
-                    else:
-                        self._group = df_train.index.values
-                elif self._group in df_train.columns:
-                    self._ignore.update({self._group})
-                    for k, m in split_masks.items():
-                        n = len(np.intersect1d(df_train[self._group], df.loc[m, self._group]))
-                        if n > 0:
-                            logging.warn(f'{n} groups in "{k}" overlap with training set')
-                    if df_train[self._group].is_unique:
-                        self._group = None
-                    else:
-                        self._group = df_train[self._group].values
-                else:
-                    raise ValueError(f'"{self._group}" is no column of the specified table.')
+            # if self._group in df_train.columns: # check not necessary as errors='ignore')
+            self._ignore.update({self._group})
+            self._group = self.get_group_indices(df_train, self._group, split_masks)
 
             sample_weights = self._get_sample_weights(df_train)
 
-            id_cols = [c for c in id_cols if c not in self._ignore and c not in target]
-            if id_cols:
-                logging.warn(f'{len(id_cols)} columns appear to contain IDs, but are used as features:',
-                             cu.repr_list(id_cols, brackets=False))
-            obj_cols = [c for c in df_train.columns if df_train[c].dtype.name == 'object' and c not in self._ignore]
-            if obj_cols:
-                logging.warn(f'{len(obj_cols)} columns have object data type, and hence cannot be used as features:',
-                             cu.repr_list(obj_cols, brackets=False))
-                self._ignore.update(obj_cols)
+            self.check_for_id_cols(df_train, id_cols, target)
 
             # drop columns
             if self._ignore:
@@ -333,26 +239,20 @@ class Analyzer(CaTabRaBase):
                     logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
                     versions.update(backend.get_versions())
                     cu.save_versions(versions, (self._out / 'versions.txt').as_posix())   # overwrite existing file
+
                     backend.fit(x_train, y_train, groups=self._group, sample_weights=sample_weights, time=self._time,
                                 jobs=self._jobs, dataset_name=dataset_name)
                     io.dump(backend, self._out / CaTabRaPaths.Model)
                     io.dump(io.to_json(backend.summary()), self._out / CaTabRaPaths.ModelSummary)
+
                     hist = backend.training_history()
                     io.write_df(hist, self._out / CaTabRaPaths.TrainingHistory)
-                    if hist.empty:
-                        sub = pd.Series([], dtype=np.float32)
-                    else:
-                        cols = [c for c in hist.columns if c.startswith('ensemble_val_')]
-                        if cols:
-                            if 'timestamp' in hist.columns:
-                                sub = hist[cols].iloc[np.argmax(hist['timestamp'].values)]
-                            else:
-                                sub = hist[cols].iloc[-1]
-                        else:
-                            sub = pd.Series([], dtype=np.float32)
-                    msg = ['Final training statistics:', '    n_models_trained: ' + str(len(hist))]
-                    msg += ['    {}: {}'.format(sub.index[i], sub.iloc[i]) for i in range(len(sub))]
+                    sub_histories, n_models = self.get_training_stats()
+                    msg = ['Final training statistics:', '    n_models_trained: ' + str(n_models)]
+                    msg += ['    {}: {}'.format(sub_histories.index[i], sub_histories.iloc[i])
+                            for i in range(len(sub_histories))]
                     logging.log('\n'.join(msg))
+
                     if static_plots:
                         plotting.save(plot_training_history(hist, interactive=False), self._out)
                     if interactive_plots:
@@ -379,9 +279,10 @@ class Analyzer(CaTabRaBase):
                                 logging.warn(f'Unknown explanation backend: {self._config["explainer"]}')
                             else:
                                 versions.update(explainer.get_versions())
-                                cu.save_versions(versions, (self._out / 'versions.txt').as_posix())  # overwrite existing file
-                                (self._out / explainer.name()).mkdir(exist_ok=True, parents=True)
-                                io.dump(explainer.params_, self._out / explainer.name() / 'params.joblib')
+
+            cu.save_versions(versions, (self._out / 'versions.txt').as_posix())  # overwrite existing file
+            (self._out / explainer.name()).mkdir(exist_ok=True, parents=True)
+            io.dump(explainer.params_, self._out / explainer.name() / 'params.joblib')
 
             ood_config = self._config.get('ood', None)
             if ood_config is not None:
@@ -398,6 +299,126 @@ class Analyzer(CaTabRaBase):
             from .. import evaluation
             evaluation.evaluate(df, folder=self._out, split=self._split, sample_weight=self._sample_weight,
                                 out=self._out / 'eval', jobs=self._jobs)
+
+    @staticmethod
+    def get_training_stats(hist):
+        if hist.empty:
+            sub_histories = pd.Series([], dtype=np.float32)
+        else:
+            cols = [c for c in hist.columns if c.startswith('ensemble_val_')]
+            if cols:
+                if 'timestamp' in hist.columns:
+                    sub_histories = hist[cols].iloc[np.argmax(hist['timestamp'].values)]
+                else:
+                    sub_histories = hist[cols].iloc[-1]
+            else:
+                sub_histories = pd.Series([], dtype=np.float32)
+        n_models = len(hist)
+        return sub_histories, n_models
+
+    def check_for_id_cols(self, df, id_cols, target):
+        id_cols = [c for c in id_cols if c not in self._ignore and c not in target]
+        if id_cols:
+            logging.warn(f'{len(id_cols)} columns appear to contain IDs, but are used as features:',
+                         cu.repr_list(id_cols, brackets=False))
+        obj_cols = [c for c in df.columns if df[c].dtype.name == 'object' and c not in self._ignore]
+        if obj_cols:
+            logging.warn(f'{len(obj_cols)} columns have object data type, and hence cannot be used as features:',
+                         cu.repr_list(obj_cols, brackets=False))
+            self._ignore.update(obj_cols)
+
+    @staticmethod
+    def get_group_indices(df, group, split_masks):
+        if group is None and df.index.name is not None:
+            group = df.index.name
+            logging.log(f'Grouping by row index "{self._group}"')
+
+        if group is not None:
+            if group == df.index.name:
+                for k, m in split_masks.items():
+                    n = len(np.intersect1d(df.index, df[m].index))
+                    if n > 0:
+                        logging.warn(f'{n} groups in "{k}" overlap with training set')
+                if df.index.is_unique:
+                    group = None
+                else:
+                    group = df.index.values
+            elif group in df.columns:
+                for k, m in split_masks.items():
+                    n = len(np.intersect1d(df[group], df.loc[m, group]))
+                    if n > 0:
+                        logging.warn(f'{n} groups in "{k}" overlap with training set')
+                if df[group].is_unique:
+                    group = None
+                else:
+                    group = df[group].values
+            else:
+                raise ValueError(f'"{group}" is no column of the specified table.')
+        return group
+
+    def _get_target(self):
+        if self._classify is None:
+            if self._regress is None:
+                target = []
+            else:
+                target = [self._regress] if isinstance(self._regress, str) else list(self._regress)
+            self._classify = False
+        elif self._regress is None:
+            target = [self._classify] if isinstance(self._classify, str) else list(self._classify)
+            self._classify = True
+        else:
+            raise ValueError('At least one of `classify` and `regress` must be None.')
+        return target
+
+    @staticmethod
+    def set_target_columns(target, df, id_cols):
+        if len(target) > 0:
+            if len(target) == 1:
+                if isinstance(target[0], str) and target[0] not in df.columns:
+                    target_path = Path(target[0])
+                    if target_path.exists():
+                        target = target_path
+                elif isinstance(target[0], (Path, pd.DataFrame)):
+                    target = target[0]
+            if isinstance(target, Path):
+                df_target = io.read_df(target)
+            elif isinstance(target, pd.DataFrame):
+                df_target = target.copy()
+            else:
+                df_target = None
+            if df_target is None:
+                missing = [c for c in target if c not in df.columns]
+                if missing:
+                    raise ValueError(
+                        f'{len(missing)} target columns do not appear in the specified table: ' +
+                        cu.repr_list(missing, brackets=False)
+                    )
+            else:
+                df_target = tu.convert_object_dtypes(df_target, inplace=True)
+                df_target.columns = cu.fresh_name(list(df_target.columns), df.columns)
+                if df_target.index.name is None:
+                    if df_target.index.nlevels == 1 and len(df) == len(df_target) \
+                            and (df_target.index == pd.RangeIndex(len(df_target))).all():
+                        df_target.index = df.index
+                        df = df.join(df_target, how='left')
+                    else:
+                        raise RuntimeError('Cannot join target table with features table.')
+                elif df_target.index.name == df.index.name:
+                    df = df.join(df_target, how='left')
+                elif df_target.index.name in id_cols:
+                    df = df.join(df_target, how='left', on=df_target.name)
+                else:
+                    raise RuntimeError('Cannot join target table with features table.')
+                target = list(df_target.columns)
+
+                obj_cols = [c for c in df.columns if df[c].dtype.name == 'object' and c in target]
+                if obj_cols:
+                    raise ValueError(
+                        f'{len(obj_cols)} target columns have object data type: ' + cu.repr_list(obj_cols,
+                                                                                                 brackets=False)
+                    )
+
+        return df, target
 
 
 def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:

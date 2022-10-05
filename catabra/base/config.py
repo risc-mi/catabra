@@ -165,6 +165,7 @@ DEFAULT_CONFIGS = {
     None: {},
     'basic': BASIC_CONFIG,
     'interpretable': INTERPRETABLE_CONFIG,
+    'full': {} # TODO: check
 }
 
 

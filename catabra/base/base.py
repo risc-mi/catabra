@@ -67,6 +67,7 @@ class CaTabRaBase:
             jobs=jobs
         )
 
+        self._validate_arguments()
         # sample_weights = self._get_sample_weights()
 
     def _resolve_invocation_args(
@@ -82,7 +83,6 @@ class CaTabRaBase:
             default_config: Optional[str] = None,
             jobs: Optional[int] = None,
     ):
-        print(table)
         if len(table) == 0:
             self._table = self._from_invocation.get('table') or []
             if '<DataFrame>' in table:
@@ -90,20 +90,28 @@ class CaTabRaBase:
         else:
             self._table = table
 
-        print(self._table)
         self._group = self._from_invocation.get('group') if group is None else group
         self._split = self._from_invocation.get('split') if split is None else split
         self._sample_weight = self._from_invocation.get('sample_weight') if sample_weight is None else sample_weight
         self._ignore = self._from_invocation.get('ignore') if ignore is None else ignore
         self._out = self._from_invocation.get('out') if out is None else out
 
-        print('???????????????????', config)
         self._config = self._from_invocation.get('config', {}) if config is None else config
-        print('???????????????????', self._config)
         self._default_config = self._from_invocation.get('default_config') if default_config is None else default_config
         self._time = self._from_invocation.get('time') if time is None else time
         self._jobs = self._from_invocation.get('jobs') if jobs is None else jobs
-        print(self._from_invocation)
+
+    def _validate_arguments(self):
+        if self._group == '':
+            self._group = None
+        if self._split == '':
+            self._split = None
+        if self._sample_weight == '':
+            self._sample_weight = None
+        if self._config == '':
+            self._config = None
+        if self._default_config in (None, ''):
+            self._default_config = 'full'
 
     def _resolve_output_dir(self) -> bool:
         if self._out.exists():
