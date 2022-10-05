@@ -81,16 +81,8 @@ class Analyzer(CaTabRaBase):
             from_invocation=from_invocation
         )
 
-        self._classify = classify
-        self._regress = regress
-        if self._classify is None and self._regress is None:
-            target = self._from_invocation.get('target') or []
-            if '<DataFrame>' in target:
-                raise ValueError('Invocations must not contain "<DataFrame>" targets.')
-            if self._from_invocation.get('classify', True):
-                self._classify = target
-            else:
-                self._regress = target
+        self._set_target_and_type(classify, regress)
+
 
     def __call__(self):
         if len(self._table) == 0:
@@ -121,11 +113,13 @@ class Analyzer(CaTabRaBase):
         else:
             self._out = io.make_path(self._out, absolute=True)
 
-        out_ok =self._resolve_output_dir()
+        out_ok = self._resolve_output_dir()
 
         # version info
         versions = cu.get_versions()
-        cu.save_versions(versions, (self._out / 'versions.txt').as_posix())
+
+        # why save before and overwrite?
+        # cu.save_versions(versions, (self._out / 'versions.txt').as_posix())
 
         with logging.LogMirror((self._out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Analysis started at {start}')
@@ -173,20 +167,8 @@ class Analyzer(CaTabRaBase):
                 target = [c for c in target if c not in ignore_target]
 
             # train-test split
-            if self._split is None:
-                split_masks = {}
-                df_train = df.copy()
-            else:
-                split_masks, train_key = tu.train_test_split(df, self._split)
-                train_mask = split_masks.get(train_key)
-                if train_mask is None:
-                    raise ValueError(f'Name and values of train-test-split column "{self._split}" are ambiguous.')
-                elif train_mask.all():
-                    df_train = df.copy()
-                else:
-                    df_train = df[train_mask].copy()
-                del split_masks[train_key]
-                self._ignore.update({self._split})
+            df_train, split_masks = self._make_train_split(df, self._split)
+            self._ignore.update(self._split)
 
             # copy training data
             copy_data = self._config.get('copy_analysis_data', False)
@@ -201,7 +183,6 @@ class Analyzer(CaTabRaBase):
             self._group = self.get_group_indices(df_train, self._group, split_masks)
 
             sample_weights = self._get_sample_weights(df_train)
-
             self.check_for_id_cols(df_train, id_cols, target)
 
             # drop columns
@@ -213,12 +194,6 @@ class Analyzer(CaTabRaBase):
                 df_train.drop(target, axis=1, inplace=True)
             else:
                 y_train = None
-
-            static_plots = self._config.get('static_plots', True)
-            interactive_plots = self._config.get('interactive_plots', False)
-            if interactive_plots and plotting.plotly_backend is None:
-                logging.warn(plotting.PLOTLY_WARNING)
-                interactive_plots = False
 
             # descriptive statistics for overall dataset
             statistics.save_descriptive_statistics(df=df.drop(self._ignore, axis=1, errors='ignore'),
@@ -247,58 +222,100 @@ class Analyzer(CaTabRaBase):
 
                     hist = backend.training_history()
                     io.write_df(hist, self._out / CaTabRaPaths.TrainingHistory)
-                    sub_histories, n_models = self.get_training_stats()
+                    sub_histories, n_models = self.get_training_stats(hist)
                     msg = ['Final training statistics:', '    n_models_trained: ' + str(n_models)]
                     msg += ['    {}: {}'.format(sub_histories.index[i], sub_histories.iloc[i])
                             for i in range(len(sub_histories))]
                     logging.log('\n'.join(msg))
+                    self._make_training_plots(hist)
 
-                    if static_plots:
-                        plotting.save(plot_training_history(hist, interactive=False), self._out)
-                    if interactive_plots:
-                        plotting.save(plot_training_history(hist, interactive=True), self._out)
-                    logging.log('Finished model building')
-
-                    explainer = self._config.get('explainer')
-                    if explainer is not None:
-                        from ..explanation import EnsembleExplainer
-                        logging.log(f'Creating {explainer} explainer')
-                        try:
-                            explainer = EnsembleExplainer.get(
-                                explainer,
-                                ensemble=backend.fitted_ensemble(),
-                                feature_names=encoder.feature_names_,
-                                target_names=encoder.get_target_or_class_names(),
-                                x=x_train,
-                                y=y_train
-                            )
-                        except Exception as e:      # noqa
-                            logging.warn(f'Error when creating explainer; skipping\n' + str(e))
-                        else:
-                            if explainer is None:
-                                logging.warn(f'Unknown explanation backend: {self._config["explainer"]}')
-                            else:
-                                versions.update(explainer.get_versions())
+                    explainer_name = self._config.get('explainer')
+                    self.make_explainer(explainer_name, backend, encoder, x_train, y_train, versions)
 
             cu.save_versions(versions, (self._out / 'versions.txt').as_posix())  # overwrite existing file
-            (self._out / explainer.name()).mkdir(exist_ok=True, parents=True)
-            io.dump(explainer.params_, self._out / explainer.name() / 'params.joblib')
-
-            ood_config = self._config.get('ood', None)
-            if ood_config is not None:
-                ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
-                ood.fit(x_train, y_train)
-                io.dump(ood, self._out / CaTabRaPaths.OODModel)
+            self._make_ood_detector(x_train, y_train)
 
             end = pd.Timestamp.now()
             logging.log(f'### Analysis finished at {end}')
             logging.log(f'### Elapsed time: {end - start}')
             logging.log(f'### Output saved in {self._out.as_posix()}')
 
-        if len(split_masks) > 0:
-            from .. import evaluation
-            evaluation.evaluate(df, folder=self._out, split=self._split, sample_weight=self._sample_weight,
-                                out=self._out / 'eval', jobs=self._jobs)
+            if len(split_masks) > 0:
+                from .. import evaluation
+                evaluation.evaluate(df, folder=self._out, split=self._split, sample_weight=self._sample_weight,
+                                    out=self._out / 'eval', jobs=self._jobs)
+
+    def _set_target_and_type(self, classify, regress):
+        self._classify = classify
+        self._regress = regress
+        if self._classify is None and self._regress is None:
+            target = self._from_invocation.get('target') or []
+            if '<DataFrame>' in target:
+                raise ValueError('Invocations must not contain "<DataFrame>" targets.')
+            if self._from_invocation.get('classify', True):
+                self._classify = target
+            else:
+                self._regress = target
+
+    @staticmethod
+    def _make_train_split(df, split):
+        if split is None:
+            split_masks = {}
+            df_train = df.copy()
+        else:
+            split_masks, train_key = tu.train_test_split(df, split)
+            train_mask = split_masks.get(train_key)
+            if train_mask is None:
+                raise ValueError(f'Name and values of train-test-split column "{split}" are ambiguous.')
+            elif train_mask.all():
+                df_train = df.copy()
+            else:
+                df_train = df[train_mask].copy()
+            del split_masks[train_key]
+        return df_train, split_masks
+
+    def _make_training_plots(self, hist):
+        static_plots = self._config.get('static_plots', True)
+        interactive_plots = self._config.get('interactive_plots', False)
+        if interactive_plots and plotting.plotly_backend is None:
+            logging.warn(plotting.PLOTLY_WARNING)
+            interactive_plots = False
+        if static_plots:
+            plotting.save(plot_training_history(hist, interactive=False), self._out)
+        if interactive_plots:
+            plotting.save(plot_training_history(hist, interactive=True), self._out)
+
+    def _make_ood_detector(self, x_train, y_train):
+        ood_config = self._config.get('ood', None)
+        if ood_config is not None:
+            ood = OODDetector.create(ood_config['class'], source=ood_config['source'], kwargs=ood_config['kwargs'])
+            ood.fit(x_train, y_train)
+            io.dump(ood, self._out / CaTabRaPaths.OODModel)
+
+    def make_explainer(self, explainer_name: str, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
+                       versions) -> Optional['EnsembleExplainer']:
+        from ..explanation import EnsembleExplainer
+        logging.log(f'Creating {explainer_name} explainer')
+
+        try:
+            explainer = EnsembleExplainer.get(
+                explainer_name,
+                ensemble=backend.fitted_ensemble(),
+                feature_names=encoder.feature_names_,
+                target_names=encoder.get_target_or_class_names(),
+                x=x_train,
+                y=y_train
+            )
+
+            if explainer is None:
+                logging.warn(f'Unknown explanation backend: {explainer_name}')
+            else:
+                if explainer:
+                    (self._out / explainer.name()).mkdir(exist_ok=True, parents=True)
+                    io.dump(explainer.params_, self._out / explainer.name() / 'params.joblib')
+                    versions.update(explainer.get_versions())
+        except Exception as e:  # noqa
+            logging.warn(f'Error when creating explainer; skipping\n' + str(e))
 
     @staticmethod
     def get_training_stats(hist):

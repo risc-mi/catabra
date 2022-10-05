@@ -6,7 +6,7 @@ DEFAULT_CONFIG = {
     "ensemble_size": 10,            # maximum size of final ensemble
     "ensemble_nbest": 10,           # maximum number of best single models to use in final ensemble
     "memory_limit": 3072,           # memory limit for single models, in MB
-    "time_limit": 10,               # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
+    "time_limit": 1,               # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
     "jobs": 1,                      # default number of jobs to use; negative means all available processors; overwritten by command-line parameter
     "copy_analysis_data": False,    # whether to copy data to be analyzed into output folder; can be True, False or maximum size to copy, in MB
     "copy_evaluation_data": False,  # whether to copy test data into output folder; same possible values as for "copy_analysis_data"
