@@ -1,12 +1,97 @@
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Union, Dict, Tuple
 import copy
+
+import pandas as pd
+from pandas import DataFrame
+
+from catabra.base import io
+
+
+class Invocation:
+
+    @property
+    def start(self) -> pd.Timestamp:
+        return self._start
+
+    @property
+    def table(self) -> Tuple[Union[str, Path, DataFrame], ...]:
+        return self._table
+
+    @property
+    def split(self) -> str:
+        return self._split
+
+    @property
+    def sample_weight(self) -> Optional[str]:
+        return self._sample_weight
+
+    @property
+    def out(self) -> Union[str, Path]:
+        return self._out
+
+    @out.setter
+    def out(self, value: str):
+        self._out = value
+
+    @property
+    def jobs(self) -> int:
+        return self._jobs
+
+    def __init__(
+        self,
+        *table: Union[str, Path, pd.DataFrame],
+        split: Optional[str] = None,
+        sample_weight: Optional[str] = None,
+        out: Union[str, Path, None] = None,
+        jobs: Optional[int] = None,
+    ):
+        self._start = pd.Timestamp.now()
+        self._table = table
+        self._split = split
+        self._sample_weight = sample_weight
+        self._out = out
+        self._jobs = jobs
+
+    def update(self, src: Dict):
+        if src:
+            if len(self._table) == 0:
+                self._table = src.get('table') or []
+                if '<DataFrame>' in self._table:
+                    raise ValueError('Invocations must not contain "<DataFrame>" tables.')
+
+            if self._split is None:
+                self._split = src.get('split')
+            if self._sample_weight is None:
+                self._sample_weight = src.get('sample_weight')
+            if self._out is None:
+                self._out = src.get('out')
+            if self._jobs is None:
+                self._jobs = src.get('jobs')
+
+        if self._split == '':
+            self._split = None
+        if self._sample_weight == '':
+            self._sample_weight = None
+
+        self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
+
+    def to_dict(self):
+        return dict(
+            split=self._split,
+            sample_weight=self._sample_weight,
+            out=self._out,
+            jobs=self._jobs,
+            timestamp=self._start
+        )
+
 
 DEFAULT_CONFIG = {
     "automl": "auto-sklearn",       # AutoML backend; currently, only "auto-sklearn" is supported
     "ensemble_size": 10,            # maximum size of final ensemble
     "ensemble_nbest": 10,           # maximum number of best single models to use in final ensemble
     "memory_limit": 3072,           # memory limit for single models, in MB
-    "time_limit": 1,               # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
+    "time_limit": 1,                # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
     "jobs": 1,                      # default number of jobs to use; negative means all available processors; overwritten by command-line parameter
     "copy_analysis_data": False,    # whether to copy data to be analyzed into output folder; can be True, False or maximum size to copy, in MB
     "copy_evaluation_data": False,  # whether to copy test data into output folder; same possible values as for "copy_analysis_data"

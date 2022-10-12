@@ -42,19 +42,21 @@ def make_parser():
     def _analyze(args: argparse.Namespace):
         from .analysis import Analyzer
 
-        analyze = Analyzer(
+        analyze = Analyzer(invocation=getattr(args, 'from', None))
+        analyze(
             *args.table,
             classify=args.classify,
             regress=args.regress,
             group=args.group,
             split=args.split,
             sample_weight=args.sample_weight,
-            ignore=args.ignore, time=args.time,
-            out=args.out, config=args.config,
+            ignore=args.ignore,
+            time=args.time,
+            out=args.out,
+            config=args.config,
             default_config=args.default_config,
-            jobs=args.jobs,
-            from_invocation=getattr(args, 'from', None))
-        analyze()
+            jobs=args.jobs
+        )
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate

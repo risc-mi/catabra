@@ -97,7 +97,7 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
                 if not pd.isna(train):
                     msg += '    train_{:s}: {:f}\n'.format(self.main_metric[0], train)
                 msg += '    type: {:s}\n' \
-                       '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
+                       '    total_elapsed_time: {:s}'.format(run_info.config_src._values[self.estimator_choice],
                                                              repr_timedelta(result.endtime - self.start_time))
                 logging.log(msg)
         except:  # noqa
