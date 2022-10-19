@@ -25,23 +25,24 @@ def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
 
 def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> pd.DataFrame:
     """
-    Read a DataFrame from a CSV, Excel or HDF5 file. The file type is determined from the file extension of the given
-    file.
+    Read a DataFrame from a CSV, Excel, HDF5, Pickle or Parquet file. The file type is determined from the file
+    extension of the given file.
     :param fn: The file to read.
     :param key: The key(s) in the HDF5 file, if `fn` is an HDF5 file. Defaults to "table". If an iterable, all
-    keys are read an concatenated along the row axis.
+    keys are read and concatenated along the row axis.
     :return: A DataFrame.
     """
     fn = make_path(fn)
-    if fn.suffix.lower() in ('.xlsx', '.xls'):
+    fmt, _ = _infer_file_format(fn.suffixes)
+    if fmt == 'excel':
         return pd.read_excel(str(fn))
-    elif fn.suffix.lower() == '.csv':
+    elif fmt == 'csv':
         with open(fn, mode='rt') as f:
             dialect = Sniffer().sniff(f.read(8192))
             f.seek(0)
             df = pd.read_csv(f, index_col=0, dialect=dialect)
         return df
-    elif fn.suffix.lower() in ('.h5', '.hdf'):
+    elif fmt == 'hdf':
         if isinstance(key, str):
             return pd.read_hdf(fn, key=key)
         else:
@@ -50,6 +51,10 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
                 return pd.concat(dfs, sort=False)
             else:
                 raise RuntimeError('No keys to read.')
+    elif fmt == 'pickle':
+        return pd.read_pickle(str(fn))
+    elif fmt == 'parquet':
+        return pd.read_parquet(str(fn))
     else:
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
 
@@ -65,20 +70,15 @@ def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
     :return: A dict mapping keys to DataFrames, possibly empty.
     """
     fn = make_path(fn)
-    if fn.suffix.lower() in ('.xlsx', '.xls'):
+    fmt, _ = _infer_file_format(fn.suffixes)
+    if fmt == 'excel':
         return pd.read_excel(str(fn), sheet_name=None)
-    elif fn.suffix.lower() == '.csv':
-        with open(fn, mode='rt') as f:
-            dialect = Sniffer().sniff(f.read(8192))
-            f.seek(0)
-            df = pd.read_csv(f, index_col=0, dialect=dialect)
-        return dict(table=df)
-    elif fn.suffix.lower() in ('.h5', '.hdf'):
+    elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode='r') as h5:
             out = {k[1:]: df for k, df in h5.items()}       # `k[1:]` to trim leading "/"
         return out
     else:
-        raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
+        return dict(table=read_df(fn))
 
 
 def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: str = 'w'):
@@ -91,7 +91,8 @@ def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: s
     """
     fn = make_path(fn)
     fn.parent.mkdir(exist_ok=True, parents=True)
-    if fn.suffix.lower() in ('.xlsx', '.xls'):
+    fmt, compression = _infer_file_format(fn.suffixes)
+    if fmt == 'excel':
         delta_cols = [c for c in df.columns if df[c].dtype.kind == 'm']
         if delta_cols:
             # convert Timedelta columns to string columns
@@ -99,13 +100,17 @@ def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: s
             for c in delta_cols:
                 df[c] = df[c].astype('str')
         df.to_excel(str(fn))
-    elif fn.suffix.lower() == '.csv':
+    elif fmt == 'csv':
         df.to_csv(str(fn), sep=';')
-    elif fn.suffix.lower() in ('.h5', '.hdf'):
+    elif fmt == 'hdf':
         if any(df[c].dtype.name == 'category' for c in df.columns):
             df.to_hdf(fn, key, mode=mode, format='table', complevel=9)
         else:
             df.to_hdf(fn, key, mode=mode, complevel=9)
+    elif fmt == 'pickle':
+        df.to_pickle(str(fn))
+    elif fmt == 'parquet':
+        df.to_parquet(str(fn), compression=compression)
     else:
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
 
@@ -113,7 +118,7 @@ def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: s
 def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w'):
     """
     Write a dict of DataFrames to file. The file type is determined from the file extension of the given file.
-    If a CSV file, `dfs` must be empty or a singleton.
+    Unless an Excel- or HDF5 file, `dfs` must be empty or a singleton.
     :param dfs: The DataFrames to write. If empty and `mode` differs from "a", the file is deleted.
     :param fn: The target file name.
     :param mode: The mode in which the file shall be opened, if `fn` is an Excel- or HDF5 file. Ignored otherwise.
@@ -125,7 +130,8 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
         return
 
     fn.parent.mkdir(exist_ok=True, parents=True)
-    if fn.suffix.lower() in ('.xlsx', '.xls'):
+    fmt, _ = _infer_file_format(fn.suffixes)
+    if fmt == 'excel':
         with pd.ExcelWriter(str(fn), mode=mode) as writer:
             for k, df in dfs.items():
                 delta_cols = [c for c in df.columns if df[c].dtype.kind == 'm']
@@ -135,17 +141,14 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
                     for c in delta_cols:
                         df[c] = df[c].astype('str')
                 df.to_excel(writer, sheet_name=k)
-    elif fn.suffix.lower() == '.csv':
-        if len(dfs) > 1:
-            raise RuntimeError('Cannot write more than one DataFrame to a CSV file.')
-        else:
-            write_df(list(dfs.values())[0], fn)
-    elif fn.suffix.lower() in ('.h5', '.hdf'):
+    elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode=mode) as h5:
             for k, df in dfs.items():
                 h5[k] = df
+    elif len(dfs) > 1:
+        raise RuntimeError(f'Cannot write more than one DataFrame to a "{fn.suffix}" file.')
     else:
-        raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
+        write_df(list(dfs.values())[0], fn)
 
 
 def load(fn: Union[str, Path]):
@@ -159,13 +162,14 @@ def load(fn: Union[str, Path]):
     :return: The loaded object.
     """
     fn = make_path(fn)
-    if fn.suffix.lower() == '.json':
+    fmt, _ = _infer_file_format(fn.suffixes)
+    if fmt == 'json':
         with open(fn, mode='rt') as f:
             return json.load(f)
-    elif fn.suffix.lower() in ('.pkl', '.pickle'):
+    elif fmt == 'pickle':
         with open(fn, mode='rb') as f:
             return pickle.load(f)
-    elif fn.suffix.lower() == '.joblib':
+    elif fmt == 'joblib':
         return joblib.load(fn.as_posix())
     else:
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
@@ -187,13 +191,14 @@ def dump(obj, fn: Union[str, Path]):
     :param fn: The file.
     """
     fn = make_path(fn)
-    if fn.suffix.lower() == '.json':
+    fmt, _ = _infer_file_format(fn.suffixes)
+    if fmt == 'json':
         with open(fn, mode='wt') as f:
             json.dump(obj, f, indent=2)
-    elif fn.suffix.lower() in ('.pkl', '.pickle'):
+    elif fmt == 'pickle':
         with open(fn, mode='wb') as f:
             pickle.dump(obj, f)
-    elif fn.suffix.lower() == '.joblib':
+    elif fmt == 'joblib':
         joblib.dump(obj, fn.as_posix())
     else:
         raise RuntimeError(f'Unknown file format: "{fn.suffix}".')
@@ -352,3 +357,27 @@ class CaTabRaLoader:
     def _load(self, name: str):
         if (self._path / name).exists():
             return load(self._path / name)
+
+
+def _infer_file_format(suffixes: list) -> (Optional[str], Optional[str]):
+    suffixes = [suffix.lower() for suffix in suffixes]
+    compression = None
+    for suffix in suffixes[::-1]:
+        if suffix in ('.gzip', '.zip', '.xy', '.bz2', '.snappy', '.brotli'):
+            compression = suffix[1:]
+        elif suffix in ('.pickle', '.pkl'):
+            return 'pickle', compression
+        elif suffix == '.joblib':
+            return 'joblib', compression
+        elif suffix == '.json':
+            return 'json', compression
+        elif suffix in ('.xls', '.xlsx'):
+            return 'excel', compression
+        elif suffix in ('.h5', '.hdf'):
+            return 'hdf', compression
+        elif suffix == '.csv':
+            return 'csv', compression
+        elif suffix.startswith('.parquet'):
+            return 'parquet', compression
+        else:
+            return None, None
