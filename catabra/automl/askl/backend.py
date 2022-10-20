@@ -548,23 +548,42 @@ class AutoSklearnBackend(AutoMLBackend):
             self.model_.refit(x_train, y_train)
         return self
 
-    def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None, model_id=None) \
-            -> np.ndarray:
+    def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None, model_id=None,
+                calibrated: bool = 'auto') -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
         if model_id is None:
-            return self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+            calibrated = calibrated is not False
         else:
-            return self._predict_single(x, model_id, batch_size, False)
+            calibrated = calibrated is True
+        calibrated = calibrated and self.calibrator_ is not None
+
+        if calibrated:
+            y = self.predict_proba(x, jobs=jobs, batch_size=batch_size, model_id=model_id, calibrated=True)
+            if self.task == 'multiclass_classification':
+                y = np.argmax(y, axis=1)
+            else:
+                y = (y > 0.5).astype(np.int32)
+        elif model_id is None:
+            y = self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+        else:
+            y = self._predict_single(x, model_id, batch_size, False)
+
+        return y
 
     def predict_proba(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-                      model_id=None) -> np.ndarray:
+                      model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
         if model_id is None:
-            return self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+            calibrated = calibrated is not False
+            y = self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
-            return self._predict_single(x, model_id, batch_size, True)
+            calibrated = calibrated is True
+            y = self._predict_single(x, model_id, batch_size, True)
+        if calibrated:
+            y = self.calibrate(y)
+        return y
 
     def predict_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
