@@ -1,5 +1,5 @@
 python>=3.9
-auto-sklearn
+auto-sklearn>=0.14.6
 pandas
 pytables
 xlrd
