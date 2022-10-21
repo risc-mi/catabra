@@ -361,6 +361,24 @@ class NumCatTransformer(BaseEstimator, TransformerMixin):
         return None
 
 
+class FeatureFilter(BaseEstimator, TransformerMixin):
+    """
+    Simple transformer that ensures that list of features is identical to features seen during fit.
+    Only applicable to DataFrames.
+    """
+
+    def fit(self, X: pd.DataFrame, y=None) -> 'FeatureFilter':
+        self.columns_ = X.columns
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        check_is_fitted(self)
+        if X.shape[1] == len(self.columns_) and (X.columns == self.columns_).all():
+            return X
+        else:
+            return X.reindex(self.columns_, axis=1)
+
+
 # convenience functions
 
 def ordinal_encode(X: pd.DataFrame, dtype=np.float64, obj: str = 'passthrough') -> Union[pd.DataFrame, np.ndarray]:

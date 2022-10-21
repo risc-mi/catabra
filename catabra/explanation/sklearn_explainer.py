@@ -732,6 +732,34 @@ class RBFSamplerExplainer(_LinearTransformationExplainer):
         super(RBFSamplerExplainer, self).__init__(transformer, transformer.random_weights_, params=params)
 
 
+class FeatureFilterExplainer(TransformationExplainer):
+
+    def fit_forward(self, x: pd.DataFrame, y) -> pd.DataFrame:
+        self.input_columns_ = x.columns
+        return self.forward(x)
+
+    def forward(self, x: pd.DataFrame) -> pd.DataFrame:
+        assert len(self.input_columns_) == len(x.columns) and (self.input_columns_ == x.columns).all()
+        return self.transform(x)
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        assert s.shape[-1] == len(self._transformer.columns_)
+
+        cols = self._transformer.columns_
+        if len(self.input_columns_) == len(cols) and (self.input_columns_ == cols).all():
+            return s
+        else:
+            m = pd.Series(index=cols, data=np.arange(len(cols))).reindex(self.input_columns_, fill_value=-1)
+            out = np.zeros((*s.shape[:-1], len(m)), dtype=s.dtype)
+            for i, j in enumerate(m.values):
+                if j >= 0:
+                    out[..., i] = s[..., j]
+            return out
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        return self.backward(s)
+
+
 def _fit_forward_one(explainer, x, y, weight):
     res = explainer.fit_forward(x, y)
     if weight is None:
