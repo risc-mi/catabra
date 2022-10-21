@@ -8,7 +8,7 @@ from . import io
 def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories: int = 100) -> pd.DataFrame:
     """
     Convert "object" data types in `df` into other data types, if possible. In particular, this includes timedelta,
-    datetime and categorical types, in that order.
+    datetime, categorical and string types, in that order. String types are not supported in all Pandas versions.
     :param df: The DataFrame.
     :param inplace: Whether to modify `df` in place. Note that if no column in `df` can be converted, it is returned
     as-is even if `inplace` is False.
@@ -18,9 +18,10 @@ def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories
     """
     for c in df.columns:
         s0 = df[c]
-        if s0.dtype.kind == 'O' and s0.dtype.name != 'category':
+        if s0.dtype.kind == 'O' and s0.dtype.name not in ('category', 'string'):
             s = None
-            if s0.isna().all():
+            na_mask = s0.isna()
+            if na_mask.all():
                 s = np.nan
             else:
                 try:
@@ -30,8 +31,14 @@ def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories
                         s = pd.to_datetime(s0)
                     except ValueError:
                         n = s0.nunique()
-                        if n <= max_categories and n * 10 <= s0.notna().sum():
+                        if n <= max_categories and n * 10 <= len(s0) - na_mask.sum():
                             s = pd.Categorical(s0)
+                        elif (s0.str.len().notna() | na_mask).all():
+                            # all entries are either strings or NA
+                            try:
+                                s = s0.astype('string')
+                            except:     # noqa
+                                pass
             if s is not None:
                 if not inplace:
                     df = df.copy()

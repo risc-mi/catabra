@@ -1,3 +1,5 @@
+import numpy as np
+
 from ...explanation.sklearn_explainer import TransformationExplainer, IdentityTransformationExplainer, \
     OneHotEncoderExplainer, SelectPercentileExplainer, GenericUnivariateSelectExplainer
 
@@ -12,6 +14,8 @@ def askl_explainer_factory(obj, params=None):
             return SelectClassificationRatesExplainer(obj, params=params)
         elif obj.__class__.__name__ == 'SparseOneHotEncoder':
             return SparseOneHotEncoderExplainer(obj, params=params)
+        elif obj.__class__.__name__ == 'TfidfEncoder':
+            return TfidfEncoderExplainer(obj, params=params)
         # TODO: Nystroem.
         #    Nystroem works as follows:
         #    * Pick random `n_components` samples from the training data, without replacement. Call them `components_`.
@@ -55,3 +59,43 @@ class SparseOneHotEncoderExplainer(OneHotEncoderExplainer):
             mask = (self._transformer.active_features_ >= cumsum) & (self._transformer.active_features_ < cumsum + n)
             self._n_features_out.append(mask.sum())
             cumsum += n
+
+
+class TfidfEncoderExplainer(TransformationExplainer):
+
+    def __init__(self, transformer, params=None):
+        super(TfidfEncoderExplainer, self).__init__(transformer, params=params)
+        self.n_features_in_ = None if params is None else params.get('n_features_in')
+
+    @property
+    def params_(self) -> dict:
+        out = super(TfidfEncoderExplainer, self).params_
+        out['n_features_in'] = self.n_features_in_
+        return out
+
+    def fit_forward(self, x, y):
+        self.n_features_in_ = x.shape[1]
+        return self.forward(x)
+
+    def forward(self, x):
+        return self.transform(x)
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        if self._transformer.per_column:
+            n_features_out = [len(pp.vocabulary_) for pp in self._transformer.preprocessor.values()]
+            assert s.shape[-1] == sum(n_features_out)
+            out = np.zeros((*s.shape[:-1], self.n_features_in_), dtype=s.dtype)
+
+            a = 0
+            for i, n in enumerate(n_features_out):
+                out[..., i] = s[..., a:a + n].sum(axis=-1)
+                a += n
+        else:
+            assert s.shape[-1] == len(self._transformer.preprocessor.vocabulary_)
+            # redistribute importance uniformly across features
+            out = s.sum(axis=-1, keepdims=True).repeat(self.n_features_in_, axis=-1) / self.n_features_in_
+
+        return out
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        return self.backward(s)

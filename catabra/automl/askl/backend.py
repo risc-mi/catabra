@@ -9,14 +9,17 @@ import sklearn
 import joblib
 import logging as py_logging
 import time as py_time      # otherwise shadowed by parameter of method `fit()`
+from distutils.version import LooseVersion
 import yaml
 import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
+from autosklearn import __version__ as askl_version
 
 from ...util import io
 from ...util import logging
-from ...util.common import repr_timedelta
+from ...util.common import repr_timedelta, repr_list
+from ...util.preprocessing import FeatureFilter
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
@@ -208,7 +211,7 @@ def strip_autosklearn(obj):
                 # `estimator`/`transformer`/`preprocessor` etc., their `transform()`/`predict()`/`predict_proba()`
                 # method does not simply apply these objects :(
                 if obj.__class__.__name__ in ('OrdinalEncoding', 'Nystroem', 'SelectPercentileClassification',
-                                              'SelectClassificationRates'):
+                                              'SelectClassificationRates', 'TfidfEncoder'):
                     return obj
 
                 # special classes whose `transform()` method is the identity function, but which are not detected by
@@ -264,6 +267,7 @@ class AutoSklearnBackend(AutoMLBackend):
     def __init__(self, **kwargs):
         super(AutoSklearnBackend, self).__init__(**kwargs)
         self.converted_bool_columns_ = None     # tuple of columns of bool dtype that must be converted to float
+        self._feature_filter = None
 
     @property
     def model_ids_(self) -> list:
@@ -271,6 +275,10 @@ class AutoSklearnBackend(AutoMLBackend):
             raise ValueError('AutoSklearnBackend must be fit to training data before model_ids_ can be accessed.')
         # actual identifiers are triples `(seed, ID, budget)`, from which we can safely restrict ourselves to ID
         return [_id for _, _id, _ in self._get_model_keys()]
+
+    @property
+    def feature_filter_(self) -> Optional[FeatureFilter]:
+        return getattr(self, '_feature_filter', None)
 
     def summary(self) -> dict:
         try:
@@ -424,6 +432,19 @@ class AutoSklearnBackend(AutoMLBackend):
         kwargs['include'] = include
         kwargs['exclude'] = exclude
 
+        self._feature_filter = None
+        if LooseVersion(askl_version) < LooseVersion('0.15.0'):
+            # string features are only supported in version >= 0.15.0
+            string_cols = [c for c in x_train.columns if x_train[c].dtype.name == 'string']
+            if string_cols:
+                logging.warn(
+                    f'Columns {repr_list(string_cols, brackets=False)} have string data type, but auto-sklearn does'
+                    f' not support text features in version {askl_version}.'
+                    ' Install auto-sklearn version >= 0.15.0 for text support.'
+                )
+                x_train = x_train.drop(string_cols, axis=1)
+                self._feature_filter = FeatureFilter().fit(x_train)
+
         bool_cols = [c for c in x_train.columns if x_train[c].dtype.kind == 'b']
         if bool_cols and not any(x_train[c].dtype.name == 'category' for c in x_train.columns):
             # autosklearn tries to impute missing values in bool columns using sklearn's SimpleImputer. This does not
@@ -565,9 +586,10 @@ class AutoSklearnBackend(AutoMLBackend):
             else:
                 y = (y > 0.5).astype(np.int32)
         elif model_id is None:
-            y = self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+            y = self.model_.predict(self._prepare_for_predict(x), n_jobs=-1 if jobs is None else jobs,
+                                    batch_size=batch_size)
         else:
-            y = self._predict_single(x, model_id, batch_size, False)
+            y = self._predict_single(self._prepare_for_predict(x), model_id, batch_size, False)
 
         return y
 
@@ -575,6 +597,7 @@ class AutoSklearnBackend(AutoMLBackend):
                       model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
+        x = self._prepare_for_predict(x)
         if model_id is None:
             calibrated = calibrated is not False
             y = self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
@@ -589,20 +612,24 @@ class AutoSklearnBackend(AutoMLBackend):
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, False)
+        return self._predict_all(self._prepare_for_predict(x), -1 if jobs is None else jobs, batch_size, False)
 
     def predict_proba_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, True)
+        return self._predict_all(self._prepare_for_predict(x), -1 if jobs is None else jobs, batch_size, True)
 
     @classmethod
     def get_versions(cls) -> dict:
-        from autosklearn import __version__ as askl_version
         from smac import __version__ as smac_version
         return {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
                 'scikit-learn': sklearn.__version__}
+
+    def _prepare_for_predict(self, x: pd.DataFrame) -> pd.DataFrame:
+        if self.feature_filter_ is not None:
+            x = self.feature_filter_.transform(x)
+        return x
 
     def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
         # get predictions of a single constituent model
@@ -695,25 +722,32 @@ class AutoSklearnBackend(AutoMLBackend):
         return out
 
     def _get_pipeline(self, key) -> dict:
+        steps = None
         pipeline = self.model_.automl_.models_.get(key)
         if pipeline is None:
             # cv => rely on `self.model_.automl_.cv_models_.get(key)`
-            return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+            estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
         elif hasattr(pipeline, 'steps'):
             estimator = pipeline.steps[-1][1].choice.estimator
             if estimator is None:
                 # cv => rely on `self.model_.automl_.cv_models_.get(key)`
-                return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+                estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
             else:
                 steps = [strip_autosklearn(obj[1]) for obj in pipeline.steps[:-1]]
                 steps = [s for s in steps if s != 'passthrough']
-                return dict(
-                    preprocessing=steps,
-                    estimator=estimator
-                )
         else:
             # dummy estimator
-            return dict(estimator=pipeline)
+            estimator = pipeline
+
+        # This way, the feature filter is added to each model separately, which means it is applied several times to
+        # the exact same input when applying the whole ensemble. This is obviously not optimal.
+        if self.feature_filter_ is not None:
+            if steps is None:
+                steps = [self.feature_filter_]
+            else:
+                steps = [self.feature_filter_] + steps
+
+        return dict(estimator=estimator, preprocessing=steps)
 
     def _get_fitted_model_by_id(self, model_id):
         models = [v for (_, _id, _), v in self._get_fitted_models().items() if _id == model_id]
