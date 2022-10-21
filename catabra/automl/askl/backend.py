@@ -297,7 +297,7 @@ class AutoSklearnBackend(AutoMLBackend):
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
 
-        metric_dict = {metric.name: [] for metric in self.model_.automl_._scoring_functions}
+        metric_dict = {metric.name: [] for metric in self.model_.scoring_functions}
         timestamp = []
         model_id = []
         val_metric = []
@@ -305,9 +305,8 @@ class AutoSklearnBackend(AutoMLBackend):
         test_metric = []
         duration = []
         types = []
-        main_metric = \
-            (self.model_.automl_._metric.name, self.model_.automl_._metric._optimum, self.model_.automl_._metric._sign)
-        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.automl_._scoring_functions]
+        main_metric = (self.model_.metric.name, self.model_.metric._optimum, self.model_.metric._sign)
+        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.scoring_functions]
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
@@ -383,7 +382,8 @@ class AutoSklearnBackend(AutoMLBackend):
             meta_input=[_id for _, _id, _ in voting_keys],
             meta_estimator=
             [self.model_.automl_.ensemble_.weights_[self.model_.automl_.ensemble_.identifiers_.index(k)]
-             for k in voting_keys]
+             for k in voting_keys],
+            calibrator=self.calibrator_
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
