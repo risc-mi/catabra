@@ -14,6 +14,7 @@ import yaml
 import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
+from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
 
 from ...util import io
@@ -78,19 +79,20 @@ setattr(py_logging, '_AutoSklearnHandler', _EnsembleLoggingHandler)
 
 
 class _SMACLoggingCallback(IncorporateRunResultCallback):
-    """Callback for printing messages whenever a new model has been trained."""
+    """Callback for logging model training and printing messages whenever a new model has been trained."""
 
-    def __init__(self, main_metric: Tuple[str, float, float], other_metrics: Iterable[Tuple[str, float, float]],
-                 estimator_name: str, start_time: float = 0.):
+    def __init__(self, main_metric: Optional[Tuple[str, float, float]],
+                 other_metrics: Iterable[Tuple[str, float, float]], estimator_name: str, start_time: float = 0.):
         self.main_metric = main_metric
         self.other_metrics = other_metrics
         self.estimator_choice = estimator_name + ':__choice__'
         self.start_time = start_time
         self._n = 0     # interestingly, counting models seems to work even if multiple jobs are used
+        self.runhistory = RunHistory()      # own run history, used if training is interrupted
 
     def __call__(self, smbo: 'SMBO', run_info: 'RunInfo', result: 'RunValue', time_left: float) -> Optional[bool]:
         try:
-            if result.status == StatusType.SUCCESS and result.additional_info:
+            if self.main_metric is not None and result.status == StatusType.SUCCESS and result.additional_info:
                 self._n += 1
                 val, train, test, other = _get_metrics_from_run_value(result, self.main_metric, self.other_metrics)
                 msg = 'New model #{:d} trained:\n    val_{:s}: {:f}\n'.format(self._n, self.main_metric[0], val)
@@ -104,6 +106,19 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
                        '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
                                                              repr_timedelta(result.endtime - self.start_time))
                 logging.log(msg)
+
+            self.runhistory.add(
+                run_info.config,
+                result.cost,
+                result.time,
+                result.status,
+                instance_id=run_info.instance,
+                seed=run_info.seed,
+                budget=run_info.budget,
+                starttime=result.starttime,
+                endtime=result.endtime,
+                additional_info=result.additional_info
+            )
         except:  # noqa
             pass
         return None
@@ -405,7 +420,6 @@ class AutoSklearnBackend(AutoMLBackend):
         if tmp_folder is not None and tmp_folder.exists():
             shutil.rmtree(tmp_folder)
         kwargs = dict(
-            # TODO: Tweak autosklearn to accept no time limit.
             time_left_for_this_task=600 if time is None or time < 0 else time * 60,  # `time` is given in minutes!
             n_jobs=-1 if jobs is None else jobs,
             tmp_folder=tmp_folder if tmp_folder is None else tmp_folder.as_posix(),
@@ -538,13 +552,13 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['logging_config'] = logging_config
 
         # logging 2: individual models
-        if metric is not None:
-            kwargs['get_trials_callback'] = _SMACLoggingCallback(
-                (metric.name, metric._optimum, metric._sign),
-                [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
-                self._get_estimator_name(),
-                start_time=py_time.time()
-            )
+        smac_callback = _SMACLoggingCallback(
+            metric if metric is None else (metric.name, metric._optimum, metric._sign),
+            [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
+            self._get_estimator_name(),
+            start_time=py_time.time()
+        )
+        kwargs['get_trials_callback'] = smac_callback
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
@@ -560,13 +574,27 @@ class AutoSklearnBackend(AutoMLBackend):
                     kwargs[k] = v
 
         self.model_ = Estimator(**kwargs)
-        self.model_.fit(x_train, y_train, dataset_name=dataset_name)
+        tic = py_time.time()
+        interrupted = False
+        try:
+            self.model_.fit(x_train, y_train, dataset_name=dataset_name)
+        except KeyboardInterrupt:
+            logging.warn('Hyperparameter optimization interrupted after'
+                         f' {repr_timedelta(py_time.time() - tic, subsecond_resolution=2)}.'
+                         ' Trying to build final ensemble with models trained so far,'
+                         ' but consistency of internal state cannot be ensured. Use result with care.')
+            self.model_.automl_._budget_type = None
+            self.model_.automl_.runhistory_ = smac_callback.runhistory
+            self.model_.automl_.trajectory_ = []        # not needed
+            interrupted = True
+
         if kwargs.get('ensemble_size', 1) > 0:
-            if kwargs.get('n_jobs', 1) != 1:
+            if interrupted or kwargs.get('n_jobs', 1) != 1:
                 # `fit_ensemble()` must be called before `refit()`
                 # not sure whether this is actually needed, but should not take too much time, so we do it anyway
                 self.model_.fit_ensemble(y_train)
             self.model_.refit(x_train, y_train)
+
         return self
 
     def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None, model_id=None,
