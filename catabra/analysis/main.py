@@ -103,20 +103,10 @@ class Analyzer(CaTabRaBase):
             self._invocation._config_src = io.make_path(self._invocation.config_src, absolute=True)
             config = io.load(self._invocation.config_src)
             self._config = AnalysisConfig(config, self._invocation.default_config)
-
-            # if `config` is in `out`, it's better to load it before deleting `out`
-            # we don't overwrite `config` here, because we want to write its original value into "invocation.json"                                                                                                                                                                                                                                                    # else:
         else:
             self._config = AnalysisConfig()
 
-        if self._invocation.out is None:
-            self._invocation.out = self._invocation.table[0]
-            if isinstance(self._invocation.out, pd.DataFrame):
-                raise ValueError('Output directory must be specified when passing a DataFrame.')
-            self._invocation.out = self._invocation.out.parent / (self._invocation.out.stem + '_catabra_' +
-                                                                  self._invocation.start.strftime('%Y-%m-%d_%H-%M-%S'))
-        else:
-            self._invocation.out = io.make_path(self._invocation.out, absolute=True)
+
         out_ok = self._resolve_output_dir()
         if out_ok:
             io.dump(self._config.src, self._invocation.out / CaTabRaPaths.Config)

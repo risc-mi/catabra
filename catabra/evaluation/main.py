@@ -154,7 +154,7 @@ class Evaluator(CaTabRaBase):
 
             model = loader.get_model_or_fitted_ensemble()
             ood = loader.get_ood()
-            apply_odd = False # ood is not None
+            apply_odd = ood is not None
             if apply_odd:
                 ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
                 ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
@@ -179,15 +179,14 @@ class Evaluator(CaTabRaBase):
 
                 main_metrics = config_dict.get(encoder.task_ + '_metrics', [])
 
-
                 if self._invocation.bootstrapping_repetitions is None:
                     self._invocation.bootstrapping_repetitions = self._config.bootstrapping_repetitions
                 if encoder.task_ == 'regression':
-                    self.evaluate_regression_task(_iter_splits, encoder, self._config.interactive_plots, main_metrics, model,
-                                                  sample_weights, self._config.static_plots, x_test, y_test)
+                    self.evaluate_regression_task(_iter_splits, encoder, main_metrics, model,
+                                                  sample_weights, x_test, y_test)
                 else:
-                    self._evaluate_classification_task(_iter_splits, encoder, self._config.interactive_plots, main_metrics, model,
-                                                       sample_weights, self._config.static_plots, x_test, y_test)
+                    self._evaluate_classification_task(_iter_splits, encoder, main_metrics, model,
+                                                       sample_weights, x_test, y_test)
 
             end = pd.Timestamp.now()
             logging.log(f'### Evaluation finished at {end}')
@@ -201,8 +200,8 @@ class Evaluator(CaTabRaBase):
                        out=self._invocation.out / 'explanations', glob=self._invocation.glob,
                        batch_size=self._invocation.batch_size, jobs=self._invocation.jobs)
 
-    def _evaluate_classification_task(self, _iter_splits, encoder, interactive_plots, main_metrics, model,
-                                      sample_weights, static_plots, x_test, y_test):
+    def _evaluate_classification_task(self, _iter_splits, encoder, main_metrics, model,
+                                      sample_weights, x_test, y_test):
         y_hat = model.predict_proba(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
                                     model_id=self._invocation.model_id)
 
@@ -230,7 +229,7 @@ class Evaluator(CaTabRaBase):
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
                                threshold=self._invocation.threshold,
-                               static_plots=static_plots, interactive_plots=interactive_plots,
+                               static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                                bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                                split=(None if directory == self._invocation.out else directory.stem), verbose=True)
@@ -266,13 +265,12 @@ class Evaluator(CaTabRaBase):
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
                                threshold=self._invocation.threshold,
-                               static_plots=static_plots, interactive_plots=interactive_plots,
+                               static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                                bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                                split=(None if directory == self._invocation.out else directory.stem), verbose=True)
 
-    def evaluate_regression_task(self, _iter_splits, encoder, interactive_plots, main_metrics, model, sample_weights,
-                                 static_plots, x_test, y_test):
+    def evaluate_regression_task(self, _iter_splits, encoder, main_metrics, model, sample_weights, x_test, y_test):
         y_hat = model.predict(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
                               model_id=self._invocation.model_id)
         if y_hat.ndim == 1:
@@ -286,9 +284,8 @@ class Evaluator(CaTabRaBase):
                            y_hat_decoded=y_hat_decoded[mask], y_true_decoded=y_test_decoded[mask],
                            main_metrics=main_metrics,
                            sample_weight=None if sample_weights is None else sample_weights[mask],
-                           static_plots=static_plots, interactive_plots=interactive_plots,
-                           bootstrapping_repetitions=self._invocation.bootstrapping_repetitions or
-                                                     self._config.bootstrapping_repetitions or 0,
+                           static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
+                           bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                            bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                            split=(None if directory == self._invocation.out else directory.stem), verbose=True)
         y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
