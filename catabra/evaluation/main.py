@@ -1,9 +1,10 @@
-from typing import Union, Optional, Tuple, Callable
+from typing import Union, Optional, Tuple, Callable, Type
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 from .config import EvaluationConfig, EvaluationInvocation
+from ..core.config import Invocation
 from ..util import table as tu
 from ..core import logging, io, CaTabRaBase
 from ..util import plotting
@@ -67,7 +68,11 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 
 class Evaluator(CaTabRaBase):
 
-    def __call__(
+    @property
+    def invocation_class(self) -> Type[Invocation]:
+        return EvaluationInvocation
+
+    def _call(
         self,
         *table: Union[str, Path, pd.DataFrame],
         folder: Union[str, Path] = None,
@@ -113,13 +118,13 @@ class Evaluator(CaTabRaBase):
         explicitly specified are taken from this dict; this also includes the table to analyze.
         """
 
-        self._invocation = EvaluationInvocation(
-            *table, folder=folder, model_id=model_id, glob=glob, split=split, sample_weight=sample_weight, out=out,
-            jobs=jobs, batch_size=batch_size, threshold=threshold, bootstrapping_repetitions=bootstrapping_repetitions,
-            bootstrapping_metrics=bootstrapping_metrics
-        )
-        self._invocation.update(self._invocation_src)
-        self._invocation.resolve()
+        # self._invocation = EvaluationInvocation(
+        #     *table, folder=folder, model_id=model_id, glob=glob, split=split, sample_weight=sample_weight, out=out,
+        #     jobs=jobs, batch_size=batch_size, threshold=threshold, bootstrapping_repetitions=bootstrapping_repetitions,
+        #     bootstrapping_metrics=bootstrapping_metrics
+        # )
+        # self._invocation.update(self._invocation_src)
+        # self._invocation.resolve()
 
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')

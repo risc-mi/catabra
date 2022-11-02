@@ -139,7 +139,8 @@ class AnalysisInvocation(cfg.Invocation):
         time: Optional[str] = None,
         ignore: Optional[Iterable[str]] = None,
         config: Union[str, Path, dict, None] = None,
-        default_config: Optional[str] = None
+        default_config: Optional[str] = None,
+        **_
     ):
 
         super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)

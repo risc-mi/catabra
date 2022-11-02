@@ -1,9 +1,10 @@
-from typing import Union, Optional, Iterable
+from typing import Union, Optional, Iterable, Type
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 from .config import AnalysisInvocation, AnalysisConfig
+from ..core.config import Invocation
 from ..ood.base import OODDetector
 from ..util import table as tu
 from ..util import common as cu
@@ -72,7 +73,11 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 
 class Analyzer(CaTabRaBase):
 
-    def __call__(
+    @property
+    def invocation_class(self) -> Type[Invocation]:
+        return AnalysisInvocation
+
+    def _call(
             self,
             *table: Union[str, Path, pd.DataFrame],
             classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -87,11 +92,7 @@ class Analyzer(CaTabRaBase):
             default_config: Optional[str] = None,
             jobs: Optional[int] = None,
     ):
-        self._invocation = AnalysisInvocation(*table, classify=classify, regress=regress, group=group, split=split,
-                                              sample_weight=sample_weight, ignore=ignore, time=time, out=out,
-                                              jobs=jobs, config=config, default_config=default_config)
-        self._invocation.update(self._invocation_src)
-        self._invocation.resolve()
+
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 

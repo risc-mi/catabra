@@ -44,7 +44,7 @@ class Invocation:
         split: Optional[str] = None,
         sample_weight: Optional[str] = None,
         out: Union[str, Path, None] = None,
-        jobs: Optional[int] = None,
+        jobs: Optional[int] = None
     ):
         self._start = pd.Timestamp.now()
         self._table = table

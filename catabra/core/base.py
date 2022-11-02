@@ -1,13 +1,19 @@
+from abc import ABC, abstractmethod
 import shutil
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Type
 import numpy as np
 
 from catabra.core import io, logging
 from catabra.core.config import Invocation
 
 
-class CaTabRaBase:
+class CaTabRaBase(ABC):
+
+    @property
+    @abstractmethod
+    def invocation_class(self) -> Type[Invocation]:
+        pass
 
     def __init__(
             self,
@@ -20,7 +26,16 @@ class CaTabRaBase:
         else:
             self._invocation_src = {}
 
-        self._invocation: Invocation = None
+    def __call__(self, *table, **kwargs):
+        print(kwargs)
+        self._invocation = self.invocation_class(*table, **kwargs)
+        self._invocation.update(self._invocation_src)
+        self._invocation.resolve()
+        self._call()
+
+    @abstractmethod
+    def _call(self):
+        pass
 
     def _resolve_output_dir(self, prompt: str) -> bool:
         if self._invocation.out.exists():
