@@ -1,18 +1,13 @@
 import shutil
 from abc import abstractmethod
 from pathlib import Path
-from typing import Union, Optional, Iterable, Dict
-
+from typing import Union, Optional
 import numpy as np
-import pandas as pd
 
-from catabra.base import io, logging
+from catabra.core import io, logging
+
 
 class CaTabRaBase:
-
-    @property
-    def invocation_src(self) -> Dict:
-        return self._invocation_src
 
     @abstractmethod
     def __call__(self):

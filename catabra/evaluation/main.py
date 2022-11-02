@@ -1,34 +1,86 @@
 from typing import Union, Optional, Tuple, Callable
 from pathlib import Path
-import shutil
 import numpy as np
 import pandas as pd
 
 from .config import EvaluationConfig, EvaluationInvocation
 from ..util import table as tu
-from ..base import logging, io, CaTabRaBase
+from ..core import logging, io, CaTabRaBase
 from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
-from catabra.base.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
+
+
+def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
+             glob: Optional[bool] = False, split: Optional[str] = None, sample_weight: Optional[str] = None,
+             out: Union[str, Path, None] = None, jobs: Optional[int] = None, batch_size: Optional[int] = None,
+             threshold: Optional[float] = None, bootstrapping_repetitions: Optional[int] = None,
+             bootstrapping_metrics: Optional[list] = None, from_invocation: Union[str, Path, dict, None] = None):
+    """
+    Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
+    :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
+    a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
+    :param folder: The folder containing the CaTabRa object to evaluate.
+    :param model_id: Optional, ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained
+    model or the entire ensemble are evaluated.
+    :param explain: Explain prediction model(s). If "__all__", all models specified by `model_id` are explained;
+    otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are evaluated.
+    :param glob: Whether to create global instead of local explanations.
+    :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
+    subset is evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to
+    carry any semantic information about training and test sets.
+    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
+    Sample weights are used both for training and evaluating prediction models.
+    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
+    with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
+    should be replaced; otherwise, it is automatically created.
+    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
+    :param batch_size: Optional, batch size used for applying the prediction model.
+    :param threshold: Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and
+    bootstrapped performance results are reported for this particular threshold.
+    :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
+    "bootstrapping_repetitions" config param.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
+    of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
+    current prediction task are computed. Ignored if bootstrapping is disabled.
+    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
+    explicitly specified are taken from this dict; this also includes the table to analyze.
+    """
+    evaluator = Evaluator(invocation=from_invocation)
+    evaluator(
+        *table,
+        folder=folder,
+        model_id=model_id,
+        glob=glob,
+        split=split,
+        sample_weight=sample_weight,
+        out=out,
+        jobs=jobs,
+        batch_size=batch_size,
+        threshold=threshold,
+        bootstrapping_repetitions=bootstrapping_repetitions,
+        bootstrapping_metrics=bootstrapping_metrics
+    )
 
 
 class Evaluator(CaTabRaBase):
 
-    def __call__(self,
-            *table: Union[str, Path, pd.DataFrame],
-            folder: Union[str, Path] = None,
-            model_id=None, explain=None,
-            glob: Optional[bool] = False,
-            split: Optional[str] = None,
-            sample_weight: Optional[str] = None,
-            out: Union[str, Path, None] = None,
-            jobs: Optional[int] = None,
-            batch_size: Optional[int] = None,
-            threshold: Optional[float] = None,
-            bootstrapping_repetitions: Optional[int] = None,
-            bootstrapping_metrics: Optional[list] = None
+    def __call__(
+        self,
+        *table: Union[str, Path, pd.DataFrame],
+        folder: Union[str, Path] = None,
+        model_id=None, explain=None,
+        glob: Optional[bool] = False,
+        split: Optional[str] = None,
+        sample_weight: Optional[str] = None,
+        out: Union[str, Path, None] = None,
+        jobs: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        threshold: Optional[float] = None,
+        bootstrapping_repetitions: Optional[int] = None,
+        bootstrapping_metrics: Optional[list] = None
     ):
         """
         Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
@@ -75,16 +127,6 @@ class Evaluator(CaTabRaBase):
         config_dict = loader.get_config()
         config = EvaluationConfig(config_dict)
 
-        if self._invocation.out is None:
-            self._invocation.out = self._invocation.table[0]
-            if isinstance(self._invocation.out, pd.DataFrame):
-                self._invocation.out = loader.path / ('eval_' + self._invocation.start.strftime('%Y-%m-%d_%H-%M-%S'))
-            else:
-                self._invocation.out = loader.path / ('eval_' + self._invocation.out.stem + '_' + self._invocation.start.strftime('%Y-%m-%d_%H-%M-%S'))
-        else:
-            self._invocation.out = io.make_path(self._invocation.out, absolute=True)
-        if self._invocation.out == loader.path:
-            raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
         self._resolve_output_dir()
 
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
@@ -132,7 +174,7 @@ class Evaluator(CaTabRaBase):
             if encoder.task_ is None or model is None:
                 self._explain = []
             else:
-                self._set_models_to_explain(model)
+                self._invocation.set_models_to_explain(model)
                 # `explain` is now either None or a list: None => explain all models; list => explain only these models
 
                 main_metrics = config_dict.get(encoder.task_ + '_metrics', [])
@@ -257,33 +299,6 @@ class Evaluator(CaTabRaBase):
             detailed['__sample_weight'] = sample_weights
         for mask, directory in _iter_splits():
             io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
-
-    def _set_models_to_explain(self, model):
-        if self._invocation.model_id == '__ensemble__':
-            self._model_id = None
-
-        if self._explain is None:
-            self._explain = set()
-        elif isinstance(self._explain, list):
-            self._explain = set(self._explain)
-        elif not isinstance(self._explain, set):
-            self._explain = {self._explain}
-        if '__ensemble__' in self._explain:
-            if self._model_id is None:
-                self._explain = None
-            else:
-                self._explain.remove('__ensemble__')
-                self._explain.update(model.model_ids_)
-        elif '__all__' in self._explain:
-            if self._model_id is None:
-                self._explain = None
-            else:
-                self._explain.remove('__all__')
-                self._explain.add(self._model_id)
-        if isinstance(self._explain, set):
-            if self._model_id is not None and any(e != self._model_id for e in self._explain):
-                raise ValueError('Cannot explain models that are not being evaluated.')
-            self._explain = list(self._explain)
 
     def _get_split_iterator(self, df):
         if self._invocation.split is None:
@@ -1569,6 +1584,7 @@ def _get_default_metrics(task: str, average: str = 'macro') -> list:
     return []
 
 
+# TODO: data class
 _REGRESSION_METRICS = ['r2', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error',
                        'mean_squared_log_error', 'median_absolute_error', 'mean_absolute_percentage_error',
                        'max_error', 'explained_variance', 'mean_poisson_deviance', 'mean_gamma_deviance']

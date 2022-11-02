@@ -5,7 +5,7 @@ import copy
 import pandas as pd
 from pandas import DataFrame
 
-from catabra.base import io
+from catabra.core import io
 
 
 class Invocation:
@@ -64,6 +64,7 @@ class Invocation:
                 self._split = src.get('split')
             if self._sample_weight is None:
                 self._sample_weight = src.get('sample_weight')
+
             if self._out is None:
                 self._out = src.get('out')
             if self._jobs is None:
@@ -76,7 +77,7 @@ class Invocation:
 
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return dict(
             split=self._split,
             sample_weight=self._sample_weight,
@@ -247,22 +248,22 @@ INTERPRETABLE_CONFIG = {
 }
 
 DEFAULT_CONFIGS = {
-    None: {},
+    None: DEFAULT_CONFIG,
     'basic': BASIC_CONFIG,
     'interpretable': INTERPRETABLE_CONFIG,
     'full': {} # TODO: check
 }
 
 
-def add_defaults(config: dict, default: Optional[dict] = None) -> dict:
+def add_defaults(config: dict, default: Optional[str] = None) -> dict:
     """
     Add default config values into a given config dict.
     :param config: The base config. Modified in place.
     :param default: The config with default values. None means `DEFAULT_CONFIG`.
     :return: The updated config dict.
     """
-    if default is None:
-        default = DEFAULT_CONFIG
+    default = DEFAULT_CONFIGS.get(default, DEFAULT_CONFIG)
+    print(default)
     for k, v in default.items():
         if k not in config:
             config[k] = copy.deepcopy(v)

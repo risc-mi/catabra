@@ -1,22 +1,30 @@
 from pathlib import Path
 from typing import Dict, Union, Optional, List, Iterable
-
 import pandas as pd
 
-from catabra.base import logging
-from catabra.base.config import Invocation
+import catabra.core.config as cfg
+
+from catabra.core import logging
 from catabra.util import plotting
 
 
 class AnalysisConfig:
 
     @property
-    def bootstrapping_repetitions(self) -> int:
-        return self._bootstrapping_repetitions
+    def copy_analysis_data(self) -> bool:
+        return self._copy_analysis_data
 
     @property
-    def copy_data(self) -> Union[bool, int, float]:
-        return self._copy_data
+    def time_limit(self) -> int:
+        return self._time_limit
+
+    @property
+    def automl(self) -> str:
+        return self._automl
+
+    @property
+    def explainer(self) -> str:
+        return self._explainer
 
     @property
     def static_plots(self) -> bool:
@@ -26,21 +34,57 @@ class AnalysisConfig:
     def interactive_plots(self) -> bool:
         return self._interactive_plots
 
-    def __init__(self, src: Dict):
-        self._bootstrapping_repetitions = src.get('bootstrapping_repetitions', 0)
-        self._copy_data = src.get('copy_evaluation_data', False)
+    @property
+    def ood_class(self) -> str:
+        return self._ood_class
 
-        self._static_plots = src.get('static_plots', True)
-        self._interactive_plots = src.get('interactive_plots', False)
-        if self._interactive_plots and plotting.plotly_backend is None:
+    @property
+    def ood_src(self) -> str:
+        return self._ood_src
+
+    @property
+    def ood_kwargs(self) -> str:
+        return self._ood_kwargs
+
+    @property
+    def automl_kwargs(self) -> dict:
+        return self._automl_kwargs
+
+    @property
+    def jobs(self) -> int:
+        return self._jobs
+
+    @property
+    def src(self):
+        return self._src
+
+    def get(self, var: str, default=None):
+        return getattr(self, var, default)
+
+    def __init__(self, src: Dict = {}, default_cfg: str = None):
+        if src is None:
+            src = {}
+        self._src = cfg.add_defaults(src, default=default_cfg)
+        self._copy_analysis_data = self._src.get('copy_analysis_data', False)
+        self._time_limit = self._src.get('time_limit')
+        self._automl = self._src.get('automl')
+        if self._automl:
+            self._automl_kwargs = self._src.get(self._automl, {})
+        self._explainer = self._src.get('explainer')
+        self._static_plots = self._src.get('static_plots', True)
+        self._interactive_plots = self._src.get('interactive_plots', False)
+        if self.interactive_plots and plotting.plotly_backend is None:
             logging.warn(plotting.PLOTLY_WARNING)
             self._interactive_plots = False
-
-        # TODO
+        self._jobs = self._src.get('jobs', -1)
+        ood = self._src.get('ood', {})
+        self._ood_class = ood.get('class', None)
+        self._ood_src = ood.get('source', None)
+        self._ood_kwargs = ood.get('kwargs', None)
         # self._metrics = src.get(encoder.task_ + '_metrics', [])
 
 
-class AnalysisInvocation(Invocation):
+class AnalysisInvocation(cfg.Invocation):
 
     @property
     def classify(self) -> Optional[Iterable[Union[str, Path, pd.DataFrame]]]:
@@ -147,11 +191,19 @@ class AnalysisInvocation(Invocation):
         else:
             raise ValueError('At least one of `classify` and `regress` must be None.')
 
+        if self._out is None:
+            self._out = self._table[0]
+            if isinstance(self._out, pd.DataFrame):
+                raise ValueError('Output directory must be specified when passing a DataFrame.')
+            self._out = self._out.parent / (self._out.stem + '_catabra_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
+        else:
+            self.out = io.make_path(self._out, absolute=True)
+
+
     def to_dict(self) -> Dict:
         dic = super().to_dict()
         dic.update(dict(
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in self._table],
-            # TODO:
             target=['<DataFrame>' if isinstance(tgt, pd.DataFrame) else tgt for tgt in self._target],
             classify=self._classify,
             group=self._group,

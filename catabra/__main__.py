@@ -40,9 +40,8 @@ def make_parser():
         )
 
     def _analyze(args: argparse.Namespace):
-        from .analysis import Analyzer
+        from .analysis import analyze
 
-        analyze = Analyzer(invocation=getattr(args, 'from', None))
         analyze(
             *args.table,
             classify=args.classify,
@@ -55,7 +54,8 @@ def make_parser():
             out=args.out,
             config=args.config,
             default_config=args.default_config,
-            jobs=args.jobs
+            jobs=args.jobs,
+            from_invocation=getattr(args, 'from', None)
         )
 
     def _evaluate(args: argparse.Namespace):

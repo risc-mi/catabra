@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 
 from ..util import table as tu
-from ..base import logging, io
+from ..core import logging, io
 from ..util import plotting
-from ..base.paths import CaTabRaPaths
+from ..core.paths import CaTabRaPaths
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -116,6 +116,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     explainer = loader.get_explainer()
     if explainer is None:
         logging.log('### Aborting: no trained prediction model or no explainer params found')
+        return
     global_behavior = explainer.global_behavior()
 
     if split == '':

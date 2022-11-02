@@ -6,7 +6,7 @@ import sklearn
 import joblib
 
 from ..util import metrics
-from ..base import io
+from ..core import io
 
 
 def _preprocess(x, pp: list):

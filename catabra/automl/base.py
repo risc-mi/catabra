@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .fitted_ensemble import FittedEnsemble
+from ..analysis.config import AnalysisConfig
 
 
 class AutoMLBackend:
@@ -34,12 +35,12 @@ class AutoMLBackend:
     def name(cls) -> str:
         raise NotImplementedError()
 
-    def __init__(self, task: str = None, config: dict = None, tmp_folder: Union[Path, str, None] = None):
+    def __init__(self, task: str = None, config: Union[AnalysisConfig, dict] = None, tmp_folder: Union[Path, str, None] = None):
         if task not in ('regression', 'binary_classification', 'multiclass_classification',
                         'multilabel_classification'):
             raise ValueError(f'Unknown prediction task: {task}')
         self.task: str = task
-        self.config: dict = config or {}
+        self.config: Union[AnalysisConfig, dict] = config or {}
         # NEVER pickle Path objects!
         self._tmp_folder: Optional[str] = tmp_folder.as_posix() if isinstance(tmp_folder, Path) else tmp_folder
         self.model_ = None

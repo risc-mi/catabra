@@ -1,6 +1,6 @@
 import pandas as pd
-from catabra.base.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
-from ..base import logging
+from catabra.core.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
+from ..core import logging
 from typing import Union, Tuple, Optional
 
 

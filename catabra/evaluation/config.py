@@ -3,9 +3,11 @@ from typing import Dict, Union, Optional, List
 
 import pandas as pd
 
-from catabra.base import logging
-from catabra.base.config import Invocation
+from catabra.core import logging
 from catabra.util import plotting
+from catabra.core import config as cfg
+
+from catabra.catabra.core import io
 
 
 class EvaluationConfig:
@@ -26,7 +28,9 @@ class EvaluationConfig:
     def interactive_plots(self) -> bool:
         return self._interactive_plots
 
-    def __init__(self, src: Dict):
+    def __init__(self, src: Dict = {}):
+        if src is None:
+            src = {}
         self._bootstrapping_repetitions = src.get('bootstrapping_repetitions', 0)
         self._copy_data = src.get('copy_evaluation_data', False)
 
@@ -40,7 +44,7 @@ class EvaluationConfig:
         # self._metrics = src.get(encoder.task_ + '_metrics', [])
 
 
-class EvaluationInvocation(Invocation):
+class EvaluationInvocation(cfg.Invocation):
 
     @property
     def folder(self) -> Union[str, Path]:
@@ -101,27 +105,39 @@ class EvaluationInvocation(Invocation):
         self._bootstrapping_repetitions = bootstrapping_repetitions
         self._bootstrapping_metrics = bootstrapping_metrics
 
-    def update(self, src: Dict):
+    def update(self, src: Dict = None):
         super().update(src)
-        if self._folder is None:
-            self._folder = src.get('folder')
-        if self._model_id is None:
-            self._model_id = src.get('model_id')
-        if self._explain is None:
-            self._explain = src.get('explain')
-        if self._glob is None:
-            self._glob = src.get('glob')
-        if self._threshold is None:
-            self._threshold = src.get('threshold')
-        if self._bootstrapping_repetitions is None:
-            self._bootstrapping_repetitions = src.get('bootstrapping_repetitions')
-        if self._bootstrapping_metrics is None:
-            self._bootstrapping_metrics = src.get('bootstrapping_metrics')
-        if self._batch_size is None:
-            self._batch_size = src.get('bootstrapping_metrics')
+        if src:
+            if self._folder is None:
+                self._folder = src.get('folder')
+            if self._model_id is None:
+                self._model_id = src.get('model_id')
+            if self._explain is None:
+                self._explain = src.get('explain')
+            if self._glob is None:
+                self._glob = src.get('glob')
+            if self._threshold is None:
+                self._threshold = src.get('threshold')
+            if self._bootstrapping_repetitions is None:
+                self._bootstrapping_repetitions = src.get('bootstrapping_repetitions')
+            if self._bootstrapping_metrics is None:
+                self._bootstrapping_metrics = src.get('bootstrapping_metrics')
+            if self._batch_size is None:
+                self._batch_size = src.get('bootstrapping_metrics')
 
         if self._threshold is None:
             self._threshold = 0.5
+
+        if self._out is None:
+            self._out = self._table[0]
+            if isinstance(self._out, pd.DataFrame):
+                self._out = self._folder / ('eval_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
+            else:
+                self._out = self._folder / ('eval_' + self._out.stem + '_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
+        else:
+            self._out = io.make_path(self._out, absolute=True)
+        if self._out == self._folder:
+            raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
 
     def to_dict(self) -> Dict:
         dic = super().to_dict()
@@ -141,4 +157,33 @@ class EvaluationInvocation(Invocation):
             timestamp=self._start
         ))
         return dic
+
+    def set_models_to_explain(self, model):
+        if self._model_id == '__ensemble__':
+            self._model_id = None
+
+        # TODO: # move to invocation init
+        if self._explain is None:
+            self._explain = set()
+        elif isinstance(self._explain, list):
+
+            self._explain = set(self._explain)
+        elif not isinstance(self._explain, set):
+            self._explain = {self._explain}
+        if '__ensemble__' in self._explain:
+            if self._model_id is None:
+                self._explain = None
+            else:
+                self._explain.remove('__ensemble__')
+                self._explain.update(model.model_ids_)
+        elif '__all__' in self._explain:
+            if self._model_id is None:
+                self._explain = None
+            else:
+                self._explain.remove('__all__')
+                self._explain.add(self._model_id)
+        if isinstance(self._explain, set):
+            if self._model_id is not None and any(e != self._model_id for e in self._invocation._explain):
+                raise ValueError('Cannot explain models that are not being evaluated.')
+            self._explain = list(self._explain)
 

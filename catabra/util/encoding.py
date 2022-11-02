@@ -6,7 +6,7 @@ from sklearn.base import BaseEstimator
 from sklearn.preprocessing import LabelEncoder
 
 from . import common as cu
-from ..base import io
+from ..core import io
 
 
 class Encoder(BaseEstimator):

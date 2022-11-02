@@ -6,7 +6,7 @@ import joblib
 import pandas as pd
 from csv import Sniffer
 
-from catabra.base.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
 
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
