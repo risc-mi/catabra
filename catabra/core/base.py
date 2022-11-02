@@ -33,7 +33,6 @@ class CaTabRaBase:
                 else:
                     self._invocation.out.unlink()
             else:
-                logging.log('### Aborting')
                 return False
 
         self._invocation.out.mkdir(parents=True)

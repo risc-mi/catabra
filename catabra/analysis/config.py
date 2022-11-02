@@ -3,9 +3,9 @@ from typing import Dict, Union, Optional, List, Iterable
 import pandas as pd
 
 import catabra.core.config as cfg
-
 from catabra.core import logging
 from catabra.util import plotting
+from catabra.core import io
 
 
 class AnalysisConfig:
@@ -171,6 +171,7 @@ class AnalysisInvocation(cfg.Invocation):
             if self._default_config is None:
                 self._default_config = src.get('default_config')
 
+    def resolve(self):
         if self._group == '':
             self._group = None
         if self._config_src == '':
@@ -198,7 +199,6 @@ class AnalysisInvocation(cfg.Invocation):
             self._out = self._out.parent / (self._out.stem + '_catabra_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
         else:
             self.out = io.make_path(self._out, absolute=True)
-
 
     def to_dict(self) -> Dict:
         dic = super().to_dict()

@@ -119,13 +119,14 @@ class Evaluator(CaTabRaBase):
             bootstrapping_metrics=bootstrapping_metrics
         )
         self._invocation.update(self._invocation_src)
+        self._invocation.resolve()
 
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 
         loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
         config_dict = loader.get_config()
-        config = EvaluationConfig(config_dict)
+        self._config = EvaluationConfig(config_dict)
 
         self._resolve_output_dir()
 
@@ -139,8 +140,8 @@ class Evaluator(CaTabRaBase):
                 raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
 
             # copy test data
-            copy_data = config.copy_data
-            if isinstance(config.copy_data, (int, float)):
+            copy_data = self._config.copy_data
+            if isinstance(self._config.copy_data, (int, float)):
                 copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
             if copy_data:
                 io.write_df(df, self._invocation.out / CaTabRaPaths.TestData)
@@ -153,7 +154,7 @@ class Evaluator(CaTabRaBase):
 
             model = loader.get_model_or_fitted_ensemble()
             ood = loader.get_ood()
-            apply_odd = ood is not None
+            apply_odd = False # ood is not None
             if apply_odd:
                 ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
                 ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
@@ -168,7 +169,6 @@ class Evaluator(CaTabRaBase):
                                                            classify=encoder.task_ != 'regression',
                                                            fn=directory / CaTabRaPaths.Statistics)
                     if apply_odd:
-                        print(directory / CaTabRaPaths.OODStats)
                         io.write_df(ood_predictions.loc[mask,:], directory / CaTabRaPaths.OODStats)
 
             if encoder.task_ is None or model is None:
@@ -179,12 +179,15 @@ class Evaluator(CaTabRaBase):
 
                 main_metrics = config_dict.get(encoder.task_ + '_metrics', [])
 
+
+                if self._invocation.bootstrapping_repetitions is None:
+                    self._invocation.bootstrapping_repetitions = self._config.bootstrapping_repetitions
                 if encoder.task_ == 'regression':
-                    self.evaluate_regression_task(_iter_splits, encoder, config.interactive_plots, main_metrics, model,
-                                                  sample_weights, config.static_plots, x_test, y_test)
+                    self.evaluate_regression_task(_iter_splits, encoder, self._config.interactive_plots, main_metrics, model,
+                                                  sample_weights, self._config.static_plots, x_test, y_test)
                 else:
-                    self._evaluate_classification_task(_iter_splits, encoder, config.interactive_plots, main_metrics, model,
-                                                       sample_weights, config.static_plots, x_test, y_test)
+                    self._evaluate_classification_task(_iter_splits, encoder, self._config.interactive_plots, main_metrics, model,
+                                                       sample_weights, self._config.static_plots, x_test, y_test)
 
             end = pd.Timestamp.now()
             logging.log(f'### Evaluation finished at {end}')
@@ -201,7 +204,7 @@ class Evaluator(CaTabRaBase):
     def _evaluate_classification_task(self, _iter_splits, encoder, interactive_plots, main_metrics, model,
                                       sample_weights, static_plots, x_test, y_test):
         y_hat = model.predict_proba(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
-                                    model_id=self._model_id)
+                                    model_id=self._invocation.model_id)
 
         if encoder.task_ == 'multilabel_classification':
             # decoded ground truth and predictions for each target
@@ -284,7 +287,8 @@ class Evaluator(CaTabRaBase):
                            main_metrics=main_metrics,
                            sample_weight=None if sample_weights is None else sample_weights[mask],
                            static_plots=static_plots, interactive_plots=interactive_plots,
-                           bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
+                           bootstrapping_repetitions=self._invocation.bootstrapping_repetitions or
+                                                     self._config.bootstrapping_repetitions or 0,
                            bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                            split=(None if directory == self._invocation.out else directory.stem), verbose=True)
         y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
@@ -365,7 +369,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             plotting.save(_obj, directory / _name)
 
     if main_metrics is None:
-        from catabra.catabra.base.config import DEFAULT_CONFIG
+        from catabra.base.config import DEFAULT_CONFIG
         main_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)

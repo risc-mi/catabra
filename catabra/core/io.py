@@ -270,6 +270,7 @@ class CaTabRaLoader:
         return self._path
 
     def get_config(self) -> Optional[dict]:
+
         return self._load(CaTabRaPaths.Config)
 
     def get_invocation(self) -> Optional[dict]:
@@ -350,5 +351,6 @@ class CaTabRaLoader:
                 return table
 
     def _load(self, name: str):
+        print(self._path / name)
         if (self._path / name).exists():
             return load(self._path / name)

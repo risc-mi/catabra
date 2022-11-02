@@ -53,9 +53,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
 
-    print('from_invocation', from_invocation)
     analyzer = Analyzer(invocation=from_invocation)
-    print('config', config)
     analyzer(
         *table,
         classify=classify,
@@ -93,6 +91,7 @@ class Analyzer(CaTabRaBase):
                                               sample_weight=sample_weight, ignore=ignore, time=time, out=out,
                                               jobs=jobs, config=config, default_config=default_config)
         self._invocation.update(self._invocation_src)
+        self._invocation.resolve()
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 
@@ -109,6 +108,7 @@ class Analyzer(CaTabRaBase):
             # we don't overwrite `config` here, because we want to write its original value into "invocation.json"                                                                                                                                                                                                                                                    # else:
         else:
             self._config = AnalysisConfig()
+
         if self._invocation.out is None:
             self._invocation.out = self._invocation.table[0]
             if isinstance(self._invocation.out, pd.DataFrame):
@@ -118,13 +118,17 @@ class Analyzer(CaTabRaBase):
         else:
             self._invocation.out = io.make_path(self._invocation.out, absolute=True)
         out_ok = self._resolve_output_dir()
+        if out_ok:
+            io.dump(self._config.src, self._invocation.out / CaTabRaPaths.Config)
+        else:
+            logging.log('### Aborting')
+            return
 
         # version info
         versions = cu.get_versions()
 
         # why save before and overwrite?
         # cu.save_versions(versions, (self._out / 'versions.txt').as_posix())
-
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Analysis started at {self._invocation.start}')
             invocation_dict = self._invocation.to_dict()

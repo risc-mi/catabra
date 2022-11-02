@@ -7,7 +7,7 @@ from catabra.core import logging
 from catabra.util import plotting
 from catabra.core import config as cfg
 
-from catabra.catabra.core import io
+from catabra.core import io
 
 
 class EvaluationConfig:
@@ -74,6 +74,10 @@ class EvaluationInvocation(cfg.Invocation):
     def bootstrapping_repetitions(self) -> Optional[int]:
         return self._bootstrapping_repetitions
 
+    @bootstrapping_repetitions.setter
+    def bootstrapping_repetitions(self, value: int):
+        self._bootstrapping_repetitions = value
+
     @property
     def bootstrapping_metrics(self) -> Optional[List]:
         return self._bootstrapping_metrics
@@ -125,6 +129,7 @@ class EvaluationInvocation(cfg.Invocation):
             if self._batch_size is None:
                 self._batch_size = src.get('bootstrapping_metrics')
 
+    def resolve(self):
         if self._threshold is None:
             self._threshold = 0.5
 
