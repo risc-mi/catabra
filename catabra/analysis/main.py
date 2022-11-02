@@ -83,7 +83,7 @@ class Analyzer(CaTabRaBase):
             ignore: Optional[Iterable[str]] = None,
             time: Optional[int] = None,
             out: Union[str, Path, None] = None,
-            config: Union[str, Path, dict, None] = None,
+            config: Union[str, Path, dict, AnalysisConfig, None] = None,
             default_config: Optional[str] = None,
             jobs: Optional[int] = None,
     ):
@@ -103,11 +103,14 @@ class Analyzer(CaTabRaBase):
             self._invocation._config_src = io.make_path(self._invocation.config_src, absolute=True)
             config = io.load(self._invocation.config_src)
             self._config = AnalysisConfig(config, self._invocation.default_config)
+        elif isinstance(config, AnalysisConfig):
+            self._config = config
         else:
             self._config = AnalysisConfig()
 
-
-        out_ok = self._resolve_output_dir()
+        out_ok = self._resolve_output_dir(
+            prompt=f'Output folder "{self._invocation.out.as_posix()}" already exists. Delete?'
+        )
         if out_ok:
             io.dump(self._config.src, self._invocation.out / CaTabRaPaths.Config)
         else:

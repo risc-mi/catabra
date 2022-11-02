@@ -1,17 +1,13 @@
 import shutil
-from abc import abstractmethod
 from pathlib import Path
 from typing import Union, Optional
 import numpy as np
 
 from catabra.core import io, logging
+from catabra.core.config import Invocation
 
 
 class CaTabRaBase:
-
-    @abstractmethod
-    def __call__(self):
-        pass
 
     def __init__(
             self,
@@ -24,10 +20,11 @@ class CaTabRaBase:
         else:
             self._invocation_src = {}
 
-    def _resolve_output_dir(self) -> bool:
+        self._invocation: Invocation = None
+
+    def _resolve_output_dir(self, prompt: str) -> bool:
         if self._invocation.out.exists():
-            if logging.prompt(f'Output folder "{self.invocation.out.as_posix()}" already exists. Delete?',
-                              accepted=['y', 'n'], allow_headless=False) == 'y':
+            if logging.prompt(prompt, accepted=['y', 'n'], allow_headless=False) == 'y':
                 if self._invocation.out.is_dir():
                     shutil.rmtree(self._invocation.out.as_posix())
                 else:

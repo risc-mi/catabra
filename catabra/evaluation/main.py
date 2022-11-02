@@ -128,7 +128,10 @@ class Evaluator(CaTabRaBase):
         config_dict = loader.get_config()
         self._config = EvaluationConfig(config_dict)
 
-        self._resolve_output_dir()
+        out_ok = self._resolve_output_dir(prompt=f'Evaluation folder "{out.as_posix()}" already exists. Delete?')
+        if not out_ok:
+            logging.log('### Aborting')
+            return
 
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Evaluation started at {self._invocation.start}')
