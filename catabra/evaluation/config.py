@@ -1,13 +1,10 @@
 from pathlib import Path
-from typing import Dict, Union, Optional, List
+from typing import Dict, Union, Optional, List, Sized
 
 import pandas as pd
 
-from catabra.core import logging
+from catabra.core import logging, io, config as cfg
 from catabra.util import plotting
-from catabra.core import config as cfg
-
-from catabra.core import io
 
 
 class EvaluationConfig:
@@ -51,12 +48,16 @@ class EvaluationInvocation(cfg.Invocation):
         return self._folder
 
     @property
-    def model_id(self):
+    def model_id(self) -> Optional[str]:
         return self._model_id
 
     @property
-    def explain(self):
+    def explain(self) -> Sized:
         return self._explain
+
+    @explain.setter
+    def explain(self, value: Sized):
+        self._explain = value
 
     @property
     def glob(self) -> Optional[bool]:
@@ -167,7 +168,6 @@ class EvaluationInvocation(cfg.Invocation):
         if self._model_id == '__ensemble__':
             self._model_id = None
 
-        # TODO: # move to invocation init
         if self._explain is None:
             self._explain = set()
         elif isinstance(self._explain, list):

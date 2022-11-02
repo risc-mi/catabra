@@ -175,7 +175,7 @@ class Evaluator(CaTabRaBase):
                         io.write_df(ood_predictions.loc[mask,:], directory / CaTabRaPaths.OODStats)
 
             if encoder.task_ is None or model is None:
-                self._explain = []
+                self._invocation.explain = []
             else:
                 self._invocation.set_models_to_explain(model)
                 # `explain` is now either None or a list: None => explain all models; list => explain only these models
@@ -199,7 +199,7 @@ class Evaluator(CaTabRaBase):
         if self._invocation.explain is None or len(self._invocation.explain) > 0:
             from ..explanation import explain as explain_fn
             explain_fn(df, folder=self._invocation.folder, split=self._invocation.split,
-                       sample_weight=self._invocation.sample_weight, model_id=explain,
+                       sample_weight=self._invocation.sample_weight, model_id=self._invocation.explain,
                        out=self._invocation.out / 'explanations', glob=self._invocation.glob,
                        batch_size=self._invocation.batch_size, jobs=self._invocation.jobs)
 
