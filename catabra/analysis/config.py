@@ -2,10 +2,9 @@ from pathlib import Path
 from typing import Dict, Union, Optional, List, Iterable
 import pandas as pd
 
+from catabra.util import logging, plotting, io
 import catabra.core.config as cfg
-from catabra.core import logging
-from catabra.util import plotting
-from catabra.core import io
+from catabra.core.base import Invocation
 
 
 class AnalysisConfig:
@@ -84,7 +83,7 @@ class AnalysisConfig:
         # self._metrics = src.get(encoder.task_ + '_metrics', [])
 
 
-class AnalysisInvocation(cfg.Invocation):
+class AnalysisInvocation(Invocation):
 
     @property
     def classify(self) -> Optional[Iterable[Union[str, Path, pd.DataFrame]]]:

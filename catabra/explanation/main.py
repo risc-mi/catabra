@@ -4,10 +4,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu
-from ..core import logging, io
+from ..util import table as tu, io, logging
 from ..util import plotting
-from ..core.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,

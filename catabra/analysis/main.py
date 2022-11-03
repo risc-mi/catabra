@@ -4,16 +4,15 @@ import numpy as np
 import pandas as pd
 
 from .config import AnalysisInvocation, AnalysisConfig
-from ..core.config import Invocation
 from ..ood.base import OODDetector
-from ..util import table as tu
+from ..util import table as tu, io, logging
 from ..util import common as cu
-from ..core import logging, io, CaTabRaBase
+from ..core.base import CaTabRaBase, Invocation
 from ..util import plotting
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
 from ..util import statistics
-from ..core.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -74,7 +73,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
 class Analyzer(CaTabRaBase):
 
     @property
-    def invocation_class(self) -> Type[Invocation]:
+    def invocation_class(self) -> Type[AnalysisInvocation]:
         return AnalysisInvocation
 
     def _call(

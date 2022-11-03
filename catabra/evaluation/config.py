@@ -3,8 +3,8 @@ from typing import Dict, Union, Optional, List, Sized
 
 import pandas as pd
 
-from catabra.core import logging, io, config as cfg
-from catabra.util import plotting
+from catabra.core import Invocation, config as cfg
+from catabra.util import plotting, logging, io
 
 
 class EvaluationConfig:
@@ -41,7 +41,7 @@ class EvaluationConfig:
         # self._metrics = src.get(encoder.task_ + '_metrics', [])
 
 
-class EvaluationInvocation(cfg.Invocation):
+class EvaluationInvocation(Invocation):
 
     @property
     def folder(self) -> Union[str, Path]:

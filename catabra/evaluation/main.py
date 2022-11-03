@@ -4,14 +4,13 @@ import numpy as np
 import pandas as pd
 
 from .config import EvaluationConfig, EvaluationInvocation
-from ..core.config import Invocation
-from ..util import table as tu
-from ..core import logging, io, CaTabRaBase
+from ..util import table as tu, io, logging
+from ..core import CaTabRaBase
 from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
-from catabra.core.paths import CaTabRaPaths
+from catabra.core import CaTabRaPaths, Invocation
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -69,7 +68,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
 class Evaluator(CaTabRaBase):
 
     @property
-    def invocation_class(self) -> Type[Invocation]:
+    def invocation_class(self) -> Type[EvaluationInvocation]:
         return EvaluationInvocation
 
     def _call(
@@ -118,14 +117,6 @@ class Evaluator(CaTabRaBase):
         explicitly specified are taken from this dict; this also includes the table to analyze.
         """
 
-        # self._invocation = EvaluationInvocation(
-        #     *table, folder=folder, model_id=model_id, glob=glob, split=split, sample_weight=sample_weight, out=out,
-        #     jobs=jobs, batch_size=batch_size, threshold=threshold, bootstrapping_repetitions=bootstrapping_repetitions,
-        #     bootstrapping_metrics=bootstrapping_metrics
-        # )
-        # self._invocation.update(self._invocation_src)
-        # self._invocation.resolve()
-
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 
@@ -133,7 +124,7 @@ class Evaluator(CaTabRaBase):
         config_dict = loader.get_config()
         self._config = EvaluationConfig(config_dict)
 
-        out_ok = self._resolve_output_dir(prompt=f'Evaluation folder "{out.as_posix()}" already exists. Delete?')
+        out_ok = self._resolve_output_dir(prompt=f'Evaluation folder "{self._invocation.out.as_posix()}" already exists. Delete?')
         if not out_ok:
             logging.log('### Aborting')
             return
@@ -177,7 +168,7 @@ class Evaluator(CaTabRaBase):
                                                            classify=encoder.task_ != 'regression',
                                                            fn=directory / CaTabRaPaths.Statistics)
                     if apply_odd:
-                        io.write_df(ood_predictions.loc[mask,:], directory / CaTabRaPaths.OODStats)
+                        io.write_df(ood_predictions.loc[mask, :], directory / CaTabRaPaths.OODStats)
 
             if encoder.task_ is None or model is None:
                 self._invocation.explain = []

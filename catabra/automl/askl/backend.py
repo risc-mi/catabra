@@ -14,7 +14,7 @@ import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
 
-from ...core import logging, io
+from ...util import io, logging
 from ...util.common import repr_timedelta
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
