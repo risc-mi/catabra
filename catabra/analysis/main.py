@@ -155,7 +155,7 @@ class Analyzer(CaTabRaBase):
             # grouping
             # if self._group in df_train.columns: # check not necessary as errors='ignore')
             self._invocation.ignore.update({self._invocation.group})
-            group_indices = self.get_group_indices(df_train, self._invocation.group, split_masks)
+            group_indices = self.get_group_indices(df, df_train, self._invocation.group, split_masks)
 
             sample_weights = self._get_sample_weights(df_train)
             self.check_for_id_cols(df_train, id_cols, target)
@@ -312,30 +312,30 @@ class Analyzer(CaTabRaBase):
             self._invocation.ignore.update(obj_cols)
 
     @staticmethod
-    def get_group_indices(df, group, split_masks):
-        if group is None and df.index.name is not None:
-            group = df.index.name
+    def get_group_indices(df, df_train, group, split_masks):
+        if group is None and df_train.index.name is not None:
+            group = df_train.index.name
             logging.log(f'Grouping by row index "{group}"')
 
         if group is not None:
-            if group == df.index.name:
+            if group == df_train.index.name:
                 for k, m in split_masks.items():
-                    n = len(np.intersect1d(df.index, df[m].index))
+                    n = len(np.intersect1d(df_train.index, df[m].index))
                     if n > 0:
                         logging.warn(f'{n} groups in "{k}" overlap with training set')
-                if df.index.is_unique:
+                if df_train.index.is_unique:
                     group = None
                 else:
-                    group = df.index.values
+                    group = df_train.index.values
             elif group in df.columns:
                 for k, m in split_masks.items():
-                    n = len(np.intersect1d(df[group], df.loc[m, group]))
+                    n = len(np.intersect1d(df_train[group], df.loc[m, group]))
                     if n > 0:
                         logging.warn(f'{n} groups in "{k}" overlap with training set')
-                if df[group].is_unique:
+                if df_train[group].is_unique:
                     group = None
                 else:
-                    group = df[group].values
+                    group = df_train[group].values
             else:
                 raise ValueError(f'"{group}" is no column of the specified table.')
         return group
