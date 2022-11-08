@@ -226,9 +226,9 @@ class Analyzer(CaTabRaBase):
 
     def _make_training_plots(self, hist):
         if self._config.get('static_plots', True):
-            plotting.save(plot_training_history(hist, interactive=False), self._invocation.out)
+            plotting.save(self.plot_training_history(hist, interactive=False), self._invocation.out)
         if self._config.get('interactive_plots', False):
-            plotting.save(plot_training_history(hist, interactive=True), self._invocation.out)
+            plotting.save(self.plot_training_history(hist, interactive=True), self._invocation.out)
 
     def _make_ood_detector(self, x_train, y_train):
         ood = self._config.get('ood') or {}
@@ -369,42 +369,42 @@ class Analyzer(CaTabRaBase):
 
         return df, target
 
+    @staticmethod
+    def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:
+        """
+        Plot the evolution of performance scores during model training.
+        :param hist: The history to plot, as saved in "training_history.xlsx".
+        :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
+        :return: Dict with single key "training_history", which is mapped to a Matplotlib or plotly figure object.
+        The sole reason for returning a dict is consistency with other plotting functions.
+        """
 
-def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:
-    """
-    Plot the evolution of performance scores during model training.
-    :param hist: The history to plot, as saved in "training_history.xlsx".
-    :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
-    :return: Dict with single key "training_history", which is mapped to a Matplotlib or plotly figure object.
-    The sole reason for returning a dict is consistency with other plotting functions.
-    """
+        if isinstance(hist, (str, Path)):
+            hist = io.read_df(hist)
 
-    if isinstance(hist, (str, Path)):
-        hist = io.read_df(hist)
-
-    if len(hist) <= 1:
-        return {}
-    elif interactive:
-        if plotting.plotly_backend is None:
-            logging.warn(plotting.PLOTLY_WARNING)
+        if len(hist) <= 1:
             return {}
+        elif interactive:
+            if plotting.plotly_backend is None:
+                logging.warn(plotting.PLOTLY_WARNING)
+                return {}
+            else:
+                backend = plotting.plotly_backend
         else:
-            backend = plotting.plotly_backend
-    else:
-        backend = plotting.mpl_backend
+            backend = plotting.mpl_backend
 
-    if 'timestamp' in hist.columns:
-        x = hist['timestamp'] - hist['timestamp'].iloc[0]
-    else:
-        x = np.arange(len(hist))
-    ms = [c for c in hist.columns if c.startswith('val_') or c.startswith('train_') or c.startswith('ensemble_val_')]
-    opt = ('model_id', 'type', 'ensemble_weight')
-    if any(c in hist.columns for c in opt):
-        text = [''] * len(hist)
-        for c in opt:
-            if c in hist.columns:
-                text = [((t + ', ') if t else t) + c + '=' + ('{:.2f}'.format(v) if isinstance(v, float) else str(v))
-                        for t, v in zip(text, hist[c])]
-    else:
-        text = None
-    return dict(training_history=backend.training_history(x, [hist[m] for m in ms], legend=ms, text=text))
+        if 'timestamp' in hist.columns:
+            x = hist['timestamp'] - hist['timestamp'].iloc[0]
+        else:
+            x = np.arange(len(hist))
+        ms = [c for c in hist.columns if c.startswith('val_') or c.startswith('train_') or c.startswith('ensemble_val_')]
+        opt = ('model_id', 'type', 'ensemble_weight')
+        if any(c in hist.columns for c in opt):
+            text = [''] * len(hist)
+            for c in opt:
+                if c in hist.columns:
+                    text = [((t + ', ') if t else t) + c + '=' + ('{:.2f}'.format(v) if isinstance(v, float) else str(v))
+                            for t, v in zip(text, hist[c])]
+        else:
+            text = None
+        return dict(training_history=backend.training_history(x, [hist[m] for m in ms], legend=ms, text=text))

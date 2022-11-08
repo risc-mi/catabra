@@ -171,7 +171,7 @@ from catabra import analysis
 from catabra.util import plotting
 
 # create plot, and return it in dict with single key "training_history"
-plot = analysis.plot_training_history(
+plot = analysis.Analyzer.plot_training_history(
     "training_history.xlsx",
     interactive=...
 )
