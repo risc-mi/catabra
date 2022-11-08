@@ -5,7 +5,7 @@ import pandas as pd
 import shap
 
 from .kernel_explainer import CustomKernelExplainer
-from catabra.base.logging import progress_bar
+from ...util.logging import progress_bar
 from ..base import TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
 from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
 
