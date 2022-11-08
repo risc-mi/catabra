@@ -351,6 +351,5 @@ class CaTabRaLoader:
                 return table
 
     def _load(self, name: str):
-        print(self._path / name)
         if (self._path / name).exists():
             return load(self._path / name)
