@@ -1,11 +1,6 @@
-from pathlib import Path
-from typing import Optional, Union, Dict, Tuple
+from typing import Optional
 import copy
 
-import pandas as pd
-from pandas import DataFrame
-
-from catabra.util import io
 
 DEFAULT_CONFIG = {
     "automl": "auto-sklearn",       # AutoML backend; currently, only "auto-sklearn" is supported
@@ -168,10 +163,8 @@ INTERPRETABLE_CONFIG = {
 }
 
 DEFAULT_CONFIGS = {
-    None: DEFAULT_CONFIG,
     'basic': BASIC_CONFIG,
-    'interpretable': INTERPRETABLE_CONFIG,
-    'full': {} # TODO: check
+    'interpretable': INTERPRETABLE_CONFIG
 }
 
 
@@ -183,7 +176,6 @@ def add_defaults(config: dict, default: Optional[str] = None) -> dict:
     :return: The updated config dict.
     """
     default = DEFAULT_CONFIGS.get(default, DEFAULT_CONFIG)
-    print(default)
     for k, v in default.items():
         if k not in config:
             config[k] = copy.deepcopy(v)

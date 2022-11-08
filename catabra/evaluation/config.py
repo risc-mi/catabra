@@ -3,42 +3,8 @@ from typing import Dict, Union, Optional, List, Sized
 
 import pandas as pd
 
-from catabra.core import Invocation, config as cfg
-from catabra.util import plotting, logging, io
-
-
-class EvaluationConfig:
-
-    @property
-    def bootstrapping_repetitions(self) -> int:
-        return self._bootstrapping_repetitions
-
-    @property
-    def copy_data(self) -> Union[bool, int, float]:
-        return self._copy_data
-
-    @property
-    def static_plots(self) -> bool:
-        return self._static_plots
-
-    @property
-    def interactive_plots(self) -> bool:
-        return self._interactive_plots
-
-    def __init__(self, src: Dict = {}):
-        if src is None:
-            src = {}
-        self._bootstrapping_repetitions = src.get('bootstrapping_repetitions', 0)
-        self._copy_data = src.get('copy_evaluation_data', False)
-
-        self._static_plots = src.get('static_plots', True)
-        self._interactive_plots = src.get('interactive_plots', False)
-        if self._interactive_plots and plotting.plotly_backend is None:
-            logging.warn(plotting.PLOTLY_WARNING)
-            self._interactive_plots = False
-
-        # TODO
-        # self._metrics = src.get(encoder.task_ + '_metrics', [])
+from ..core import Invocation
+from ..util import io
 
 
 class EvaluationInvocation(Invocation):

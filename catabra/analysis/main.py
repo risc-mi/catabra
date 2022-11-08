@@ -3,16 +3,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .config import AnalysisInvocation, AnalysisConfig
+from .config import AnalysisInvocation
 from ..ood.base import OODDetector
-from ..util import table as tu, io, logging
+from ..util import table as tu, io, logging, plotting, statistics
 from ..util import common as cu
-from ..core.base import CaTabRaBase, Invocation
-from ..util import plotting
+from ..core.base import CaTabRaBase
+from ..core import config as cfg
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
-from ..util import statistics
-from catabra.core.paths import CaTabRaPaths
+from ..core.paths import CaTabRaPaths
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -76,22 +75,7 @@ class Analyzer(CaTabRaBase):
     def invocation_class(self) -> Type[AnalysisInvocation]:
         return AnalysisInvocation
 
-    def _call(
-            self,
-            *table: Union[str, Path, pd.DataFrame],
-            classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
-            regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
-            group: Optional[str] = None,
-            split: Optional[str] = None,
-            sample_weight: Optional[str] = None,
-            ignore: Optional[Iterable[str]] = None,
-            time: Optional[int] = None,
-            out: Union[str, Path, None] = None,
-            config: Union[str, Path, dict, AnalysisConfig, None] = None,
-            default_config: Optional[str] = None,
-            jobs: Optional[int] = None,
-    ):
-
+    def _call(self):
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 
@@ -102,17 +86,17 @@ class Analyzer(CaTabRaBase):
         if isinstance(self._invocation.config_src, (str, Path)):
             self._invocation._config_src = io.make_path(self._invocation.config_src, absolute=True)
             config = io.load(self._invocation.config_src)
-            self._config = AnalysisConfig(config, self._invocation.default_config)
-        elif isinstance(config, AnalysisConfig):
-            self._config = config
+        elif isinstance(self._invocation.config_src, dict):
+            config = self._invocation.config_src.copy()
         else:
-            self._config = AnalysisConfig()
+            config = {}
+        self._config = cfg.add_defaults(config, default=self._invocation.default_config)
 
         out_ok = self._resolve_output_dir(
             prompt=f'Output folder "{self._invocation.out.as_posix()}" already exists. Delete?'
         )
         if out_ok:
-            io.dump(self._config.src, self._invocation.out / CaTabRaPaths.Config)
+            io.dump(self._config, self._invocation.out / CaTabRaPaths.Config)
         else:
             logging.log('### Aborting')
             return
@@ -120,8 +104,7 @@ class Analyzer(CaTabRaBase):
         # version info
         versions = cu.get_versions()
 
-        # why save before and overwrite?
-        # cu.save_versions(versions, (self._out / 'versions.txt').as_posix())
+        cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Analysis started at {self._invocation.start}')
             invocation_dict = self._invocation.to_dict()
@@ -146,14 +129,13 @@ class Analyzer(CaTabRaBase):
             self._invocation.ignore.update(self._invocation.split)
 
             # copy training data
-            copy_data = self._config.copy_analysis_data
+            copy_data = self._config.get('copy_analysis_data', False)
             if isinstance(copy_data, (int, float)):
                 copy_data = df_train.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
             if copy_data:
                 io.write_df(df_train, self._invocation.out / CaTabRaPaths.TrainData)
 
             # grouping
-            # if self._group in df_train.columns: # check not necessary as errors='ignore')
             self._invocation.ignore.update({self._invocation.group})
             group_indices = self.get_group_indices(df, df_train, self._invocation.group, split_masks)
 
@@ -173,27 +155,26 @@ class Analyzer(CaTabRaBase):
             # descriptive statistics for overall dataset
             statistics.save_descriptive_statistics(df=df.drop(self._invocation.ignore, axis=1, errors='ignore'),
                                                    target=target, classify=self._invocation.classify,
-                                                   fn =self._invocation.out / CaTabRaPaths.Statistics)
+                                                   fn=self._invocation.out / CaTabRaPaths.Statistics)
 
             # encoder
             encoder = Encoder(classify=self._invocation.classify)
             x_train, y_train = encoder.fit_transform(df_train, y=y_train)
             encoder.dump(self._invocation.out / CaTabRaPaths.Encoder)
 
-            # backend = None
-            # why time_limit and time?
-            if y_train is not None and (self._config.time_limit if self._invocation.time is None else self._invocation.time) != 0:
-                if self._config.automl is not None:
-                    backend = AutoMLBackend.get(self._config.automl, task=encoder.task_, config=self._config.src,
-                                                tmp_folder=self._invocation.out / self._config.automl)
+            if y_train is not None and (self._config.get('time_limit') if self._invocation.time is None else self._invocation.time) != 0:
+                automl = self._config.get('automl')
+                if automl is not None:
+                    backend = AutoMLBackend.get(automl, task=encoder.task_, config=self._config,
+                                                tmp_folder=self._invocation.out / automl)
                     if backend is None:
-                        raise ValueError(f'Unknown AutoML backend: {self._config.automl}')
-                    logging.log(f'Using AutoML-backend {self._config.automl} for {encoder.task_}')
+                        raise ValueError(f'Unknown AutoML backend: {automl}')
+                    logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
                     versions.update(backend.get_versions())
                     cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())   # overwrite existing file
 
-                    backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights, time=self._invocation.time,
-                                jobs=self._invocation.jobs, dataset_name=dataset_name)
+                    backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights,
+                                time=self._invocation.time, jobs=self._invocation.jobs, dataset_name=dataset_name)
                     io.dump(backend, self._invocation.out / CaTabRaPaths.Model)
                     io.dump(io.to_json(backend.summary()), self._invocation.out / CaTabRaPaths.ModelSummary)
 
@@ -206,7 +187,7 @@ class Analyzer(CaTabRaBase):
                     logging.log('\n'.join(msg))
                     self._make_training_plots(hist)
 
-                    self._make_explainer(self._config.explainer, backend, encoder, x_train, y_train, versions)
+                    self._make_explainer(backend, encoder, x_train, y_train, versions)
 
             cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())  # overwrite existing file
             self._make_ood_detector(x_train, y_train)
@@ -244,29 +225,28 @@ class Analyzer(CaTabRaBase):
         return df_train, split_masks
 
     def _make_training_plots(self, hist):
-        if self._config.static_plots:
+        if self._config.get('static_plots', True):
             plotting.save(plot_training_history(hist, interactive=False), self._invocation.out)
-        if self._config.interactive_plots:
+        if self._config.get('interactive_plots', False):
             plotting.save(plot_training_history(hist, interactive=True), self._invocation.out)
 
     def _make_ood_detector(self, x_train, y_train):
-        if self._config.ood_class is not None:
-            ood = OODDetector.create(
-                self._config.ood_class,
-                source=self._config.ood_src,
-                kwargs=self._config.ood_kwargs
-            )
+        ood = self._config.get('ood') or {}
+        ood_class = ood.get('class')
+        if ood_class is not None:
+            ood = OODDetector.create(ood_class, source=ood.get('source'), kwargs=ood.get('kwargs'))
             ood.fit(x_train, y_train)
             io.dump(ood, self._invocation.out / CaTabRaPaths.OODModel)
 
-    def _make_explainer(self, explainer_name: str, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
+    def _make_explainer(self, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
                         versions) -> Optional['EnsembleExplainer']:
         from ..explanation import EnsembleExplainer
-        logging.log(f'Creating {explainer_name} explainer')
+        explainer = self._config.get('explainer')
+        logging.log(f'Creating {explainer} explainer')
 
         try:
             explainer = EnsembleExplainer.get(
-                explainer_name,
+                explainer,
                 ensemble=backend.fitted_ensemble(),
                 feature_names=encoder.feature_names_,
                 target_names=encoder.get_target_or_class_names(),
@@ -275,12 +255,11 @@ class Analyzer(CaTabRaBase):
             )
 
             if explainer is None:
-                logging.warn(f'Unknown explanation backend: {explainer_name}')
+                logging.warn(f'Unknown explanation backend: {self._config["explainer"]}')
             else:
-                if explainer:
-                    (self._invocation.out / explainer.name()).mkdir(exist_ok=True, parents=True)
-                    io.dump(explainer.params_, self._invocation.out / explainer.name() / 'params.joblib')
-                    versions.update(explainer.get_versions())
+                (self._invocation.out / explainer.name()).mkdir(exist_ok=True, parents=True)
+                io.dump(explainer.params_, self._invocation.out / explainer.name() / 'params.joblib')
+                versions.update(explainer.get_versions())
         except Exception as e:  # noqa
             logging.warn(f'Error when creating explainer; skipping\n' + str(e))
 
@@ -384,8 +363,8 @@ class Analyzer(CaTabRaBase):
                 obj_cols = [c for c in df.columns if df[c].dtype.name == 'object' and c in target]
                 if obj_cols:
                     raise ValueError(
-                        f'{len(obj_cols)} target columns have object data type: ' + cu.repr_list(obj_cols,
-                                                                                                 brackets=False)
+                        f'{len(obj_cols)} target columns have object data type: ' +
+                        cu.repr_list(obj_cols, brackets=False)
                     )
 
         return df, target

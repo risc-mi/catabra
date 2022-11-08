@@ -2,85 +2,8 @@ from pathlib import Path
 from typing import Dict, Union, Optional, List, Iterable
 import pandas as pd
 
-from catabra.util import logging, plotting, io
-import catabra.core.config as cfg
-from catabra.core.base import Invocation
-
-
-class AnalysisConfig:
-
-    @property
-    def copy_analysis_data(self) -> bool:
-        return self._copy_analysis_data
-
-    @property
-    def time_limit(self) -> int:
-        return self._time_limit
-
-    @property
-    def automl(self) -> str:
-        return self._automl
-
-    @property
-    def explainer(self) -> str:
-        return self._explainer
-
-    @property
-    def static_plots(self) -> bool:
-        return self._static_plots
-
-    @property
-    def interactive_plots(self) -> bool:
-        return self._interactive_plots
-
-    @property
-    def ood_class(self) -> str:
-        return self._ood_class
-
-    @property
-    def ood_src(self) -> str:
-        return self._ood_src
-
-    @property
-    def ood_kwargs(self) -> str:
-        return self._ood_kwargs
-
-    @property
-    def automl_kwargs(self) -> dict:
-        return self._automl_kwargs
-
-    @property
-    def jobs(self) -> int:
-        return self._jobs
-
-    @property
-    def src(self):
-        return self._src
-
-    def get(self, var: str, default=None):
-        return getattr(self, var, default)
-
-    def __init__(self, src: Dict = {}, default_cfg: str = None):
-        if src is None:
-            src = {}
-        self._src = cfg.add_defaults(src, default=default_cfg)
-        self._copy_analysis_data = self._src.get('copy_analysis_data', False)
-        self._time_limit = self._src.get('time_limit')
-        self._automl = self._src.get('automl')
-        if self._automl:
-            self._automl_kwargs = self._src.get(self._automl, {})
-        self._explainer = self._src.get('explainer')
-        self._static_plots = self._src.get('static_plots', True)
-        self._interactive_plots = self._src.get('interactive_plots', False)
-        if self.interactive_plots and plotting.plotly_backend is None:
-            logging.warn(plotting.PLOTLY_WARNING)
-            self._interactive_plots = False
-        self._jobs = self._src.get('jobs', -1)
-        ood = self._src.get('ood', {})
-        self._ood_class = ood.get('class', None)
-        self._ood_src = ood.get('source', None)
-        self._ood_kwargs = ood.get('kwargs', None)
-        # self._metrics = src.get(encoder.task_ + '_metrics', [])
+from ..util import io
+from ..core.base import Invocation
 
 
 class AnalysisInvocation(Invocation):

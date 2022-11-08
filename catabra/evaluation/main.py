@@ -3,14 +3,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .config import EvaluationConfig, EvaluationInvocation
+from .config import EvaluationInvocation
 from ..util import table as tu, io, logging
 from ..core import CaTabRaBase
 from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
-from catabra.core import CaTabRaPaths, Invocation
+from ..core import CaTabRaPaths
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -53,6 +53,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         *table,
         folder=folder,
         model_id=model_id,
+        explain=explain,
         glob=glob,
         split=split,
         sample_weight=sample_weight,
@@ -71,58 +72,12 @@ class Evaluator(CaTabRaBase):
     def invocation_class(self) -> Type[EvaluationInvocation]:
         return EvaluationInvocation
 
-    def _call(
-        self,
-        *table: Union[str, Path, pd.DataFrame],
-        folder: Union[str, Path] = None,
-        model_id=None, explain=None,
-        glob: Optional[bool] = False,
-        split: Optional[str] = None,
-        sample_weight: Optional[str] = None,
-        out: Union[str, Path, None] = None,
-        jobs: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        threshold: Optional[float] = None,
-        bootstrapping_repetitions: Optional[int] = None,
-        bootstrapping_metrics: Optional[list] = None
-    ):
-        """
-        Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
-        :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
-        a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
-        :param folder: The folder containing the CaTabRa object to evaluate.
-        :param model_id: Optional, ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained
-        model or the entire ensemble are evaluated.
-        :param explain: Explain prediction model(s). If "__all__", all models specified by `model_id` are explained;
-        otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are evaluated.
-        :param glob: Whether to create global instead of local explanations.
-        :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
-        subset is evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to
-        carry any semantic information about training and test sets.
-        :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
-        Sample weights are used both for training and evaluating prediction models.
-        :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
-        with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
-        should be replaced; otherwise, it is automatically created.
-        :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
-        :param batch_size: Optional, batch size used for applying the prediction model.
-        :param threshold: Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and
-        bootstrapped performance results are reported for this particular threshold.
-        :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
-        "bootstrapping_repetitions" config param.
-        :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
-        of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
-        current prediction task are computed. Ignored if bootstrapping is disabled.
-        :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-        explicitly specified are taken from this dict; this also includes the table to analyze.
-        """
-
+    def _call(self):
         if len(self._invocation.table) == 0:
             raise ValueError('No table specified.')
 
         loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
-        config_dict = loader.get_config()
-        self._config = EvaluationConfig(config_dict)
+        self._config = loader.get_config()
 
         out_ok = self._resolve_output_dir(prompt=f'Evaluation folder "{self._invocation.out.as_posix()}" already exists. Delete?')
         if not out_ok:
@@ -139,8 +94,8 @@ class Evaluator(CaTabRaBase):
                 raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
 
             # copy test data
-            copy_data = self._config.copy_data
-            if isinstance(self._config.copy_data, (int, float)):
+            copy_data = self._config.get('copy_evaluation_data', False)
+            if isinstance(copy_data, (int, float)):
                 copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
             if copy_data:
                 io.write_df(df, self._invocation.out / CaTabRaPaths.TestData)
@@ -176,13 +131,13 @@ class Evaluator(CaTabRaBase):
                 self._invocation.set_models_to_explain(model)
                 # `explain` is now either None or a list: None => explain all models; list => explain only these models
 
-                main_metrics = config_dict.get(encoder.task_ + '_metrics', [])
+                main_metrics = self._config.get(encoder.task_ + '_metrics', [])
 
                 if self._invocation.bootstrapping_repetitions is None:
-                    self._invocation.bootstrapping_repetitions = self._config.bootstrapping_repetitions
+                    self._invocation.bootstrapping_repetitions = self._config.get('bootstrapping_repetitions', 0)
                 if encoder.task_ == 'regression':
-                    self.evaluate_regression_task(_iter_splits, encoder, main_metrics, model,
-                                                  sample_weights, x_test, y_test)
+                    self._evaluate_regression_task(_iter_splits, encoder, main_metrics, model,
+                                                   sample_weights, x_test, y_test)
                 else:
                     self._evaluate_classification_task(_iter_splits, encoder, main_metrics, model,
                                                        sample_weights, x_test, y_test)
@@ -228,7 +183,8 @@ class Evaluator(CaTabRaBase):
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
                                threshold=self._invocation.threshold,
-                               static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
+                               static_plots=self._config.get('static_plots', True),
+                               interactive_plots=self._config.get('interactive_plots', False),
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                                bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                                split=(None if directory == self._invocation.out else directory.stem), verbose=True)
@@ -264,12 +220,13 @@ class Evaluator(CaTabRaBase):
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
                                threshold=self._invocation.threshold,
-                               static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
+                               static_plots=self._config.get('static_plots', True),
+                               interactive_plots=self._config.get('interactive_plots', False),
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                                bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                                split=(None if directory == self._invocation.out else directory.stem), verbose=True)
 
-    def evaluate_regression_task(self, _iter_splits, encoder, main_metrics, model, sample_weights, x_test, y_test):
+    def _evaluate_regression_task(self, _iter_splits, encoder, main_metrics, model, sample_weights, x_test, y_test):
         y_hat = model.predict(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
                               model_id=self._invocation.model_id)
         if y_hat.ndim == 1:
@@ -283,7 +240,8 @@ class Evaluator(CaTabRaBase):
                            y_hat_decoded=y_hat_decoded[mask], y_true_decoded=y_test_decoded[mask],
                            main_metrics=main_metrics,
                            sample_weight=None if sample_weights is None else sample_weights[mask],
-                           static_plots=self._config.static_plots, interactive_plots=self._config.interactive_plots,
+                           static_plots=self._config.get('static_plots', True),
+                           interactive_plots=self._config.get('interactive_plots', False),
                            bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
                            bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                            split=(None if directory == self._invocation.out else directory.stem), verbose=True)
@@ -1584,7 +1542,6 @@ def _get_default_metrics(task: str, average: str = 'macro') -> list:
     return []
 
 
-# TODO: data class
 _REGRESSION_METRICS = ['r2', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error',
                        'mean_squared_log_error', 'median_absolute_error', 'mean_absolute_percentage_error',
                        'max_error', 'explained_variance', 'mean_poisson_deviance', 'mean_gamma_deviance']
