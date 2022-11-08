@@ -6,7 +6,7 @@ import joblib
 import pandas as pd
 from csv import Sniffer
 
-from catabra.core.paths import CaTabRaPaths
+from ..core.paths import CaTabRaPaths
 
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
@@ -29,7 +29,7 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
     file.
     :param fn: The file to read.
     :param key: The key(s) in the HDF5 file, if `fn` is an HDF5 file. Defaults to "table". If an iterable, all
-    keys are read an concatenated along the row axis.
+    keys are read and concatenated along the row axis.
     :return: A DataFrame.
     """
     fn = make_path(fn)

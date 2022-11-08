@@ -93,25 +93,6 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             return
     out.mkdir(parents=True)
 
-    if out is None:
-        out = table[0]
-        if isinstance(out, pd.DataFrame):
-            raise ValueError('Output directory must be specified when passing a DataFrame.')
-        out = out.parent / (out.stem + '_catabra_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-    else:
-        out = io.make_path(out, absolute=True)
-    if out.exists():
-        if logging.prompt(f'Output folder "{out.as_posix()}" already exists. Delete?',
-                          accepted=['y', 'n'], allow_headless=False) == 'y':
-            if out.is_dir():
-                shutil.rmtree(out.as_posix())
-            else:
-                out.unlink()
-        else:
-            logging.log('### Aborting')
-            return
-    out.mkdir(parents=True)
-
     explainer = loader.get_explainer()
     if explainer is None:
         logging.log('### Aborting: no trained prediction model or no explainer params found')
@@ -250,13 +231,17 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     if glob:
         explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
                                                       batch_size=batch_size, model_id=model_id, show_progress=verbose)
+        if static_plots:
+            _save_plots(plot_bars(explanations, interactive=False, title=title), 'static_plots')
+        if interactive_plots:
+            _save_plots(plot_bars(explanations, interactive=True, title=title), 'interactive_plots')
     else:
         explanations: dict = explainer.explain(x, jobs=jobs, batch_size=batch_size,
                                                model_id=model_id, show_progress=verbose)
-    if static_plots:
-        _save_plots(plot_beeswarms(explanations, features=x, interactive=False, title=title), 'static_plots')
-    if interactive_plots:
-        _save_plots(plot_beeswarms(explanations, features=x, interactive=True, title=title), 'interactive_plots')
+        if static_plots:
+            _save_plots(plot_beeswarms(explanations, features=x, interactive=False, title=title), 'static_plots')
+        if interactive_plots:
+            _save_plots(plot_beeswarms(explanations, features=x, interactive=True, title=title), 'interactive_plots')
 
     if directory is None:
         out['explanations'] = explanations
