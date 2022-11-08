@@ -79,7 +79,9 @@ class Evaluator(CaTabRaBase):
         loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
         self._config = loader.get_config()
 
-        out_ok = self._resolve_output_dir(prompt=f'Evaluation folder "{self._invocation.out.as_posix()}" already exists. Delete?')
+        out_ok = self._invocation.resolve_output_dir(
+            prompt=f'Evaluation folder "{self._invocation.out.as_posix()}" already exists. Delete?'
+        )
         if not out_ok:
             logging.log('### Aborting')
             return
@@ -102,7 +104,7 @@ class Evaluator(CaTabRaBase):
 
             # split
             _iter_splits = self._get_split_iterator(df)
-            sample_weights = self._get_sample_weights(df)
+            sample_weights = self._invocation.get_sample_weights(df)
             encoder = loader.get_encoder()
             x_test, y_test = encoder.transform(data=df)
 
@@ -323,7 +325,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             plotting.save(_obj, directory / _name)
 
     if main_metrics is None:
-        from catabra.base.config import DEFAULT_CONFIG
+        from ..core.config import DEFAULT_CONFIG
         main_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
@@ -1218,7 +1220,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         if bootstrapping_metrics == '__all__':
             bootstrapping_metrics = _get_default_metrics(encoder.task_)
         elif bootstrapping_metrics is None:
-            from catabra.catabra.base.config import DEFAULT_CONFIG
+            from ..core.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
                                  sample_weight=sample_weight, task=encoder.task_, metric_list=bootstrapping_metrics,

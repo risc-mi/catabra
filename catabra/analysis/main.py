@@ -92,7 +92,7 @@ class Analyzer(CaTabRaBase):
             config = {}
         self._config = cfg.add_defaults(config, default=self._invocation.default_config)
 
-        out_ok = self._resolve_output_dir(
+        out_ok = self._invocation.resolve_output_dir(
             prompt=f'Output folder "{self._invocation.out.as_posix()}" already exists. Delete?'
         )
         if out_ok:
@@ -139,7 +139,7 @@ class Analyzer(CaTabRaBase):
             self._invocation.ignore.update({self._invocation.group})
             group_indices = self.get_group_indices(df, df_train, self._invocation.group, split_masks)
 
-            sample_weights = self._get_sample_weights(df_train)
+            sample_weights = self._invocation.get_sample_weights(df_train)
             self.check_for_id_cols(df_train, id_cols, target)
 
             # drop columns
