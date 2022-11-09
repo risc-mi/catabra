@@ -507,7 +507,7 @@ class AutoSklearnBackend(AutoMLBackend):
                 resampling_args = {}
         if groups is not None:
             resampling_args['groups'] = groups
-        resampling_strategy = self._get_resampling_strategy(resampling_strategy, resampling_args)
+        resampling_strategy = self._get_resampling_strategy(resampling_strategy, resampling_args, y_train)
         if resampling_strategy is not None:
             kwargs['resampling_strategy'] = resampling_strategy
         if not (groups is None and resampling_strategy is None):
@@ -759,11 +759,13 @@ class AutoSklearnBackend(AutoMLBackend):
         pipeline = self.model_.automl_.models_.get(key)
         if pipeline is None:
             # cv => rely on `self.model_.automl_.cv_models_.get(key)`
+            # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
             estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
         elif hasattr(pipeline, 'steps'):
             estimator = pipeline.steps[-1][1].choice.estimator
             if estimator is None:
                 # cv => rely on `self.model_.automl_.cv_models_.get(key)`
+                # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
                 estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
             else:
                 steps = [strip_autosklearn(obj[1]) for obj in pipeline.steps[:-1]]
@@ -809,19 +811,18 @@ class AutoSklearnBackend(AutoMLBackend):
                     sklearn.utils.validation.check_is_fitted(tmp_model.steps[-1][-1])
             return self.model_.automl_.models_
         except sklearn.exceptions.NotFittedError:
+            # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
             try:
                 sklearn.utils.validation.check_is_fitted(list(self.model_.automl_.cv_models_.values())[0])
                 return self.model_.automl_.cv_models_
             except sklearn.exceptions.NotFittedError:
                 raise ValueError('No fitted models found.')
 
-    def _get_resampling_strategy(self, resampling_strategy, resampling_strategy_args: Optional[dict] = None):
+    def _get_resampling_strategy(self, resampling_strategy, resampling_strategy_args: Optional[dict] = None, y=None):
         # Copied from autosklearn.evaluation.train_evaluator.TrainEvaluator.get_splitter()
 
         # TODO: Find out what "-iterative-fit" and "partial-" are, and how they differ from standard
         #   "holdout" and "cv".
-        # TODO: Replace all "cv"-like strategies by user-defined resampling strategies, even if no groups are specified.
-        #   This would simplify the whole setup and make it more uniform, as discussed below.
 
         # If "holdout" or "holdout-iterative-fit" are used:
         #   * Each constituent of the final ensemble is a single pipeline, consisting of a data preprocessor,
@@ -854,11 +855,20 @@ class AutoSklearnBackend(AutoMLBackend):
         # In general, `automl_.predict()` always first tries `automl_.models_` and then, if not possible because no
         #   transformer/estimator instances are found, resorts to `automl_.cv_models_`.
 
-        if resampling_strategy_args is None or resampling_strategy_args.get('groups') is None:
+        if resampling_strategy is None:
+            resampling_strategy = 'holdout'
+        if resampling_strategy_args is None:
+            resampling_strategy_args = {}
+
+        no_groups = resampling_strategy_args.get('groups') is None
+
+        if resampling_strategy in ('cv', 'cv-iterative-fit', 'partial-cv', 'partial-cv-iterative-fit'):
+            # use custom strategy for the sake of uniformity, regardless of whether grouping is specified
+            # `.automl_.cv_models_` will remain None, reducing the required disk space considerably
+            pass
+        elif no_groups:
             # rely on autosklearn's default setup
             return resampling_strategy
-        elif resampling_strategy is None:
-            resampling_strategy = 'holdout'
         elif not isinstance(resampling_strategy, str):
             if not isinstance(resampling_strategy, (sklearn.model_selection.GroupShuffleSplit,
                                                     sklearn.model_selection.GroupKFold,
@@ -870,7 +880,8 @@ class AutoSklearnBackend(AutoMLBackend):
                              f' resampling strategy {resampling_strategy}.')
             return resampling_strategy
 
-        if not resampling_strategy_args.get('shuffle', True):
+        shuffle = resampling_strategy_args.get('shuffle', True)
+        if not (no_groups or shuffle):
             raise ValueError('In grouped splitting, resampling strategy argument "shuffle" must be set to true.')
 
         train_size = resampling_strategy_args.get('train_size')
@@ -879,7 +890,43 @@ class AutoSklearnBackend(AutoMLBackend):
             train_size = 0.67
         test_size = 1. - train_size
 
-        if self.task in ('binary_classification', 'multiclass_classification'):
+        if no_groups:
+            # "CV-like" strategy
+            if self.task in ('binary_classification', 'multiclass_classification'):
+                if shuffle:
+                    try:
+                        import warnings
+                        from copy import deepcopy
+                        with warnings.catch_warnings():
+                            warnings.simplefilter('error')
+                            cv = sklearn.model_selection.StratifiedKFold(
+                                n_splits=resampling_strategy_args['folds'],
+                                shuffle=shuffle,
+                                random_state=1,
+                            )
+                            test_cv = deepcopy(cv)
+                            next(test_cv.split(y, y))
+                    except UserWarning as e:
+                        if 'The least populated class in y has only' in e.args[0]:
+                            from autosklearn.evaluation.splitter import CustomStratifiedKFold
+                            cv = CustomStratifiedKFold(
+                                n_splits=resampling_strategy_args['folds'],
+                                shuffle=shuffle,
+                                random_state=1,
+                            )
+                        else:
+                            raise e
+                else:
+                    cv = sklearn.model_selection.KFold(n_splits=resampling_strategy_args['folds'], shuffle=False)
+            elif resampling_strategy in ('cv', 'partial-cv', 'partial-cv-iterative-fit'):
+                cv = sklearn.model_selection.KFold(
+                    n_splits=resampling_strategy_args['folds'],
+                    shuffle=shuffle,
+                    random_state=1 if shuffle else None,
+                )
+            else:
+                raise ValueError(resampling_strategy)
+        elif self.task in ('binary_classification', 'multiclass_classification'):
             if resampling_strategy in ('holdout', 'holdout-iterative-fit'):
                 cv = grouped_split.StratifiedGroupShuffleSplit(n_splits=1, test_size=test_size, random_state=1)
             elif resampling_strategy in ('cv', 'cv-iterative-fit', 'partial-cv', 'partial-cv-iterative-fit'):
