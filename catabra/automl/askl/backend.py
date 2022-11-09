@@ -589,10 +589,15 @@ class AutoSklearnBackend(AutoMLBackend):
             interrupted = True
 
         if kwargs.get('ensemble_size', 1) > 0:
-            if interrupted or kwargs.get('n_jobs', 1) != 1:
-                # `fit_ensemble()` must be called before `refit()`
-                # not sure whether this is actually needed, but should not take too much time, so we do it anyway
-                self.model_.fit_ensemble(y_train)
+            if interrupted:
+                try:
+                    # `fit_ensemble()` normally does not need to be called manually (and may even raise an exception).
+                    # However, if the fitting process was interrupted it might be necessary to call it.
+                    self.model_.fit_ensemble(y_train)
+                except:     # noqa
+                    pass
+            # `refit()` should always be called, and _must_ be called if a custom resampling strategy is used. See
+            # comment in `_get_resampling_strategy()` for details.
             self.model_.refit(x_train, y_train)
 
         return self
@@ -822,27 +827,32 @@ class AutoSklearnBackend(AutoMLBackend):
         #   * Each constituent of the final ensemble is a single pipeline, consisting of a data preprocessor,
         #       a balancer (in classification tasks), a feature preprocessor, and a final estimator. The pipeline is
         #       fitted on the internal training partition.
-        #   * Calling `refit()` is not necessary, but fits the pipeline again on the whole training set. This can
-        #       improve predictive performance.
+        #   * Calling `refit()` is not necessary, but fits the pipeline again on the whole training set. This changes
+        #       the contents of `.automl_.models_` in place and can potentially improve predictive performance.
         #   * The constituents of the ensemble can be accessed via the `.automl_.models_` attribute, which is a dict of
-        #       pipeline objects. Each step contains both the hyperparameter configuration as well as an actual
-        #       trained transformer/estimator object.
+        #       pipeline objects. Each step contains both the hyperparameter configuration and an actual trained
+        #       transformer/estimator object.
         # If "cv" or "cv-iterative" are used:
         #   * Each constituent of the final ensemble is a sklearn `VotingClassifier` or `VotingRegressor` instance with
         #       as many base estimators as there are folds. Each of these base estimators is a full autosklearn
         #       pipeline that is fitted on the respective training portion of internal cross validation.
         #       The hyperparameters of all these pipelines are identical, but the trained estimators need not be.
-        #   * Calling `refit()` is not necessary, but fits the pipelines again on the whole training set.
-        #       Hypothesis: After calling `refit()`, all pipelines are identical and thus redundant.
         #   * The `Voting[Classifier|Regressor]` instances can be accessed via the `.automl_.cv_models_` attribute, and
-        #       the pipelines via their `.estimators_` attribute (mind the "_"!). In contrast, the `.automl_.models_`
-        #       attribute only contains the hyperparameter configuration of each constituent, but no actual
-        #       transformer/estimator instances.
+        #       the pipelines via their `.estimators_` attribute (mind the "_"!).
+        #   * Calling `refit()` is not necessary, but fits the pipelines again on the whole training set.
+        #       Before calling `refit()`, `.automl_.models_` only contains hyperparameter configurations.
+        #       After calling `refit()` it contains actual transformer/estimator instances. The cross-validation models
+        #       in `.automl_.cv_models_` are unaffected by `refit()`, and can thus be still accessed afterward.
         # If a user-specified resampling strategy is used:
         #   * Like in "holdout" and "holdout-iterative-fit", each constituent of the final ensemble is a single
         #       pipeline. Before calling `refit()` these pipelines only contain the hyperparameter configuration,
         #       afterward they also contain actual transformer/estimator instances.
+        #   * `automl_.cv_models_` is never set, even if the used strategy is "CV-like" (e.g., grouped CV). This, for
+        #       instance, considerably affects the size of the trained model on disk, which might be confusing for
+        #       users.
         #   * `refit()` must be called to fit the pipelines on the whole training data.
+        # In general, `automl_.predict()` always first tries `automl_.models_` and then, if not possible because no
+        #   transformer/estimator instances are found, resorts to `automl_.cv_models_`.
 
         if resampling_strategy_args is None or resampling_strategy_args.get('groups') is None:
             # rely on autosklearn's default setup
