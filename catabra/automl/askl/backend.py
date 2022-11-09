@@ -97,7 +97,7 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
                 if not pd.isna(train):
                     msg += '    train_{:s}: {:f}\n'.format(self.main_metric[0], train)
                 msg += '    type: {:s}\n' \
-                       '    total_elapsed_time: {:s}'.format(run_info.config_src._values[self.estimator_choice],
+                       '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
                                                              repr_timedelta(result.endtime - self.start_time))
                 logging.log(msg)
         except:  # noqa
@@ -516,13 +516,13 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['logging_config'] = logging_config
 
         # logging 2: individual models
-        # if metric is not None:
-            # kwargs['get_trials_callback'] = _SMACLoggingCallback(
-            #     (metric.name, metric._optimum, metric._sign),
-            #     [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
-            #     self._get_estimator_name(),
-            #     start_time=py_time.time()
-            # )
+        if metric is not None:
+            kwargs['get_trials_callback'] = _SMACLoggingCallback(
+                (metric.name, metric._optimum, metric._sign),
+                [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
+                self._get_estimator_name(),
+                start_time=py_time.time()
+            )
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
