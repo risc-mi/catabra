@@ -558,7 +558,8 @@ class AutoSklearnBackend(AutoMLBackend):
             self._get_estimator_name(),
             start_time=py_time.time()
         )
-        kwargs['get_trials_callback'] = smac_callback
+        if Estimator.__name__ != 'AutoSklearn2Classifier':
+            kwargs['get_trials_callback'] = smac_callback
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
