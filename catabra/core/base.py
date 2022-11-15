@@ -132,7 +132,6 @@ class CaTabRaBase(ABC):
     ):
         if isinstance(invocation, (str, Path)):
             self._invocation_src = io.load(invocation)
-            print(self._invocation_src)
         elif isinstance(invocation, dict):
             self._invocation_src = invocation
         else:
@@ -142,7 +141,6 @@ class CaTabRaBase(ABC):
         self._invocation = self.invocation_class(*table, **kwargs)
         self._invocation.update(self._invocation_src)
         self._invocation.resolve()
-        print(self._invocation.to_dict())
         self._call()
 
     @abstractmethod
