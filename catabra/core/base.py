@@ -70,15 +70,13 @@ class Invocation:
             if self._jobs is None:
                 self._jobs = src.get('jobs')
 
+    def resolve(self):
         if self._split == '':
             self._split = None
         if self._sample_weight == '':
             self._sample_weight = None
 
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
-
-    def resolve(self):
-        pass
 
     def resolve_output_dir(self, prompt: str) -> bool:
         if self._out.exists():
@@ -134,7 +132,8 @@ class CaTabRaBase(ABC):
     ):
         if isinstance(invocation, (str, Path)):
             self._invocation_src = io.load(invocation)
-        if isinstance(invocation, dict):
+            print(self._invocation_src)
+        elif isinstance(invocation, dict):
             self._invocation_src = invocation
         else:
             self._invocation_src = {}
@@ -143,6 +142,7 @@ class CaTabRaBase(ABC):
         self._invocation = self.invocation_class(*table, **kwargs)
         self._invocation.update(self._invocation_src)
         self._invocation.resolve()
+        print(self._invocation.to_dict())
         self._call()
 
     @abstractmethod

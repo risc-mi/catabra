@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from catabra.util import logging
+from ..util import logging
 
 
 class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
@@ -16,7 +16,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     """
 
     @classmethod
-    def create(cls, name: str, source: str = 'internal', **kwargs) -> 'OODDetector':
+    def create(cls, name: str, source: str = 'internal', kwargs=None) -> 'OODDetector':
         """
         factory method for creating OODDetector subclasses or PyOD classes from strings
         :param name: if source is 'internal' name of OODDetector module in snake_case;
@@ -25,7 +25,6 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         :param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
         :param kwargs: keyword arguments for the detector class
         """
-        kwargs = kwargs['kwargs']
         if source == 'internal':
             module = importlib.import_module('catabra.ood.internal.' + name)
             module_classes = inspect.getmembers(module, inspect.isclass)

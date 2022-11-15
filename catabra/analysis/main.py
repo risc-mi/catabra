@@ -82,14 +82,7 @@ class Analyzer(CaTabRaBase):
             dataset_name = self._invocation.table[0].stem
         else:
             dataset_name = None
-        if isinstance(self._invocation.config_src, (str, Path)):
-            self._invocation._config_src = io.make_path(self._invocation.config_src, absolute=True)
-            config = io.load(self._invocation.config_src)
-        elif isinstance(self._invocation.config_src, dict):
-            config = self._invocation.config_src.copy()
-        else:
-            config = {}
-        self._config = cfg.add_defaults(config, default=self._invocation.default_config)
+        self._config = self._get_config_dict()
 
         out_ok = self._invocation.resolve_output_dir(
             prompt=f'Output folder "{self._invocation.out.as_posix()}" already exists. Delete?'
@@ -106,8 +99,7 @@ class Analyzer(CaTabRaBase):
         cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Analysis started at {self._invocation.start}')
-            invocation_dict = self._invocation.to_dict()
-            io.dump(io.to_json(invocation_dict), self._invocation.out / CaTabRaPaths.Invocation)
+            io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
 
             # merge tables
             df, id_cols = tu.merge_tables(self._invocation.table)
@@ -125,7 +117,8 @@ class Analyzer(CaTabRaBase):
 
             # train-test split
             df_train, split_masks = self._make_train_split(df, self._invocation.split)
-            self._invocation.ignore.update(self._invocation.split)
+            if self._invocation.split is not None:
+                self._invocation.ignore.update(self._invocation.split)
 
             # copy training data
             copy_data = self._config.get('copy_analysis_data', False)
@@ -188,7 +181,7 @@ class Analyzer(CaTabRaBase):
 
                     self._make_explainer(backend, encoder, x_train, y_train, versions)
 
-            cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())  # overwrite existing file
+            cu.save_versions(versions, (self._invocation.out / CaTabRaPaths.Versions).as_posix())  # overwrite existing file
             self._make_ood_detector(x_train, y_train)
 
             end = pd.Timestamp.now()
@@ -205,6 +198,16 @@ class Analyzer(CaTabRaBase):
                          sample_weight=self._invocation.sample_weight,
                          out=self._invocation.out / 'eval',
                          jobs=self._invocation.jobs)
+
+    def _get_config_dict(self):
+        if isinstance(self._invocation.config_src, (str, Path)):
+            self._invocation._config_src = io.make_path(self._invocation.config_src, absolute=True)
+            config = io.load(self._invocation.config_src)
+        elif isinstance(self._invocation.config_src, dict):
+            config = self._invocation.config_src.copy()
+        else:
+            config = {}
+        return cfg.add_defaults(config, default=self._invocation.default_config)
 
     @staticmethod
     def _make_train_split(df, split):
@@ -492,8 +495,10 @@ class AnalysisInvocation(Invocation):
                 self._config_src = src.get('config')
             if self._default_config is None:
                 self._default_config = src.get('default_config')
+            self._target = src.get('target')
 
     def resolve(self):
+        super().resolve()
         if self._group == '':
             self._group = None
         if self._config_src == '':
@@ -502,17 +507,20 @@ class AnalysisInvocation(Invocation):
             self._default_config = 'full'
         self._ignore = set() if self._ignore is None else set(self._ignore)
 
-        if self._classify is None:
-            if self._regress is None:
-                self._target = []
+        if not self._target:
+            if self._classify is None:
+                if self._regress is None:
+                    self._target = []
+                else:
+                    self._target = [self._regress] if isinstance(self._regress, str) else list(self._regress)
+                self._classify = False
+            elif self._regress is None:
+                self._target = [self._classify] if isinstance(self._classify, str) else list(self._classify)
+                self._classify = True
             else:
-                self._target = [self._regress] if isinstance(self._regress, str) else list(self._regress)
-            self._classify = False
-        elif self._regress is None:
-            self._target = [self._classify] if isinstance(self._classify, str) else list(self._classify)
-            self._classify = True
-        else:
-            raise ValueError('At least one of `classify` and `regress` must be None.')
+                raise ValueError('At least one of `classify` and `regress` must be None.')
+        elif isinstance(self._regress, str):
+            self._target = [self._target]
 
         if self._out is None:
             self._out = self._table[0]
