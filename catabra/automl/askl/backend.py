@@ -322,7 +322,8 @@ class AutoSklearnBackend(AutoMLBackend):
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
 
-        metric_dict = {metric.name: [] for metric in self.model_.scoring_functions}
+        scoring_functions = self.model_.scoring_functions or []
+        metric_dict = {metric.name: [] for metric in scoring_functions}
         timestamp = []
         model_id = []
         val_metric = []
@@ -331,7 +332,7 @@ class AutoSklearnBackend(AutoMLBackend):
         duration = []
         types = []
         main_metric = (self.model_.metric.name, self.model_.metric._optimum, self.model_.metric._sign)
-        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.scoring_functions]
+        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in scoring_functions]
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
