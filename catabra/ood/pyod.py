@@ -33,7 +33,7 @@ class PyODDetector(OODDetector):
         :param verbose:  whether to log the detection steps
         :param kwargs: keyword arguments for the specific pyod detector
         """
-        super().__init__(subset, verbose)
+        super().__init__(subset=subset, verbose=verbose)
         # class paths are given in the form: pyod.detector_name.DetectorName
         module = importlib.import_module('pyod.models.' + name)
         module_classes = inspect.getmembers(module, inspect.isclass)

@@ -7,7 +7,7 @@ DEFAULT_CONFIG = {
     "ensemble_size": 10,            # maximum size of final ensemble
     "ensemble_nbest": 10,           # maximum number of best single models to use in final ensemble
     "memory_limit": 3072,           # memory limit for single models, in MB
-    "time_limit": 10,               # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
+    "time_limit": 1,                # default time limit for overall model training, in minutes; negative means no time limit; overwritten by command-line parameter
     "jobs": 1,                      # default number of jobs to use; negative means all available processors; overwritten by command-line parameter
     "copy_analysis_data": False,    # whether to copy data to be analyzed into output folder; can be True, False or maximum size to copy, in MB
     "copy_evaluation_data": False,  # whether to copy test data into output folder; same possible values as for "copy_analysis_data"
@@ -162,16 +162,20 @@ INTERPRETABLE_CONFIG = {
     }
 }
 
+DEFAULT_CONFIGS = {
+    'basic': BASIC_CONFIG,
+    'interpretable': INTERPRETABLE_CONFIG
+}
 
-def add_defaults(config: dict, default: Optional[dict] = None) -> dict:
+
+def add_defaults(config: dict, default: Optional[str] = None) -> dict:
     """
     Add default config values into a given config dict.
     :param config: The base config. Modified in place.
     :param default: The config with default values. None means `DEFAULT_CONFIG`.
     :return: The updated config dict.
     """
-    if default is None:
-        default = DEFAULT_CONFIG
+    default = DEFAULT_CONFIGS.get(default, DEFAULT_CONFIG)
     for k, v in default.items():
         if k not in config:
             config[k] = copy.deepcopy(v)

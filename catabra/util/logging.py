@@ -4,7 +4,7 @@ import os
 import sys
 import traceback
 
-from .common import repr_timedelta
+from catabra.util.common import repr_timedelta
 
 
 def log(*msg, **kwargs):
