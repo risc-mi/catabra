@@ -14,8 +14,8 @@ class Encoder(BaseEstimator):
     `transform()` and `inverse_transform()`, and can easily be dumped to and loaded from disk.
 
     Encoding ensures that:
-    * The data type of every feature column is either float, int, bool or categorical. This is achieved by converting
-        time-like columns into float and raising exceptions if object data types are found.
+    * The data type of every feature column is either float, int, bool, categorical or string (if the installed Pandas
+        version supports it). Time-like columns are converted into float, and object data types raise an exception.
     * The data type of every target column is float.
         + In regression tasks, this is achieved by converting numerical data types (float, int, bool, time-like) into
             float, and raising exceptions if other data types are found.
@@ -136,6 +136,9 @@ class Encoder(BaseEstimator):
                     raise ValueError('In regression, targets cannot be categorical.')
             info['categories'] = list(s.cat.categories)
             info['ordered'] = s.cat.ordered
+        elif s.dtype.name == 'string':
+            if target:
+                raise ValueError('Targets cannot be strings.')
         elif s.dtype.kind == 'M':
             # datetime
             if target and self._classify:
@@ -263,6 +266,23 @@ class Encoder(BaseEstimator):
                     raise ValueError(f'Categories of "{s.name}" do not match.')
             else:
                 raise ValueError(f'Data type of "{s.name}" should be categorical, but found {s.dtype.name}.')
+        elif name == 'string':
+            if s.dtype.name == 'category':
+                if all(isinstance(c, str) for c in s.cat.categories):
+                    return s.astype('string')
+                else:
+                    raise ValueError(f'Data type of "{s.name}" should be string, but found categorical with non-string'
+                                     ' categories.')
+            elif s.dtype.name == 'string':
+                pass
+            elif s.dtype.kind == 'O':
+                try:
+                    return s.astype('string')
+                except:     # noqa
+                    raise ValueError(f'Data type of "{s.name}" should be string, but cannot be converted.'
+                                     ' Did you use a more recent version of Pandas for fitting the encoder?')
+            else:
+                raise ValueError(f'Data type of "{s.name}" should be string, but found {s.dtype.name}.')
         elif kind == 'M':
             if s.dtype.kind == 'M':
                 return (s - pd.Timestamp(dt['start'])) / Encoder._get_resolution(dt['resolution'])

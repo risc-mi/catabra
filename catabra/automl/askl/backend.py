@@ -9,10 +9,13 @@ import sklearn
 import joblib
 import logging as py_logging
 import time as py_time      # otherwise shadowed by parameter of method `fit()`
+from distutils.version import LooseVersion
 import yaml
 import importlib
 from smac.callbacks import IncorporateRunResultCallback
 from smac.tae import StatusType
+from smac.runhistory.runhistory import RunHistory
+from autosklearn import __version__ as askl_version
 
 from ...util import io, logging
 from ...util.common import repr_timedelta
@@ -74,19 +77,20 @@ setattr(py_logging, '_AutoSklearnHandler', _EnsembleLoggingHandler)
 
 
 class _SMACLoggingCallback(IncorporateRunResultCallback):
-    """Callback for printing messages whenever a new model has been trained."""
+    """Callback for logging model training and printing messages whenever a new model has been trained."""
 
-    def __init__(self, main_metric: Tuple[str, float, float], other_metrics: Iterable[Tuple[str, float, float]],
-                 estimator_name: str, start_time: float = 0.):
+    def __init__(self, main_metric: Optional[Tuple[str, float, float]],
+                 other_metrics: Iterable[Tuple[str, float, float]], estimator_name: str, start_time: float = 0.):
         self.main_metric = main_metric
         self.other_metrics = other_metrics
         self.estimator_choice = estimator_name + ':__choice__'
         self.start_time = start_time
         self._n = 0     # interestingly, counting models seems to work even if multiple jobs are used
+        self.runhistory = RunHistory()      # own run history, used if training is interrupted
 
     def __call__(self, smbo: 'SMBO', run_info: 'RunInfo', result: 'RunValue', time_left: float) -> Optional[bool]:
         try:
-            if result.status == StatusType.SUCCESS and result.additional_info:
+            if self.main_metric is not None and result.status == StatusType.SUCCESS and result.additional_info:
                 self._n += 1
                 val, train, test, other = _get_metrics_from_run_value(result, self.main_metric, self.other_metrics)
                 msg = 'New model #{:d} trained:\n    val_{:s}: {:f}\n'.format(self._n, self.main_metric[0], val)
@@ -100,6 +104,19 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
                        '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
                                                              repr_timedelta(result.endtime - self.start_time))
                 logging.log(msg)
+
+            self.runhistory.add(
+                run_info.config,
+                result.cost,
+                result.time,
+                result.status,
+                instance_id=run_info.instance,
+                seed=run_info.seed,
+                budget=run_info.budget,
+                starttime=result.starttime,
+                endtime=result.endtime,
+                additional_info=result.additional_info
+            )
         except:  # noqa
             pass
         return None
@@ -207,7 +224,7 @@ def strip_autosklearn(obj):
                 # `estimator`/`transformer`/`preprocessor` etc., their `transform()`/`predict()`/`predict_proba()`
                 # method does not simply apply these objects :(
                 if obj.__class__.__name__ in ('OrdinalEncoding', 'Nystroem', 'SelectPercentileClassification',
-                                              'SelectClassificationRates'):
+                                              'SelectClassificationRates', 'TfidfEncoder'):
                     return obj
 
                 # special classes whose `transform()` method is the identity function, but which are not detected by
@@ -263,6 +280,7 @@ class AutoSklearnBackend(AutoMLBackend):
     def __init__(self, **kwargs):
         super(AutoSklearnBackend, self).__init__(**kwargs)
         self.converted_bool_columns_ = None     # tuple of columns of bool dtype that must be converted to float
+        self._feature_filter = None
 
     @property
     def model_ids_(self) -> list:
@@ -270,6 +288,10 @@ class AutoSklearnBackend(AutoMLBackend):
             raise ValueError('AutoSklearnBackend must be fit to training data before model_ids_ can be accessed.')
         # actual identifiers are triples `(seed, ID, budget)`, from which we can safely restrict ourselves to ID
         return [_id for _, _id, _ in self._get_model_keys()]
+
+    @property
+    def feature_filter_(self) -> Optional[FeatureFilter]:
+        return getattr(self, '_feature_filter', None)
 
     def summary(self) -> dict:
         try:
@@ -296,7 +318,7 @@ class AutoSklearnBackend(AutoMLBackend):
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
 
-        metric_dict = {metric.name: [] for metric in self.model_.automl_._scoring_functions}
+        metric_dict = {metric.name: [] for metric in self.model_.scoring_functions}
         timestamp = []
         model_id = []
         val_metric = []
@@ -304,9 +326,8 @@ class AutoSklearnBackend(AutoMLBackend):
         test_metric = []
         duration = []
         types = []
-        main_metric = \
-            (self.model_.automl_._metric.name, self.model_.automl_._metric._optimum, self.model_.automl_._metric._sign)
-        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.automl_._scoring_functions]
+        main_metric = (self.model_.metric.name, self.model_.metric._optimum, self.model_.metric._sign)
+        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.scoring_functions]
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
@@ -382,7 +403,8 @@ class AutoSklearnBackend(AutoMLBackend):
             meta_input=[_id for _, _id, _ in voting_keys],
             meta_estimator=
             [self.model_.automl_.ensemble_.weights_[self.model_.automl_.ensemble_.identifiers_.index(k)]
-             for k in voting_keys]
+             for k in voting_keys],
+            calibrator=self.calibrator_
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
@@ -396,7 +418,6 @@ class AutoSklearnBackend(AutoMLBackend):
         if tmp_folder is not None and tmp_folder.exists():
             shutil.rmtree(tmp_folder)
         kwargs = dict(
-            # TODO: Tweak autosklearn to accept no time limit.
             time_left_for_this_task=600 if time is None or time < 0 else time * 60,  # `time` is given in minutes!
             n_jobs=-1 if jobs is None else jobs,
             tmp_folder=tmp_folder if tmp_folder is None else tmp_folder.as_posix(),
@@ -422,6 +443,19 @@ class AutoSklearnBackend(AutoMLBackend):
             exclude = None
         kwargs['include'] = include
         kwargs['exclude'] = exclude
+
+        self._feature_filter = None
+        if LooseVersion(askl_version) < LooseVersion('0.15.0'):
+            # string features are only supported in version >= 0.15.0
+            string_cols = [c for c in x_train.columns if x_train[c].dtype.name == 'string']
+            if string_cols:
+                logging.warn(
+                    f'Columns {repr_list(string_cols, brackets=False)} have string data type, but auto-sklearn does'
+                    f' not support text features in version {askl_version}.'
+                    ' Install auto-sklearn version >= 0.15.0 for text support.'
+                )
+                x_train = x_train.drop(string_cols, axis=1)
+                self._feature_filter = FeatureFilter().fit(x_train)
 
         bool_cols = [c for c in x_train.columns if x_train[c].dtype.kind == 'b']
         if bool_cols and not any(x_train[c].dtype.name == 'category' for c in x_train.columns):
@@ -471,7 +505,7 @@ class AutoSklearnBackend(AutoMLBackend):
                 resampling_args = {}
         if groups is not None:
             resampling_args['groups'] = groups
-        resampling_strategy = self._get_resampling_strategy(resampling_strategy, resampling_args)
+        resampling_strategy = self._get_resampling_strategy(resampling_strategy, resampling_args, y_train)
         if resampling_strategy is not None:
             kwargs['resampling_strategy'] = resampling_strategy
         if not (groups is None and resampling_strategy is None):
@@ -516,13 +550,14 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['logging_config'] = logging_config
 
         # logging 2: individual models
-        if metric is not None:
-            kwargs['get_trials_callback'] = _SMACLoggingCallback(
-                (metric.name, metric._optimum, metric._sign),
-                [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
-                self._get_estimator_name(),
-                start_time=py_time.time()
-            )
+        smac_callback = _SMACLoggingCallback(
+            metric if metric is None else (metric.name, metric._optimum, metric._sign),
+            [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
+            self._get_estimator_name(),
+            start_time=py_time.time()
+        )
+        if Estimator.__name__ != 'AutoSklearn2Classifier':
+            kwargs['get_trials_callback'] = smac_callback
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
@@ -538,51 +573,95 @@ class AutoSklearnBackend(AutoMLBackend):
                     kwargs[k] = v
 
         self.model_ = Estimator(**kwargs)
-        self.model_.fit(x_train, y_train, dataset_name=dataset_name)
+        tic = py_time.time()
+        interrupted = False
+        try:
+            self.model_.fit(x_train, y_train, dataset_name=dataset_name)
+        except KeyboardInterrupt:
+            logging.warn('Hyperparameter optimization interrupted after'
+                         f' {repr_timedelta(py_time.time() - tic, subsecond_resolution=2)}.'
+                         ' Trying to build final ensemble with models trained so far,'
+                         ' but consistency of internal state cannot be ensured. Use result with care.')
+            self.model_.automl_._budget_type = None
+            self.model_.automl_.runhistory_ = smac_callback.runhistory
+            self.model_.automl_.trajectory_ = []        # not needed
+            interrupted = True
+
         if kwargs.get('ensemble_size', 1) > 0:
-            if kwargs.get('n_jobs', 1) != 1:
-                # `fit_ensemble()` must be called before `refit()`
-                # not sure whether this is actually needed, but should not take too much time, so we do it anyway
-                self.model_.fit_ensemble(y_train)
+            if interrupted:
+                try:
+                    # `fit_ensemble()` normally does not need to be called manually (and may even raise an exception).
+                    # However, if the fitting process was interrupted it might be necessary to call it.
+                    self.model_.fit_ensemble(y_train)
+                except:     # noqa
+                    pass
+            # `refit()` should always be called, and _must_ be called if a custom resampling strategy is used. See
+            # comment in `_get_resampling_strategy()` for details.
             self.model_.refit(x_train, y_train)
+
         return self
 
-    def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None, model_id=None) \
-            -> np.ndarray:
+    def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None, model_id=None,
+                calibrated: bool = 'auto') -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
         if model_id is None:
-            return self.model_.predict(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+            calibrated = calibrated is not False
         else:
-            return self._predict_single(x, model_id, batch_size, False)
+            calibrated = calibrated is True
+        calibrated = calibrated and self.calibrator_ is not None
+
+        if calibrated:
+            y = self.predict_proba(x, jobs=jobs, batch_size=batch_size, model_id=model_id, calibrated=True)
+            if self.task == 'multiclass_classification':
+                y = np.argmax(y, axis=1)
+            else:
+                y = (y > 0.5).astype(np.int32)
+        elif model_id is None:
+            y = self.model_.predict(self._prepare_for_predict(x), n_jobs=-1 if jobs is None else jobs,
+                                    batch_size=batch_size)
+        else:
+            y = self._predict_single(self._prepare_for_predict(x), model_id, batch_size, False)
+
+        return y
 
     def predict_proba(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-                      model_id=None) -> np.ndarray:
+                      model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         if jobs is None:
             jobs = self.config.get('jobs')
+        x = self._prepare_for_predict(x)
         if model_id is None:
-            return self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
+            calibrated = calibrated is not False
+            y = self.model_.predict_proba(x, n_jobs=-1 if jobs is None else jobs, batch_size=batch_size)
         else:
-            return self._predict_single(x, model_id, batch_size, True)
+            calibrated = calibrated is True
+            y = self._predict_single(x, model_id, batch_size, True)
+        if calibrated:
+            y = self.calibrate(y)
+        return y
 
     def predict_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, False)
+        return self._predict_all(self._prepare_for_predict(x), -1 if jobs is None else jobs, batch_size, False)
 
     def predict_proba_all(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None) \
             -> Dict[Any, np.ndarray]:
         if jobs is None:
             jobs = self.config.get('jobs')
-        return self._predict_all(x, -1 if jobs is None else jobs, batch_size, True)
+        return self._predict_all(self._prepare_for_predict(x), -1 if jobs is None else jobs, batch_size, True)
 
     @classmethod
     def get_versions(cls) -> dict:
-        from autosklearn import __version__ as askl_version
         from smac import __version__ as smac_version
         return {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
                 'scikit-learn': sklearn.__version__}
+
+    def _prepare_for_predict(self, x: pd.DataFrame) -> pd.DataFrame:
+        if self.feature_filter_ is not None:
+            x = self.feature_filter_.transform(x)
+        return x
 
     def _predict_single(self, x: pd.DataFrame, model_id, batch_size: Optional[int], proba: bool) -> np.ndarray:
         # get predictions of a single constituent model
@@ -675,25 +754,34 @@ class AutoSklearnBackend(AutoMLBackend):
         return out
 
     def _get_pipeline(self, key) -> dict:
+        steps = None
         pipeline = self.model_.automl_.models_.get(key)
         if pipeline is None:
             # cv => rely on `self.model_.automl_.cv_models_.get(key)`
-            return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+            # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
+            estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
         elif hasattr(pipeline, 'steps'):
             estimator = pipeline.steps[-1][1].choice.estimator
             if estimator is None:
                 # cv => rely on `self.model_.automl_.cv_models_.get(key)`
-                return dict(estimator=strip_autosklearn(self.model_.automl_.cv_models_.get(key)))
+                # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
+                estimator = strip_autosklearn(self.model_.automl_.cv_models_.get(key))
             else:
                 steps = [strip_autosklearn(obj[1]) for obj in pipeline.steps[:-1]]
                 steps = [s for s in steps if s != 'passthrough']
-                return dict(
-                    preprocessing=steps,
-                    estimator=estimator
-                )
         else:
             # dummy estimator
-            return dict(estimator=pipeline)
+            estimator = pipeline
+
+        # This way, the feature filter is added to each model separately, which means it is applied several times to
+        # the exact same input when applying the whole ensemble. This is obviously not optimal.
+        if self.feature_filter_ is not None:
+            if steps is None:
+                steps = [self.feature_filter_]
+            else:
+                steps = [self.feature_filter_] + steps
+
+        return dict(estimator=estimator, preprocessing=steps)
 
     def _get_fitted_model_by_id(self, model_id):
         models = [v for (_, _id, _), v in self._get_fitted_models().items() if _id == model_id]
@@ -722,51 +810,64 @@ class AutoSklearnBackend(AutoMLBackend):
                     sklearn.utils.validation.check_is_fitted(tmp_model.steps[-1][-1])
             return self.model_.automl_.models_
         except sklearn.exceptions.NotFittedError:
+            # This is mostly a legacy feature, since built-in CV resampling strategies are not used anymore.
             try:
                 sklearn.utils.validation.check_is_fitted(list(self.model_.automl_.cv_models_.values())[0])
                 return self.model_.automl_.cv_models_
             except sklearn.exceptions.NotFittedError:
                 raise ValueError('No fitted models found.')
 
-    def _get_resampling_strategy(self, resampling_strategy, resampling_strategy_args: Optional[dict] = None):
+    def _get_resampling_strategy(self, resampling_strategy, resampling_strategy_args: Optional[dict] = None, y=None):
         # Copied from autosklearn.evaluation.train_evaluator.TrainEvaluator.get_splitter()
 
         # TODO: Find out what "-iterative-fit" and "partial-" are, and how they differ from standard
         #   "holdout" and "cv".
-        # TODO: Replace all "cv"-like strategies by user-defined resampling strategies, even if no groups are specified.
-        #   This would simplify the whole setup and make it more uniform, as discussed below.
 
         # If "holdout" or "holdout-iterative-fit" are used:
         #   * Each constituent of the final ensemble is a single pipeline, consisting of a data preprocessor,
         #       a balancer (in classification tasks), a feature preprocessor, and a final estimator. The pipeline is
         #       fitted on the internal training partition.
-        #   * Calling `refit()` is not necessary, but fits the pipeline again on the whole training set. This can
-        #       improve predictive performance.
+        #   * Calling `refit()` is not necessary, but fits the pipeline again on the whole training set. This changes
+        #       the contents of `.automl_.models_` in place and can potentially improve predictive performance.
         #   * The constituents of the ensemble can be accessed via the `.automl_.models_` attribute, which is a dict of
-        #       pipeline objects. Each step contains both the hyperparameter configuration as well as an actual
-        #       trained transformer/estimator object.
+        #       pipeline objects. Each step contains both the hyperparameter configuration and an actual trained
+        #       transformer/estimator object.
         # If "cv" or "cv-iterative" are used:
         #   * Each constituent of the final ensemble is a sklearn `VotingClassifier` or `VotingRegressor` instance with
         #       as many base estimators as there are folds. Each of these base estimators is a full autosklearn
         #       pipeline that is fitted on the respective training portion of internal cross validation.
         #       The hyperparameters of all these pipelines are identical, but the trained estimators need not be.
-        #   * Calling `refit()` is not necessary, but fits the pipelines again on the whole training set.
-        #       Hypothesis: After calling `refit()`, all pipelines are identical and thus redundant.
         #   * The `Voting[Classifier|Regressor]` instances can be accessed via the `.automl_.cv_models_` attribute, and
-        #       the pipelines via their `.estimators_` attribute (mind the "_"!). In contrast, the `.automl_.models_`
-        #       attribute only contains the hyperparameter configuration of each constituent, but no actual
-        #       transformer/estimator instances.
+        #       the pipelines via their `.estimators_` attribute (mind the "_"!).
+        #   * Calling `refit()` is not necessary, but fits the pipelines again on the whole training set.
+        #       Before calling `refit()`, `.automl_.models_` only contains hyperparameter configurations.
+        #       After calling `refit()` it contains actual transformer/estimator instances. The cross-validation models
+        #       in `.automl_.cv_models_` are unaffected by `refit()`, and can thus be still accessed afterward.
         # If a user-specified resampling strategy is used:
         #   * Like in "holdout" and "holdout-iterative-fit", each constituent of the final ensemble is a single
         #       pipeline. Before calling `refit()` these pipelines only contain the hyperparameter configuration,
         #       afterward they also contain actual transformer/estimator instances.
+        #   * `automl_.cv_models_` is never set, even if the used strategy is "CV-like" (e.g., grouped CV). This, for
+        #       instance, considerably affects the size of the trained model on disk, which might be confusing for
+        #       users.
         #   * `refit()` must be called to fit the pipelines on the whole training data.
+        # In general, `automl_.predict()` always first tries `automl_.models_` and then, if not possible because no
+        #   transformer/estimator instances are found, resorts to `automl_.cv_models_`.
 
-        if resampling_strategy_args is None or resampling_strategy_args.get('groups') is None:
+        if resampling_strategy is None:
+            resampling_strategy = 'holdout'
+        if resampling_strategy_args is None:
+            resampling_strategy_args = {}
+
+        no_groups = resampling_strategy_args.get('groups') is None
+
+        if resampling_strategy in ('cv', 'cv-iterative-fit', 'partial-cv', 'partial-cv-iterative-fit'):
+            # use custom strategy for the sake of uniformity, regardless of whether grouping is specified
+            # `.automl_.cv_models_` will remain None, reducing the required disk space considerably
+            pass
+        elif no_groups:
             # rely on autosklearn's default setup
             return resampling_strategy
-        elif resampling_strategy is None:
-            resampling_strategy = 'holdout'
         elif not isinstance(resampling_strategy, str):
             if not isinstance(resampling_strategy, (sklearn.model_selection.GroupShuffleSplit,
                                                     sklearn.model_selection.GroupKFold,
@@ -778,7 +879,8 @@ class AutoSklearnBackend(AutoMLBackend):
                              f' resampling strategy {resampling_strategy}.')
             return resampling_strategy
 
-        if not resampling_strategy_args.get('shuffle', True):
+        shuffle = resampling_strategy_args.get('shuffle', True)
+        if not (no_groups or shuffle):
             raise ValueError('In grouped splitting, resampling strategy argument "shuffle" must be set to true.')
 
         train_size = resampling_strategy_args.get('train_size')
@@ -787,7 +889,43 @@ class AutoSklearnBackend(AutoMLBackend):
             train_size = 0.67
         test_size = 1. - train_size
 
-        if self.task in ('binary_classification', 'multiclass_classification'):
+        if no_groups:
+            # "CV-like" strategy
+            if self.task in ('binary_classification', 'multiclass_classification'):
+                if shuffle:
+                    try:
+                        import warnings
+                        from copy import deepcopy
+                        with warnings.catch_warnings():
+                            warnings.simplefilter('error')
+                            cv = sklearn.model_selection.StratifiedKFold(
+                                n_splits=resampling_strategy_args['folds'],
+                                shuffle=shuffle,
+                                random_state=1,
+                            )
+                            test_cv = deepcopy(cv)
+                            next(test_cv.split(y, y))
+                    except UserWarning as e:
+                        if 'The least populated class in y has only' in e.args[0]:
+                            from autosklearn.evaluation.splitter import CustomStratifiedKFold
+                            cv = CustomStratifiedKFold(
+                                n_splits=resampling_strategy_args['folds'],
+                                shuffle=shuffle,
+                                random_state=1,
+                            )
+                        else:
+                            raise e
+                else:
+                    cv = sklearn.model_selection.KFold(n_splits=resampling_strategy_args['folds'], shuffle=False)
+            elif resampling_strategy in ('cv', 'partial-cv', 'partial-cv-iterative-fit'):
+                cv = sklearn.model_selection.KFold(
+                    n_splits=resampling_strategy_args['folds'],
+                    shuffle=shuffle,
+                    random_state=1 if shuffle else None,
+                )
+            else:
+                raise ValueError(resampling_strategy)
+        elif self.task in ('binary_classification', 'multiclass_classification'):
             if resampling_strategy in ('holdout', 'holdout-iterative-fit'):
                 cv = grouped_split.StratifiedGroupShuffleSplit(n_splits=1, test_size=test_size, random_state=1)
             elif resampling_strategy in ('cv', 'cv-iterative-fit', 'partial-cv', 'partial-cv-iterative-fit'):

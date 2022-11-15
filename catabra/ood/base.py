@@ -31,13 +31,13 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             ood_class = next(
                 class_ for class_name, class_ in module_classes if class_name.lower() == name.replace('_', '')
             )
-            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
+            ood = ood_class(**kwargs)
             if ood is None:
                 raise ValueError(name + ' is not a valid OODDetector.')
 
         elif source == 'pyod':
             from catabra.ood.pyod import PyODDetector
-            ood = PyODDetector(name, kwargs=kwargs)
+            ood = PyODDetector(name, **kwargs)
 
         elif source == 'external':
             path_split = name.split('.')
@@ -46,7 +46,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             module = importlib.import_module('.'.join(module_name))
             module_classes = inspect.getmembers(module, inspect.isclass)
             ood_class = next(class_ for cn, class_ in module_classes if cn == class_name)
-            ood = ood_class(**kwargs) if kwargs is not None and len(kwargs) > 0 else ood_class()
+            ood = ood_class(**kwargs)
 
         else:
             raise ValueError(source + 'is not a valid OOD source.')
@@ -60,6 +60,14 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         self._verbose = verbose
         if verbose:
             logging.log('Initialized out-of-distribution detector of type ' + self.__class__.__name__)
+
+    @property
+    def subset(self):
+        return self._subset
+
+    @property
+    def verbose(self):
+        return self._verbose
 
     @abstractmethod
     def _transform(self, X: pd.DataFrame):
@@ -98,6 +106,13 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         pass
 
     def predict_proba(self, X):
+        """
+        Get o.o.d. probabilities of the given samples. Note that despite its name, this function does not necessarily
+        return probabilities between 0 and 1, but in any case larger values correspond to an increased likelihood of
+        being o.o.d.
+        :param X: The data to analyze.
+        :return: O.o.d. probabilities.
+        """
         X_trans = self._transform(X)
         logging.log('Predicting out-of-distribution samples.')
         return self._predict_proba_transformed(X_trans)

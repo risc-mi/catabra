@@ -184,7 +184,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             if mask is not None:
                 logging.log('*** Split ' + directory.stem)
             explain_split(explainer, x=x_test if mask is None else x_test[mask],
-                          sample_weight=None if sample_weights is None else sample_weights[mask],
+                          sample_weight=sample_weights if sample_weights is None or mask is None else sample_weights[mask],
                           directory=directory, glob=glob, model_id=model_id, batch_size=batch_size, jobs=jobs,
                           static_plots=static_plots, interactive_plots=interactive_plots, verbose=True)
 

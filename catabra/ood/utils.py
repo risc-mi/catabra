@@ -1,40 +1,24 @@
-from typing import Union
+from sklearn.pipeline import make_pipeline
+from sklearn.impute import SimpleImputer
 
-import numpy as np
-import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import MinMaxScaler
+from ..util.preprocessing import NumCatTransformer, MinMaxScaler, OneHotEncoder
 
 
-class StandardTransformer(BaseEstimator, TransformerMixin):
+def make_standard_transformer() -> NumCatTransformer:
     """
-    Scales numeric columns to the range [0,1]
-    In case of categorical columns they are one-hot encoded and scaled to range [0, feature_weights[col] / # unique values]
-    Missing values are replaced by -1
+    Construct a transformer that scales numerical and time-like columns to the range [0, 1], one-hot encodes
+    categorical columns, and imputes missing numerical values with -1 (after scaling).
+    :return: Instance of class `NumCatTransformer`.
     """
-
-    def __init__(self):
-        super().__init__()
-        self._cat_features = []
-        self._num_features = []
-        self._scaler = MinMaxScaler()
-
-    def fit(self, X: pd.DataFrame):
-        self._columns = X.columns
-        self._num_features = X.select_dtypes('number').columns
-        self._cat_features = X.select_dtypes('category').columns
-
-        self._scaler.fit(X[self._num_features])
-
-    def transform(self, X: Union[np.ndarray, pd.DataFrame]):
-        X_trans = X.copy(deep=True)
-        if not isinstance(X, pd.DataFrame):
-            X_trans = pd.DataFrame(X, columns=self._columns)
-
-        X_trans[self._num_features] = self._scaler.transform(X_trans[self._num_features])
-        if len(self._cat_features) > 0:
-            dummies = pd.get_dummies(X[self._cat_features])
-            X_trans.drop(self._cat_features, axis=1, inplace=True)
-            X_trans[dummies.columns] = dummies
-        X_trans = X_trans.fillna(-1)
-        return X_trans
+    return NumCatTransformer(
+        num_transformer=make_pipeline(
+            MinMaxScaler(fit_bool=False),
+            SimpleImputer(strategy='constant', fill_value=-1),
+            'passthrough'
+        ),
+        cat_transformer=OneHotEncoder(drop_na=True),
+        obj='drop',
+        bool='num',     # cast to float by setting False to 0 and True to 1
+        timedelta='[s]',
+        timestamp='[s]'
+    )

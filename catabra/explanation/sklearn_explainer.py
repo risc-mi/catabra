@@ -29,8 +29,9 @@ def sklearn_explainer_factory(obj, params=None):
         return PipelineExplainer(obj, params=params)
     elif isinstance(obj, (sklearn.preprocessing.RobustScaler, sklearn.preprocessing.StandardScaler,
                           sklearn.preprocessing.QuantileTransformer, sklearn.preprocessing.PowerTransformer,
-                          sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.Normalizer,
-                          sklearn.preprocessing.OrdinalEncoder)):
+                          sklearn.preprocessing.MinMaxScaler, sklearn.preprocessing.MaxAbsScaler,
+                          sklearn.preprocessing.Normalizer,
+                          sklearn.preprocessing.Binarizer, sklearn.preprocessing.OrdinalEncoder)):
         return IdentityTransformationExplainer(transformer=obj, params=params)
     elif isinstance(obj, str):
         if obj == 'passthrough':
@@ -239,6 +240,122 @@ class ColumnTransformerExplainer(TransformationExplainer):
             return False
 
 
+class NumCatTransformerExplainer(TransformationExplainer):
+
+    def __init__(self, transformer: 'NumCatTransformerExplainer', params=None):
+        super(NumCatTransformerExplainer, self).__init__(transformer=transformer, params=params)
+        if params is None:
+            num_params = cat_params = None
+            self._n_num: Optional[int] = None
+            self._n_cat: Optional[int] = None
+            self._columns: Optional[list] = None
+        else:
+            num_params = params.get('num_explainer')
+            cat_params = params.get('cat_explainer')
+            self._n_num = params.get('n_num')
+            self._n_cat = params.get('n_cat')
+            self._columns = params.get('columns')
+        if self._transformer.num_transformer_ is None:
+            self._num_explainer = None
+        else:
+            self._num_explainer = TransformationExplainer.make(self._transformer.num_transformer_, params=num_params)
+        if self._transformer.cat_transformer_ is None:
+            self._cat_explainer = None
+        else:
+            self._cat_explainer = TransformationExplainer.make(self._transformer.cat_transformer_, params=cat_params)
+        self._current_columns = None
+
+    @property
+    def params_(self) -> dict:
+        out = super(NumCatTransformerExplainer, self).params_
+        if self._num_explainer is not None:
+            out['num_explainer'] = self._num_explainer.params_
+        if self._cat_explainer is not None:
+            out['cat_explainer'] = self._cat_explainer.params_
+        out.update(n_num=self._n_num, n_cat=self._n_cat, columns=self._columns)
+        return out
+
+    def fit_forward(self, x: pd.DataFrame, y):
+        self._transformer._validate_input(x)        # noqa
+        self._columns = list(x.columns)
+        self._current_columns = list(x.columns)
+        num, num_df = self._forward_num(x, y, fit=True)
+        cat, cat_df = self._forward_cat(x, y, fit=True)
+        self._n_num = (0 if num is None else num.shape[1]) if num_df is None else num_df.shape[1]
+        self._n_cat = (0 if cat is None else cat.shape[1]) if cat_df is None else cat_df.shape[1]
+        return self._transformer.__class__._combine_results(num, num_df, cat, cat_df,                   # noqa
+                                                            x[self._transformer.passthrough_cols_])
+
+    def forward(self, x: pd.DataFrame):
+        self._transformer._validate_input(x)        # noqa
+        self._current_columns = list(x.columns)
+        num, num_df = self._forward_num(x, None)
+        cat, cat_df = self._forward_cat(x, None)
+        assert self._n_num == (0 if num is None else num.shape[1]) if num_df is None else num_df.shape[1]
+        assert self._n_cat == (0 if cat is None else cat.shape[1]) if cat_df is None else cat_df.shape[1]
+        return self._transformer.__class__._combine_results(num, num_df, cat, cat_df,                   # noqa
+                                                            x[self._transformer.passthrough_cols_])
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        self._validate_backward_input(s, self._current_columns, min_rank=2)
+        return self._backward(s, self._current_columns, 'backward')
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        self._validate_backward_input(s, self._columns, min_rank=1)
+        return self._backward(s, self._columns, 'backward_global')
+
+    def _forward_num(self, x: pd.DataFrame, y, fit: bool = False):
+        if self._num_explainer is not None:
+            x_num, _ = self._transformer._prepare_num(x[self._transformer.num_cols_])       # noqa
+            num = self._num_explainer.fit_forward(x_num, y) if fit else self._num_explainer.forward(x_num)
+            num, num_df = self._transformer._postproc_num(num, x.index)     # noqa
+        else:
+            num = num_df = None
+        return num, num_df
+
+    def _forward_cat(self, x: pd.DataFrame, y, fit: bool = False):
+        if self._cat_explainer is not None:
+            x_cat = x[self._transformer.cat_cols_]
+            cat = self._cat_explainer.fit_forward(x_cat, y) if fit else self._cat_explainer.forward(x_cat)
+            cat, cat_df = self._transformer._postproc_cat(cat, x.index)     # noqa
+        else:
+            cat = cat_df = None
+        return cat, cat_df
+
+    def _validate_backward_input(self, s, columns, min_rank: int = 2):
+        assert self._n_num is not None
+        assert self._n_cat is not None
+        assert columns is not None
+        n_out = self._n_num + self._n_cat + len(self._transformer.passthrough_cols_)
+        if len(s.shape) < min_rank:
+            raise ValueError(f'S must be at least a {min_rank}D array.')
+        elif s.shape[-1] != n_out:
+            raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__, n_out))
+
+    def _backward(self, s: np.ndarray, columns: list, func: str) -> np.ndarray:
+        if self._num_explainer is None:
+            num = s[..., :0]
+        else:
+            num = getattr(self._num_explainer, func)(s[..., :self._n_num])
+        assert num.shape[-1] == len(self._transformer.num_cols_)
+        if self._cat_explainer is None:
+            cat = s[..., :0]
+        else:
+            cat = getattr(self._cat_explainer, func)(s[..., self._n_num:self._n_num + self._n_cat])
+        assert cat.shape[-1] == len(self._transformer.cat_cols_)
+
+        out = np.zeros(s.shape[:-1] + (len(columns),), dtype=s.dtype)
+
+        for i, c in enumerate(self._transformer.num_cols_):
+            out[..., columns.index(c)] += num[..., i]
+        for i, c in enumerate(self._transformer.cat_cols_):
+            out[..., columns.index(c)] += cat[..., i]
+        for i, c in enumerate(self._transformer.passthrough_cols_):
+            out[..., columns.index(c)] += s[..., self._n_num + self._n_cat + i]
+
+        return out
+
+
 class OneHotEncoderExplainer(TransformationExplainer):
 
     def __init__(self, transformer: sklearn.preprocessing.OneHotEncoder, params=None):
@@ -253,6 +370,38 @@ class OneHotEncoderExplainer(TransformationExplainer):
                     self._n_features_out.append(n_cats - 1)
         else:
             self._n_features_out = [len(cats) for cats in self._transformer.categories_]
+
+    def fit_forward(self, x, y):
+        return self.forward(x)
+
+    def forward(self, x):
+        return self.transform(x)
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        if s.shape[-1] != sum(self._n_features_out):
+            raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__,
+                                                          sum(self._n_features_out)))
+
+        out = np.zeros(s.shape[:-1] + (len(self._n_features_out),), dtype=s.dtype)
+        j = 0
+        for i, n in enumerate(self._n_features_out):
+            out[..., i] = s[..., j:j + n].sum(axis=-1)
+            j += n
+
+        return out
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        return self.backward(s)
+
+
+class KBinsDiscretizerExplainer(TransformationExplainer):
+
+    def __init__(self, transformer: sklearn.preprocessing.KBinsDiscretizer, params=None):
+        super(KBinsDiscretizerExplainer, self).__init__(transformer=transformer, params=params)
+        if self._transformer.encode in ('onehot', 'onehot-dense'):
+            self._n_features_out = self._transformer.n_bins_
+        else:
+            self._n_features_out = [1] * len(self._transformer.n_bins_)
 
     def fit_forward(self, x, y):
         return self.forward(x)
@@ -490,7 +639,7 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
 
 class _LinearTransformationExplainer(TransformationExplainer):
     """
-    Linear transformations are tricky. Assume that x_1, ..., x_m are the input features and that an new feature z is
+    Linear transformations are tricky. Assume that x_1, ..., x_m are the input features and that a new feature z is
     constructed as a linear combination of the x_i:
 
           z = sum_{i=1}^m alpha_i * x_i + b
@@ -581,6 +730,34 @@ class RBFSamplerExplainer(_LinearTransformationExplainer):
         # Adding a component-wise offset, taking the cosine and multiplying by a constant factor have no influence on
         # feature importance, and can hence be ignored.
         super(RBFSamplerExplainer, self).__init__(transformer, transformer.random_weights_, params=params)
+
+
+class FeatureFilterExplainer(TransformationExplainer):
+
+    def fit_forward(self, x: pd.DataFrame, y) -> pd.DataFrame:
+        self.input_columns_ = x.columns
+        return self.forward(x)
+
+    def forward(self, x: pd.DataFrame) -> pd.DataFrame:
+        assert len(self.input_columns_) == len(x.columns) and (self.input_columns_ == x.columns).all()
+        return self.transform(x)
+
+    def backward(self, s: np.ndarray) -> np.ndarray:
+        assert s.shape[-1] == len(self._transformer.columns_)
+
+        cols = self._transformer.columns_
+        if len(self.input_columns_) == len(cols) and (self.input_columns_ == cols).all():
+            return s
+        else:
+            m = pd.Series(index=cols, data=np.arange(len(cols))).reindex(self.input_columns_, fill_value=-1)
+            out = np.zeros((*s.shape[:-1], len(m)), dtype=s.dtype)
+            for i, j in enumerate(m.values):
+                if j >= 0:
+                    out[..., i] = s[..., j]
+            return out
+
+    def backward_global(self, s: np.ndarray) -> np.ndarray:
+        return self.backward(s)
 
 
 def _fit_forward_one(explainer, x, y, weight):

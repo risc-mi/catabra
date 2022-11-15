@@ -1,9 +1,17 @@
 import importlib
 import inspect
-
 import pandas as pd
 
-from .utils import StandardTransformer
+try:
+    import pyod
+except ImportError:
+    raise ImportError(
+        'Package pyod is required for out-of-distribution detection with class PyODDetector. You can install it either'
+        ' through pip (`pip install pyod`) or conda (`conda install -c conda-forge pyod`).'
+        ' Visit https://github.com/yzhao062/pyod for details.'
+    )
+
+from .utils import make_standard_transformer
 from .base import OODDetector
 
 
@@ -17,13 +25,13 @@ class PyODDetector(OODDetector):
     def pyod_detector(self):
         return self._pyod_detector
 
-    def __init__(self, name: str, subset: float = 1, transformer=StandardTransformer, verbose=False, **kwargs):
+    def __init__(self, name: str, subset: float = 1, transformer=make_standard_transformer, verbose=False, **kwargs):
         """
         :param: name: name of the module the detector class is in. Given in snake_case format.
         :param: subset: proportion of features to use  [0,1]
-        :transformer: transformer to apply to data before fitting the detector
-        :verbose:  whether to log the detection steps
-        :kwargs: keyword arguments for the specific pyod detector
+        :param transformer: transformer to apply to data before fitting the detector
+        :param verbose:  whether to log the detection steps
+        :param kwargs: keyword arguments for the specific pyod detector
         """
         super().__init__(subset=subset, verbose=verbose)
         # class paths are given in the form: pyod.detector_name.DetectorName
@@ -48,4 +56,7 @@ class PyODDetector(OODDetector):
         return self._pyod_detector.predict(X)
 
     def _predict_proba_transformed(self, X):
-        return self._pyod_detector.predict_proba(X)
+        proba = self._pyod_detector.predict_proba(X)
+        if proba.ndim == 2 and proba.shape[1] > 1:
+            proba = proba[:, -1]    # only probability of positive=OOD class
+        return proba

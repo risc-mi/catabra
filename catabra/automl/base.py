@@ -43,6 +43,7 @@ class AutoMLBackend:
         # NEVER pickle Path objects!
         self._tmp_folder: Optional[str] = tmp_folder.as_posix() if isinstance(tmp_folder, Path) else tmp_folder
         self.model_ = None
+        self.calibrator_ = None
 
     @property
     def tmp_folder(self) -> Optional[Path]:
@@ -53,6 +54,24 @@ class AutoMLBackend:
         """List of IDs for accessing individual (constituent) models of the final ensemble. Return [] if no such models
         exist or cannot be accessed."""
         raise NotImplementedError()
+
+    @property
+    def calibrator_(self):
+        return getattr(self, '_calibrator', None)
+
+    @calibrator_.setter
+    def calibrator_(self, value):
+        if value is None:
+            self._calibrator_method = None
+        elif self.task not in ('binary_classification', 'multiclass_classification', 'multilabel_classification'):
+            raise ValueError('Calibrator can only be used in classification tasks.')
+        elif hasattr(value, 'transform'):
+            self._calibrator_method = 'transform'
+        elif hasattr(value, 'predict'):
+            self._calibrator_method = 'predict'
+        else:
+            raise ValueError('Calibrator must implement method `transform()` or `predict()`.')
+        self._calibrator = value
 
     def summary(self) -> dict:
         """Summary of trained model(s) and preprocessing pipeline(s). No scores (neither train, nor validation,
@@ -89,7 +108,7 @@ class AutoMLBackend:
         raise NotImplementedError()
 
     def predict(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-                model_id=None) -> np.ndarray:
+                model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         """
         Apply trained models to given data.
         :param x: Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
@@ -97,12 +116,14 @@ class AutoMLBackend:
         of jobs specified in the config dict.
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
+        If "auto", calibrated predictions are returned iff `model_id` is None.
         :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
         """
         raise NotImplementedError()
 
     def predict_proba(self, x: pd.DataFrame, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-                      model_id=None) -> np.ndarray:
+                      model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         """
         Apply trained models to given data. In contrast to method `predict()`, this method returns class probabilities
         in case of classification tasks. Does not work for regression tasks.
@@ -111,6 +132,8 @@ class AutoMLBackend:
         of jobs specified in the config dict.
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
+        If "auto", calibrated predictions are returned iff `model_id` is None.
         :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
         """
         raise NotImplementedError()
@@ -142,6 +165,11 @@ class AutoMLBackend:
         If existing, the key of the entire ensemble is "__ensemble__".
         """
         raise NotImplementedError()
+
+    def calibrate(self, y: np.ndarray) -> np.ndarray:
+        if self.calibrator_ is not None:
+            y = getattr(self._calibrator, self._calibrator_method)(y)
+        return y
 
     @classmethod
     def get_versions(cls) -> dict:
