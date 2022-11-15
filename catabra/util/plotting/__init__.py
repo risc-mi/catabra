@@ -1,7 +1,7 @@
 from typing import Union
 
 from . import _matplotlib as mpl_backend
-from ..io import Path, make_path
+from catabra.util.io import Path, make_path
 
 try:
     from . import _plotly as plotly_backend

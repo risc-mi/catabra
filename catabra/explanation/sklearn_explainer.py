@@ -15,7 +15,7 @@ from sklearn.utils._mask import _get_mask
 from joblib import Parallel
 import sys
 
-from catabra.explanation.base import TransformationExplainer, IdentityTransformationExplainer
+from .base import TransformationExplainer, IdentityTransformationExplainer
 
 
 def sklearn_explainer_factory(obj, params=None):

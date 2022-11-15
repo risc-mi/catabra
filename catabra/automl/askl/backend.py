@@ -17,15 +17,13 @@ from smac.tae import StatusType
 from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
 
-from ...util import io
-from ...util import logging
+from ...util import io, logging
 from ...util.common import repr_timedelta, repr_list
-from ...util.preprocessing import FeatureFilter
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
 from . import explanation
-
+from ...util.preprocessing import FeatureFilter
 
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')

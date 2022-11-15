@@ -1,17 +1,15 @@
-from typing import Union, Optional, Tuple, Callable
+from typing import Union, Optional, Tuple, Callable, Type
 from pathlib import Path
-import shutil
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu
-from ..util import io
-from ..util import logging
+from ..util import table as tu, io, logging
+from ..core import CaTabRaBase, Invocation
 from ..util import plotting
 from ..util import metrics
 from ..util import statistics
 from ..util.bootstrapping import Bootstrapping
-from ..util.paths import CaTabRaPaths
+from ..core import CaTabRaPaths
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -49,303 +47,385 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
+    evaluator = Evaluator(invocation=from_invocation)
+    evaluator(
+        *table,
+        folder=folder,
+        model_id=model_id,
+        explain=explain,
+        glob=glob,
+        split=split,
+        sample_weight=sample_weight,
+        out=out,
+        jobs=jobs,
+        batch_size=batch_size,
+        threshold=threshold,
+        bootstrapping_repetitions=bootstrapping_repetitions,
+        bootstrapping_metrics=bootstrapping_metrics
+    )
 
-    if isinstance(from_invocation, (str, Path)):
-        from_invocation = io.load(from_invocation)
-    if isinstance(from_invocation, dict):
-        if len(table) == 0:
-            table = from_invocation.get('table') or []
-            if '<DataFrame>' in table:
-                raise ValueError('Invocations must not contain "<DataFrame>" tables.')
-        if folder is None:
-            folder = from_invocation.get('folder')
-        if model_id is None:
-            model_id = from_invocation.get('model_id')
-        if explain is None:
-            explain = from_invocation.get('explain')
-        if glob is None:
-            glob = from_invocation.get('glob')
-        if split is None:
-            split = from_invocation.get('split')
-        if sample_weight is None:
-            sample_weight = from_invocation.get('sample_weight')
-        if out is None:
-            out = from_invocation.get('out')
-        if jobs is None:
-            jobs = from_invocation.get('jobs')
-        if threshold is None:
-            threshold = from_invocation.get('threshold')
-        if bootstrapping_repetitions is None:
-            bootstrapping_repetitions = from_invocation.get('bootstrapping_repetitions')
-        if bootstrapping_metrics is None:
-            bootstrapping_metrics = from_invocation.get('bootstrapping_metrics')
 
-    if len(table) == 0:
-        raise ValueError('No table specified.')
-    if folder is None:
-        raise ValueError('No CaTabRa directory specified.')
+class Evaluator(CaTabRaBase):
 
-    loader = io.CaTabRaLoader(folder, check_exists=True)
-    config = loader.get_config()
+    @property
+    def invocation_class(self) -> Type['EvaluationInvocation']:
+        return EvaluationInvocation
 
-    start = pd.Timestamp.now()
-    table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in table]
+    def _call(self):
+        if len(self._invocation.table) == 0:
+            raise ValueError('No table specified.')
 
-    if out is None:
-        out = table[0]
-        if isinstance(out, pd.DataFrame):
-            out = loader.path / ('eval_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-        else:
-            out = loader.path / ('eval_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-    else:
-        out = io.make_path(out, absolute=True)
-    if out == loader.path:
-        raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
-    elif out.exists():
-        if logging.prompt(f'Evaluation folder "{out.as_posix()}" already exists. Delete?',
-                          accepted=['y', 'n'], allow_headless=False) == 'y':
-            if out.is_dir():
-                shutil.rmtree(out.as_posix())
-            else:
-                out.unlink()
-        else:
+        loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
+        self._config = loader.get_config()
+
+        out_ok = self._invocation.resolve_output_dir(
+            prompt=f'Evaluation folder "{self._invocation.out.as_posix()}" already exists. Delete?'
+        )
+        if not out_ok:
             logging.log('### Aborting')
             return
-    out.mkdir(parents=True)
 
-    if split == '':
-        split = None
-    if sample_weight == '':
-        sample_weight = None
+        with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
+            logging.log(f'### Evaluation started at {self._invocation.start}')
 
-    with logging.LogMirror((out / CaTabRaPaths.ConsoleLogs).as_posix()):
-        logging.log(f'### Evaluation started at {start}')
-        invocation = dict(
-            table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
-            folder=loader.path,
-            model_id=model_id,
-            explain=explain,
-            glob=glob,
-            split=split,
-            sample_weight=sample_weight,
-            out=out,
-            jobs=jobs,
-            threshold=threshold,
-            bootstrapping_repetitions=bootstrapping_repetitions,
-            bootstrapping_metrics=bootstrapping_metrics,
-            timestamp=start
-        )
-        io.dump(io.to_json(invocation), out / CaTabRaPaths.Invocation)
+            # merge tables
+            df, _ = tu.merge_tables(self._invocation.table)
+            if df.columns.nlevels != 1:
+                raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
 
-        # merge tables
-        df, _ = tu.merge_tables(table)
-        if df.columns.nlevels != 1:
-            raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
+            # copy test data
+            copy_data = self._config.get('copy_evaluation_data', False)
+            if isinstance(copy_data, (int, float)):
+                copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
+            if copy_data:
+                io.write_df(df, self._invocation.out / CaTabRaPaths.TestData)
 
-        # copy test data
-        copy_data = config.get('copy_evaluation_data', False)
-        if isinstance(copy_data, (int, float)):
-            copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
-        if copy_data:
-            io.write_df(df, out / CaTabRaPaths.TestData)
+            # split
+            _iter_splits = self._get_split_iterator(df)
+            sample_weights = self._invocation.get_sample_weights(df)
+            encoder = loader.get_encoder()
+            x_test, y_test = encoder.transform(data=df)
 
-        # split
-        if split is None:
-            def _iter_splits():
-                yield np.ones((len(df),), dtype=np.bool), out
+            model = loader.get_model_or_fitted_ensemble()
+            ood = loader.get_ood()
+            apply_odd = ood is not None
+            if apply_odd:
+                ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
+                ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
+
+            # descriptive statistics for each train/test split
+
+            if encoder.task_ is not None:
+                target = list(y_test.columns)
+                for mask, directory in _iter_splits():
+                    statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
+                                                           target=target,
+                                                           classify=encoder.task_ != 'regression',
+                                                           fn=directory / CaTabRaPaths.Statistics)
+                    if apply_odd:
+                        io.write_df(ood_predictions.loc[mask, :], directory / CaTabRaPaths.OODStats)
+
+            if encoder.task_ is None or model is None:
+                self._invocation.explain = []
+            else:
+                self._invocation.set_models_to_explain(model)
+                # `explain` is now either None or a list: None => explain all models; list => explain only these models
+
+                main_metrics = self._config.get(encoder.task_ + '_metrics', [])
+
+                if self._invocation.bootstrapping_repetitions is None:
+                    self._invocation.bootstrapping_repetitions = self._config.get('bootstrapping_repetitions', 0)
+                if encoder.task_ == 'regression':
+                    self._evaluate_regression_task(_iter_splits, encoder, main_metrics, model,
+                                                   sample_weights, x_test, y_test)
+                else:
+                    self._evaluate_classification_task(_iter_splits, encoder, main_metrics, model,
+                                                       sample_weights, x_test, y_test)
+
+            io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
+            end = pd.Timestamp.now()
+            logging.log(f'### Evaluation finished at {end}')
+            logging.log(f'### Elapsed time: {end - self._invocation.start}')
+            logging.log(f'### Output saved in {self._invocation.out.as_posix()}')
+
+        if self._invocation.explain is None or len(self._invocation.explain) > 0:
+            from ..explanation import explain as explain_fn
+            explain_fn(df, folder=self._invocation.folder, split=self._invocation.split,
+                       sample_weight=self._invocation.sample_weight, model_id=self._invocation.explain,
+                       out=self._invocation.out / 'explanations', glob=self._invocation.glob,
+                       batch_size=self._invocation.batch_size, jobs=self._invocation.jobs)
+
+    def _evaluate_classification_task(self, _iter_splits, encoder, main_metrics, model,
+                                      sample_weights, x_test, y_test):
+        y_hat = model.predict_proba(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
+                                    model_id=self._invocation.model_id)
+
+        if encoder.task_ == 'multilabel_classification':
+            # decoded ground truth and predictions for each target
+            y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
+            y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+            y_hat_decoded.index = y_test_decoded.index
+            y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
+            detailed = y_test_decoded.join(y_hat_decoded)
+            detailed = detailed.reindex(
+                [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
+                axis=1
+            )
+            del y_test_decoded
+            del y_hat_decoded
+
+            if sample_weights is not None:
+                detailed['__sample_weight'] = sample_weights
+
+            for mask, directory in _iter_splits():
+                directory.mkdir(exist_ok=True, parents=True)
+                io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
+                evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                               main_metrics=main_metrics,
+                               sample_weight=None if sample_weights is None else sample_weights[mask],
+                               threshold=self._invocation.threshold,
+                               static_plots=self._config.get('static_plots', True),
+                               interactive_plots=self._config.get('interactive_plots', False),
+                               bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
+                               bootstrapping_metrics=self._invocation.bootstrapping_metrics,
+                               split=(None if directory == self._invocation.out else directory.stem), verbose=True)
         else:
-            split_masks, _ = tu.train_test_split(df, split)
+            # decoded ground truth and predictions for each target
+            detailed = encoder.inverse_transform(y=y_test, inplace=False)
+            if encoder.task_ == 'multiclass_classification':
+                detailed[detailed.columns[0] + '_pred'] = \
+                    encoder.inverse_transform(y=metrics.multiclass_proba_to_pred(y_hat)).values[:, 0]
+            y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+            y_hat_decoded.index = detailed.index
+            y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
+            detailed = detailed.join(y_hat_decoded)
+            del y_hat_decoded
+
+            if encoder.task_ == 'multiclass_classification':
+                mask = np.isfinite(y_test.values[:, 0])
+                detailed['__true_proba'] = np.nan
+                detailed.loc[mask, '__true_proba'] = \
+                    y_hat[mask][np.arange(mask.sum()), y_test.values[mask, 0].astype(np.int32)]
+                detailed['__true_rank'] = \
+                    (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1 + \
+                    ((y_hat == detailed['__true_proba'].values[..., np.newaxis]) &
+                     (np.arange(y_hat.shape[1])[np.newaxis] > y_test.values)).sum(axis=1)
+                detailed.loc[~mask, '__true_rank'] = -1
+            if sample_weights is not None:
+                detailed['__sample_weight'] = sample_weights
+
+            for mask, directory in _iter_splits():
+                directory.mkdir(exist_ok=True, parents=True)
+                io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
+                evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                               main_metrics=main_metrics,
+                               sample_weight=None if sample_weights is None else sample_weights[mask],
+                               threshold=self._invocation.threshold,
+                               static_plots=self._config.get('static_plots', True),
+                               interactive_plots=self._config.get('interactive_plots', False),
+                               bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
+                               bootstrapping_metrics=self._invocation.bootstrapping_metrics,
+                               split=(None if directory == self._invocation.out else directory.stem), verbose=True)
+
+    def _evaluate_regression_task(self, _iter_splits, encoder, main_metrics, model, sample_weights, x_test, y_test):
+        y_hat = model.predict(x_test, jobs=self._invocation.jobs, batch_size=self._invocation.batch_size,
+                              model_id=self._invocation.model_id)
+        if y_hat.ndim == 1:
+            y_hat = y_hat.reshape(-1, 1)
+        # decoded ground truth and predictions for each target
+        y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
+        y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
+        y_hat_decoded.index = y_test_decoded.index
+        for mask, directory in _iter_splits():
+            evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
+                           y_hat_decoded=y_hat_decoded[mask], y_true_decoded=y_test_decoded[mask],
+                           main_metrics=main_metrics,
+                           sample_weight=None if sample_weights is None else sample_weights[mask],
+                           static_plots=self._config.get('static_plots', True),
+                           interactive_plots=self._config.get('interactive_plots', False),
+                           bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
+                           bootstrapping_metrics=self._invocation.bootstrapping_metrics,
+                           split=(None if directory == self._invocation.out else directory.stem), verbose=True)
+        y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
+        detailed = y_test_decoded.join(y_hat_decoded)
+        detailed = detailed.reindex(
+            [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
+            axis=1
+        )
+        del y_test_decoded
+        del y_hat_decoded
+        if sample_weights is not None:
+            detailed['__sample_weight'] = sample_weights
+        for mask, directory in _iter_splits():
+            io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
+
+    def _get_split_iterator(self, df):
+        if self._invocation.split is None:
+            def _iter_splits():
+                yield np.ones((len(df),), dtype=np.bool), self._invocation.out
+        else:
+            split_masks, _ = tu.train_test_split(df, self._invocation.split)
 
             def _iter_splits():
                 for _k, _m in split_masks.items():
-                    yield _m, out / _k
+                    yield _m, self._invocation.out / _k
 
-        if sample_weight is None:
-            sample_weights = None
-        elif sample_weight in df.columns:
-            if df[sample_weight].dtype.kind not in 'fiub':
-                raise ValueError(f'Column "{sample_weight}" must have numeric data type,'
-                                 f' but found {df[sample_weight].dtype.name}.')
-            logging.log(f'Weighting samples by column "{sample_weight}"')
-            sample_weights = df[sample_weight].values
-            na_mask = np.isnan(sample_weights)
-            if na_mask.any():
-                sample_weights = sample_weights.copy()
-                sample_weights[na_mask] = 1.
-        else:
-            raise ValueError(f'"{sample_weight}" is no column of the specified table.')
+        return _iter_splits
 
-        encoder = loader.get_encoder()
-        x_test, y_test = encoder.transform(data=df)
 
-        static_plots = config.get('static_plots', True)
-        interactive_plots = config.get('interactive_plots', False)
-        if interactive_plots and plotting.plotly_backend is None:
-            logging.warn(plotting.PLOTLY_WARNING)
-            interactive_plots = False
+class EvaluationInvocation(Invocation):
 
-        model = loader.get_model_or_fitted_ensemble()
-        ood = loader.get_ood()
-        apply_odd = ood is not None
-        if apply_odd:
-            ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'], index=x_test.index)
-            ood_predictions['decision'] = pd.DataFrame(data=ood.predict(x_test), index=x_test.index)
+    @property
+    def folder(self) -> Union[str, Path]:
+        return self._folder
 
-        # descriptive statistics for each train/test split
-        if encoder.task_ is not None:
-            target = list(y_test.columns)
-            for mask, directory in _iter_splits():
-                statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
-                                                       target=target,
-                                                       classify=encoder.task_ != 'regression',
-                                                       fn=directory / CaTabRaPaths.Statistics)
-                if apply_odd:
-                    print(directory / CaTabRaPaths.OODStats)
-                    io.write_df(ood_predictions.loc[mask,:], directory / CaTabRaPaths.OODStats)
+    @property
+    def model_id(self) -> Optional[str]:
+        return self._model_id
 
-        if encoder.task_ is None or model is None:
-            explain = []
-        else:
-            if model_id == '__ensemble__':
-                model_id = None
+    @property
+    def explain(self):
+        return self._explain
 
-            if explain is None:
-                explain = set()
-            elif isinstance(explain, list):
-                explain = set(explain)
-            elif not isinstance(explain, set):
-                explain = {explain}
-            if '__ensemble__' in explain:
-                if model_id is None:
-                    explain = None
-                else:
-                    explain.remove('__ensemble__')
-                    explain.update(model.model_ids_)
-            elif '__all__' in explain:
-                if model_id is None:
-                    explain = None
-                else:
-                    explain.remove('__all__')
-                    explain.add(model_id)
-            if isinstance(explain, set):
-                if model_id is not None and any(e != model_id for e in explain):
-                    raise ValueError('Cannot explain models that are not being evaluated.')
-                explain = list(explain)
-            # `explain` is now either None or a list: None => explain all models; list => explain only these models
+    @explain.setter
+    def explain(self, value):
+        self._explain = value
 
-            main_metrics = config.get(encoder.task_ + '_metrics', [])
-            if bootstrapping_repetitions is None:
-                bootstrapping_repetitions = config.get('bootstrapping_repetitions', 0)
-            if encoder.task_ == 'regression':
-                y_hat = model.predict(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                if y_hat.ndim == 1:
-                    y_hat = y_hat.reshape(-1, 1)
+    @property
+    def glob(self) -> Optional[bool]:
+        return self._glob
 
-                # decoded ground truth and predictions for each target
-                y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
-                y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
-                y_hat_decoded.index = y_test_decoded.index
+    @property
+    def batch_size(self) -> Optional[int]:
+        return self._batch_size
 
-                for mask, directory in _iter_splits():
-                    evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
-                                   y_hat_decoded=y_hat_decoded[mask], y_true_decoded=y_test_decoded[mask],
-                                   main_metrics=main_metrics,
-                                   sample_weight=None if sample_weights is None else sample_weights[mask],
-                                   static_plots=static_plots, interactive_plots=interactive_plots,
-                                   bootstrapping_repetitions=bootstrapping_repetitions,
-                                   bootstrapping_metrics=bootstrapping_metrics,
-                                   split=(None if directory == out else directory.stem), verbose=True)
+    @property
+    def threshold(self) -> Optional[float]:
+        return self._threshold
 
-                y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
-                detailed = y_test_decoded.join(y_hat_decoded)
-                detailed = detailed.reindex(
-                    [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
-                    axis=1
-                )
-                del y_test_decoded
-                del y_hat_decoded
-                if sample_weights is not None:
-                    detailed['__sample_weight'] = sample_weights
+    @property
+    def bootstrapping_repetitions(self) -> Optional[int]:
+        return self._bootstrapping_repetitions
 
-                for mask, directory in _iter_splits():
-                    io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
+    @bootstrapping_repetitions.setter
+    def bootstrapping_repetitions(self, value: int):
+        self._bootstrapping_repetitions = value
+
+    @property
+    def bootstrapping_metrics(self) -> Optional[list]:
+        return self._bootstrapping_metrics
+
+    def __init__(
+        self,
+        *table,
+        split: Optional[str] = None,
+        sample_weight: Optional[str] = None,
+        out: Union[str, Path, None] = None,
+        jobs: Optional[int] = None,
+        folder: Union[str, Path] = None,
+        model_id=None,
+        explain=None,
+        glob: Optional[bool] = False,
+        batch_size: Optional[int] = None,
+        threshold: Optional[float] = None,
+        bootstrapping_repetitions: Optional[int] = None,
+        bootstrapping_metrics: Optional[list] = None,
+    ):
+
+        super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)
+        self._folder = folder
+        self._model_id = model_id
+        self._explain = explain
+        self._glob = glob
+        self._batch_size = batch_size
+        self._threshold = threshold
+        self._bootstrapping_repetitions = bootstrapping_repetitions
+        self._bootstrapping_metrics = bootstrapping_metrics
+
+    def update(self, src: dict = None):
+        super().update(src)
+        if src:
+            if self._folder is None:
+                self._folder = src.get('folder')
+            if self._model_id is None:
+                self._model_id = src.get('model_id')
+            if self._explain is None:
+                self._explain = src.get('explain')
+            if self._glob is None:
+                self._glob = src.get('glob')
+            if self._threshold is None:
+                self._threshold = src.get('threshold')
+            if self._bootstrapping_repetitions is None:
+                self._bootstrapping_repetitions = src.get('bootstrapping_repetitions')
+            if self._bootstrapping_metrics is None:
+                self._bootstrapping_metrics = src.get('bootstrapping_metrics')
+            if self._batch_size is None:
+                self._batch_size = src.get('bootstrapping_metrics')
+
+    def resolve(self):
+        super().resolve()
+        if self._threshold is None:
+            self._threshold = 0.5
+
+        if self._out is None:
+            self._out = self._table[0]
+            if isinstance(self._out, pd.DataFrame):
+                self._out = self._folder / ('eval_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
             else:
-                y_hat = model.predict_proba(x_test, jobs=jobs, batch_size=batch_size, model_id=model_id)
-                if threshold is None:
-                    threshold = 0.5
-                if encoder.task_ == 'multilabel_classification':
-                    # decoded ground truth and predictions for each target
-                    y_test_decoded = encoder.inverse_transform(y=y_test, inplace=False)
-                    y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
-                    y_hat_decoded.index = y_test_decoded.index
-                    y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
-                    detailed = y_test_decoded.join(y_hat_decoded)
-                    detailed = detailed.reindex(
-                        [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
-                        axis=1
-                    )
-                    del y_test_decoded
-                    del y_hat_decoded
-                    if sample_weights is not None:
-                        detailed['__sample_weight'] = sample_weights
+                self._out = self._folder / ('eval_' + self._out.stem + '_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
+        else:
+            self._out = io.make_path(self._out, absolute=True)
+        if self._out == self._folder:
+            raise ValueError(
+                f'Output directory must differ from CaTabRa directory, but both are "{self._out.as_posix()}".'
+            )
 
-                    for mask, directory in _iter_splits():
-                        directory.mkdir(exist_ok=True, parents=True)
-                        io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
-                        evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
-                                       main_metrics=main_metrics,
-                                       sample_weight=None if sample_weights is None else sample_weights[mask],
-                                       threshold=threshold,
-                                       static_plots=static_plots, interactive_plots=interactive_plots,
-                                       bootstrapping_repetitions=bootstrapping_repetitions,
-                                       bootstrapping_metrics=bootstrapping_metrics,
-                                       split=(None if directory == out else directory.stem), verbose=True)
-                else:
-                    # decoded ground truth and predictions for each target
-                    detailed = encoder.inverse_transform(y=y_test, inplace=False)
-                    if encoder.task_ == 'multiclass_classification':
-                        detailed[detailed.columns[0] + '_pred'] = \
-                            encoder.inverse_transform(y=metrics.multiclass_proba_to_pred(y_hat)).values[:, 0]
-                    y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
-                    y_hat_decoded.index = detailed.index
-                    y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
-                    detailed = detailed.join(y_hat_decoded)
-                    del y_hat_decoded
-                    if encoder.task_ == 'multiclass_classification':
-                        mask = np.isfinite(y_test.values[:, 0])
-                        detailed['__true_proba'] = np.nan
-                        detailed.loc[mask, '__true_proba'] = \
-                            y_hat[mask][np.arange(mask.sum()), y_test.values[mask, 0].astype(np.int32)]
-                        detailed['__true_rank'] = \
-                            (y_hat > detailed['__true_proba'].values[..., np.newaxis]).sum(axis=1) + 1 + \
-                            ((y_hat == detailed['__true_proba'].values[..., np.newaxis]) &
-                             (np.arange(y_hat.shape[1])[np.newaxis] > y_test.values)).sum(axis=1)
-                        detailed.loc[~mask, '__true_rank'] = -1
-                    if sample_weights is not None:
-                        detailed['__sample_weight'] = sample_weights
+    def to_dict(self) -> dict:
+        dic = super().to_dict()
+        dic.update(dict(
+            table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in self._table],
+            folder=self._folder,
+            model_id=self._model_id,
+            explain=self._explain,
+            glob=self._glob,
+            split=self._split,
+            sample_weight=self._sample_weight,
+            out=self._out,
+            jobs=self._jobs,
+            threshold=self._threshold,
+            bootstrapping_repetitions=self._bootstrapping_repetitions,
+            bootstrapping_metrics=self._bootstrapping_metrics,
+            timestamp=self._start
+        ))
+        return dic
 
-                    for mask, directory in _iter_splits():
-                        directory.mkdir(exist_ok=True, parents=True)
-                        io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
-                        evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
-                                       main_metrics=main_metrics,
-                                       sample_weight=None if sample_weights is None else sample_weights[mask],
-                                       threshold=threshold,
-                                       static_plots=static_plots, interactive_plots=interactive_plots,
-                                       bootstrapping_repetitions=bootstrapping_repetitions,
-                                       bootstrapping_metrics=bootstrapping_metrics,
-                                       split=(None if directory == out else directory.stem), verbose=True)
+    def set_models_to_explain(self, model):
+        if self._model_id == '__ensemble__':
+            self._model_id = None
 
+        if self._explain is None:
+            self._explain = set()
+        elif isinstance(self._explain, list):
 
-        end = pd.Timestamp.now()
-        logging.log(f'### Evaluation finished at {end}')
-        logging.log(f'### Elapsed time: {end - start}')
-        logging.log(f'### Output saved in {out.as_posix()}')
-
-    if explain is None or len(explain) > 0:
-        from ..explanation import explain as explain_fn
-        explain_fn(df, folder=folder, split=split, sample_weight=sample_weight, model_id=explain,
-                   out=out / 'explanations', glob=glob, batch_size=batch_size, jobs=jobs)
+            self._explain = set(self._explain)
+        elif not isinstance(self._explain, set):
+            self._explain = {self._explain}
+        if '__ensemble__' in self._explain:
+            if self._model_id is None:
+                self._explain = None
+            else:
+                self._explain.remove('__ensemble__')
+                self._explain.update(model.model_ids_)
+        elif '__all__' in self._explain:
+            if self._model_id is None:
+                self._explain = None
+            else:
+                self._explain.remove('__all__')
+                self._explain.add(self._model_id)
+        if isinstance(self._explain, set):
+            if self._model_id is not None and any(e != self._model_id for e in self._explain):
+                raise ValueError('Cannot explain models that are not being evaluated.')
+            self._explain = list(self._explain)
 
 
 def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,
@@ -399,7 +479,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             plotting.save(_obj, directory / _name)
 
     if main_metrics is None:
-        from ..util.config import DEFAULT_CONFIG
+        from ..core.config import DEFAULT_CONFIG
         main_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
 
     na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
@@ -1294,7 +1374,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         if bootstrapping_metrics == '__all__':
             bootstrapping_metrics = _get_default_metrics(encoder.task_)
         elif bootstrapping_metrics is None:
-            from ..util.config import DEFAULT_CONFIG
+            from ..core.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
         bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
                                  sample_weight=sample_weight, task=encoder.task_, metric_list=bootstrapping_metrics,
