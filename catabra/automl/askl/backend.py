@@ -257,14 +257,16 @@ def strip_autosklearn(obj):
 
                 steps = getattr(obj, 'steps', None)
                 if isinstance(steps, list):
-                    assert all(isinstance(s, tuple) for s in steps)
+                    assert all(isinstance(s, (tuple, list)) for s in steps)
                     steps = [(s[0], strip_autosklearn(s[1])) for s in steps]
                     steps = [(n, t) for n, t in steps if t not in (None, 'passthrough')]
                     if steps:
                         if len(steps) == 1:
                             return steps[0][1]
                         else:
-                            steps.append(('dummy', 'passthrough'))
+                            if not hasattr(steps[-1][1], 'predict'):
+                                # add "passthrough" iff last step is no estimator
+                                steps.append(('dummy', 'passthrough'))
                             return sklearn.pipeline.Pipeline(steps)
                     else:
                         return 'passthrough'
