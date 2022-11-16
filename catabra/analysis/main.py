@@ -118,7 +118,7 @@ class Analyzer(CaTabRaBase):
             # train-test split
             df_train, split_masks = self._make_train_split(df, self._invocation.split)
             if self._invocation.split is not None:
-                self._invocation.ignore.update(self._invocation.split)
+                self._invocation.ignore.update({self._invocation.split})
 
             # copy training data
             copy_data = self._config.get('copy_analysis_data', False)
