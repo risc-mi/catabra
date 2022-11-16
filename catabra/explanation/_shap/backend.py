@@ -136,6 +136,13 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         preprocessing, estimator = self._explainers[model_id]
         if len(x) <= batch_size or glob:
             return func(preprocessing, estimator, x)
+        elif jobs == 1:
+            # Sometimes multiprocessing still does not work properly, especially with XGBoost. Therefore, if the number
+            # of jobs is 1, we circumvent multiprocessing entirely.
+            explanations = [func(preprocessing, estimator, x.iloc[i * batch_size:(i + 1) * batch_size], copy=True)
+                            for i in progress_bar(range((len(x) + batch_size - 1) // batch_size), disable=silent,
+                                                  desc='Sample batches')]
+            return np.concatenate(explanations, axis=-2)  # sample axis is last-but-one
         else:
             # joblib with loky backend may lead to segmentation faults, when existing explainers are "shared" among
             # processes. Built-in multiprocessing module works just fine.
