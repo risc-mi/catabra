@@ -43,11 +43,13 @@ class Bootstrapping:
         assert self._size_n <= self._n or self._replace
         self._results = None
         self._idx = []
+        self._seeds = []
 
     def reset(self, seed=None):
         self._rng = np.random.RandomState(seed=seed)
         self._results = None
         self._idx = []
+        self._seeds = []
 
     def run(self, n_repetitions: int = 100, sample_indices: Optional[np.ndarray] = None) -> 'Bootstrapping':
         """
@@ -61,9 +63,14 @@ class Bootstrapping:
             assert sample_indices.ndim == 2
             assert sample_indices.shape[1] == self._size_n
         for i in range(n_repetitions):
-            idx = self._rng.choice(self._n, size=self._size_n, replace=self._replace) \
-                if sample_indices is None else sample_indices[i]
+            if sample_indices is None:
+                seed = self._rng.randint(2 ** 32)
+                idx = self.subsample(seed=seed)
+            else:
+                seed = None
+                idx = sample_indices[i]
             self._idx.append(idx)
+            self._seeds.append(seed)
             res = Bootstrapping._apply_function(
                 self._fn,
                 [a[idx] if isinstance(a, np.ndarray) else a.iloc[idx] for a in self._args],
@@ -74,6 +81,17 @@ class Bootstrapping:
             else:
                 Bootstrapping._update_results(self._results, res)
         return self
+
+    def subsample(self, seed: Optional[int] = None) -> np.ndarray:
+        """
+        Construct a subsample.
+        :param seed: Random seed to use.
+        :return: Array with subsample indices.
+        """
+
+        # create new random state to make result independent of previous calls to this method
+        rng = np.random.RandomState(seed=seed)
+        return rng.choice(self._n, size=self._size_n, replace=self._replace)
 
     @property
     def replace(self) -> bool:
@@ -90,6 +108,10 @@ class Bootstrapping:
     @property
     def results(self):
         return self._results
+
+    @property
+    def seeds(self) -> list:
+        return self._seeds
 
     def get_sample_indices(self) -> np.ndarray:
         """
