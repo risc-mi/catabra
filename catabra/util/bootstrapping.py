@@ -157,15 +157,14 @@ class Bootstrapping:
     def sum(self):
         return Bootstrapping._aggregate(self._results, np.sum)
 
-    def describe(self, keys=None) -> Union[pd.Series, pd.DataFrame]:
+    def dataframe(self, keys=None) -> Optional[pd.DataFrame]:
         """
-        Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
-        `describe()` method. Only works for (dicts/tuples of) scalar values.
-        :return: DataFrame or Series with descriptive statistics.
+        Construct a DataFrame with all results, if possible. Only works for (dicts/tuples of) scalar values.
+        :return: DataFrame whose columns correspond to individual metrics and whose rows correspond to runs, or None.
         """
         if isinstance(self._results, list):
             if all(np.isscalar(r) for r in self._results):
-                return pd.Series(self._results).describe()
+                return pd.Series(self._results).to_frame('')
             else:
                 res = {}
         elif isinstance(self._results, tuple):
@@ -180,9 +179,23 @@ class Bootstrapping:
             keys = [keys]
         res = {k: v for k, v in res.items() if k in keys and isinstance(v, list) and all(np.isscalar(x) for x in v)}
         if res:
-            return pd.DataFrame(res).describe()
+            return pd.DataFrame(res)
         else:
+            return None
+
+    def describe(self, keys=None) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
+        `describe()` method. Only works for (dicts/tuples of) scalar values.
+        :return: DataFrame or Series with descriptive statistics.
+        """
+        df = self.dataframe(keys=keys)
+        if df is None:
             return pd.DataFrame(index=['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max'])
+        elif df.shape[1] == 1 and df.columns[0] == '':
+            return df.iloc[:, 0].describe()
+        else:
+            return df.describe()
 
     @staticmethod
     def _apply_function(fn, args: list, kwargs: dict):
