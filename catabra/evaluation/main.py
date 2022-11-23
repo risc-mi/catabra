@@ -515,11 +515,13 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 y_hat_decoded.index = y_true_decoded.index
             _save_plots(plot_regression(y_true_decoded, y_hat_decoded, sample_weight=sample_weight, interactive=True),
                         'interactive_plots')
-        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
-                                 sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                 task=encoder.task_, metric_list=bootstrapping_metrics)
-        if bs is not None:
-            _save(bs, 'bootstrapping')
+        bs_summary, bs_details, _, _, _ = _bootstrap(
+            bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
+            sample_weight=None if sample_weight is None else sample_weight[na_mask],
+            task=encoder.task_, metric_list=bootstrapping_metrics
+        )
+        if bs_summary is not None:
+            _save(dict(summary=bs_summary, details=bs_details), 'bootstrapping')
     elif encoder.task_ == 'multilabel_classification':
         labels = pd.DataFrame({t: encoder.get_dtype(t)['categories'] for t in encoder.target_names_})
         overall, thresh, thresh_per_class, roc_curves, pr_curves = \
@@ -556,11 +558,13 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             )
         overall.insert(0, 'pos_label', list(labels.iloc[1]) + [None] * 3)
         _save(dict(overall=overall, thresholded=thresh, **thresh_per_class), 'metrics')
-        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
-                                 sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                 task=encoder.task_, metric_list=bootstrapping_metrics, threshold=threshold)
-        if bs is not None:
-            _save(bs, 'bootstrapping')
+        bs_summary, bs_details, _, _, _ = _bootstrap(
+            bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
+            sample_weight=None if sample_weight is None else sample_weight[na_mask],
+            task=encoder.task_, metric_list=bootstrapping_metrics, threshold=threshold
+        )
+        if bs_summary is not None:
+            _save(dict(summary=bs_summary, details=bs_details), 'bootstrapping')
     else:
         labels = encoder.get_dtype(encoder.target_names_[0])['categories']
         if encoder.task_ == 'binary_classification':
@@ -583,7 +587,7 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
             overall_df = pd.DataFrame(data=overall, index=[y_true.columns[0]])
             overall_df.insert(0, 'pos_label', labels[1])
             _save(dict(overall=overall_df, thresholded=thresh, calibration=calib), 'metrics')
-            bs, roc_curve_bs, pr_curve_bs, calibration_curve_bs = _bootstrap(
+            bs_summary, bs_details, roc_curve_bs, pr_curve_bs, calibration_curve_bs = _bootstrap(
                 bootstrapping_repetitions,
                 y_true[na_mask].iloc[:, 0],
                 y_hat[na_mask, -1],
@@ -594,8 +598,8 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 threshold=threshold,
                 calc_roc_pr_calibration=static_plots or interactive_plots
             )
-            if bs is not None:
-                _save(bs, 'bootstrapping')
+            if bs_summary is not None:
+                _save(dict(summary=bs_summary, details=bs_details), 'bootstrapping')
             if static_plots:
                 _save_plots(
                     plot_binary_classification(overall, thresh, threshold=threshold, calibration=calib,
@@ -633,11 +637,13 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                 _save_plots(plot_multiclass(conf_mat, interactive=False), 'static_plots')
             if interactive_plots:
                 _save_plots(plot_multiclass(conf_mat, interactive=True), 'interactive_plots')
-            bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].iloc[:, 0], y_hat[na_mask],
-                                     sample_weight=None if sample_weight is None else sample_weight[na_mask],
-                                     task=encoder.task_, metric_list=bootstrapping_metrics)
-            if bs is not None:
-                _save(bs, 'bootstrapping')
+            bs_summary, bs_details, _, _, _ = _bootstrap(
+                bootstrapping_repetitions, y_true[na_mask].iloc[:, 0], y_hat[na_mask],
+                sample_weight=None if sample_weight is None else sample_weight[na_mask],
+                task=encoder.task_, metric_list=bootstrapping_metrics
+            )
+            if bs_summary is not None:
+                _save(dict(summary=bs_summary, details=bs_details), 'bootstrapping')
 
     return out
 
@@ -1298,7 +1304,7 @@ def plot_multilabel(overall: pd.DataFrame, thresholded: dict, threshold: float =
 
 def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', threshold: float = 0.5,
                  bootstrapping_repetitions: int = 0, bootstrapping_metrics: Optional[list] = None,
-                 sample_weight: Union[str, np.ndarray] = 'from_predictions') -> Tuple[dict, Optional[pd.DataFrame]]:
+                 sample_weight: Union[str, np.ndarray] = 'from_predictions') -> Tuple[dict, dict]:
     """
     Calculate performance metrics from raw sample-wise predictions and corresponding ground-truth.
     :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
@@ -1314,8 +1320,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
     "uniform" (to use uniform sample weights) or an array.
     :return: Pair `(metrics, bootstrapping)`, where `metrics` is a dict whose values are DataFrames and corresponds
     exactly to what is by default saved as "metrics.xlsx" when invoking function `evaluate()`, and `bootstrapping` is
-    either None or a DataFrame with bootstrapped performance results, depending on whether `bootstrapping_repetitions`
-    is 0.
+    a dict mapping keys "summary" and "details" to DataFrames or None.
     """
 
     y_true, y_hat, weight = _get_y_true_hat_weight_from_predictions(predictions, encoder)
@@ -1376,13 +1381,14 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         elif bootstrapping_metrics is None:
             from ..core.config import DEFAULT_CONFIG
             bootstrapping_metrics = DEFAULT_CONFIG.get(encoder.task_ + '_metrics', [])
-        bs, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values, y_hat[na_mask].values,
-                                 sample_weight=sample_weight, task=encoder.task_, metric_list=bootstrapping_metrics,
-                                 threshold=threshold)
+        bs_summary, bs_details, _, _, _ = _bootstrap(bootstrapping_repetitions, y_true[na_mask].values,
+                                                     y_hat[na_mask].values, sample_weight=sample_weight,
+                                                     task=encoder.task_, metric_list=bootstrapping_metrics,
+                                                     threshold=threshold)
     else:
-        bs = None
+        bs_summary = bs_details = None
 
-    return met, bs
+    return met, dict(summary=bs_summary, details=bs_details)
 
 
 def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[str, Path, pd.DataFrame, dict],
@@ -1428,7 +1434,7 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
                 roc_curve = roc_pr_curve[:3]
                 pr_curve = roc_pr_curve[3:]
                 na_mask = ~np.isnan(y_hat) & y_true.notna()
-                _, roc_curve_bs, pr_curve_bs, calibration_bs = \
+                _, _, roc_curve_bs, pr_curve_bs, calibration_bs = \
                     _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
                                calib=calib, calc_roc_pr_calibration=True,
                                sample_weight=None if sample_weight is None else sample_weight[na_mask])
@@ -1629,16 +1635,23 @@ def _bootstrap(n_repetitions: int, y_true, y_hat, sample_weight: Optional[np.nda
         else:
             calibration_bs = np.stack(aux[0])
         if 'main' in bs.results:
-            summary = pd.DataFrame(bs.results['main']).describe()
+            df = pd.DataFrame(bs.results['main'])
+            summary = df.describe()
             if task in ('binary_classification', 'multilabel_classification'):
                 summary['__threshold'] = threshold
                 summary.loc['count', '__threshold'] = n_repetitions
                 summary.loc['std', '__threshold'] = 0
         else:
-            summary = bs.describe()
-        return summary, roc_curve_bs, pr_curve_bs, calibration_bs
+            df = bs.dataframe()
+            if df is None:
+                summary = None
+            else:
+                summary = df.describe()
+        if df is not None:
+            df['__seed'] = bs.seeds
+        return summary, df, roc_curve_bs, pr_curve_bs, calibration_bs
     else:
-        return None, None, None, None
+        return None, None, None, None, None
 
 
 def _get_y_true_hat_weight_from_predictions(predictions: Union[pd.DataFrame, str, Path], encoder: 'Encoder') \
