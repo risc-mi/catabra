@@ -118,7 +118,7 @@ class Analyzer(CaTabRaBase):
             # train-test split
             df_train, split_masks = self._make_train_split(df, self._invocation.split)
             if self._invocation.split is not None:
-                self._invocation.ignore.update({self._invocation.split})
+                self._invocation.ignore.add(self._invocation.split)
 
             # copy training data
             copy_data = self._config.get('copy_analysis_data', False)
@@ -128,10 +128,15 @@ class Analyzer(CaTabRaBase):
                 io.write_df(df_train, self._invocation.out / CaTabRaPaths.TrainData)
 
             # grouping
-            self._invocation.ignore.update({self._invocation.group})
+            if self._invocation.group is not None:
+                self._invocation.ignore.add(self._invocation.group)
             group_indices = self.get_group_indices(df, df_train, self._invocation.group, split_masks)
 
+            # sample weights
+            if self._invocation.sample_weight is not None:
+                self._invocation.ignore.add(self._invocation.sample_weight)
             sample_weights = self._invocation.get_sample_weights(df_train)
+
             self.check_for_id_cols(df_train, id_cols, target)
 
             # drop columns

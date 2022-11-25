@@ -92,14 +92,13 @@ class Invocation:
         return True
 
     def get_sample_weights(self, df) -> Optional[np.ndarray]:
-        if self._sample_weight is None:
+        if self._sample_weight is None or df is None:
             return None
         elif self._sample_weight in df.columns:
             if df[self._sample_weight].dtype.kind not in 'fiub':
                 raise ValueError(f'Column "{self._sample_weight}" must have numeric data type,'
                                  f' but found {df[self._sample_weight].dtype.name}.')
             logging.log(f'Weighting samples by column "{self._sample_weight}"')
-            # ignore.add(sample_weight)
             sample_weights = df[self._sample_weight].values
             na_mask = np.isnan(sample_weights)
             if na_mask.any():
