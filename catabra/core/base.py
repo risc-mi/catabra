@@ -77,6 +77,8 @@ class Invocation:
             self._sample_weight = None
 
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
+        if len(self._table) == 0:
+            raise ValueError('No table specified.')
 
     def resolve_output_dir(self, prompt: str) -> bool:
         if self._out.exists():

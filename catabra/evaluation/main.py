@@ -72,9 +72,6 @@ class Evaluator(CaTabRaBase):
         return EvaluationInvocation
 
     def _call(self):
-        if len(self._invocation.table) == 0:
-            raise ValueError('No table specified.')
-
         loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
         self._config = loader.get_config()
 

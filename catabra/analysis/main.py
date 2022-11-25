@@ -75,9 +75,6 @@ class Analyzer(CaTabRaBase):
         return AnalysisInvocation
 
     def _call(self):
-        if len(self._invocation.table) == 0:
-            raise ValueError('No table specified.')
-
         if isinstance(self._invocation.table[0], Path):
             dataset_name = self._invocation.table[0].stem
         else:
