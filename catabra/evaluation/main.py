@@ -84,6 +84,7 @@ class Evaluator(CaTabRaBase):
 
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Evaluation started at {self._invocation.start}')
+            io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
 
             # merge tables
             df, _ = tu.merge_tables(self._invocation.table)
@@ -139,7 +140,6 @@ class Evaluator(CaTabRaBase):
                     self._evaluate_classification_task(_iter_splits, encoder, main_metrics, model,
                                                        sample_weights, x_test, y_test)
 
-            io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
             end = pd.Timestamp.now()
             logging.log(f'### Evaluation finished at {end}')
             logging.log(f'### Elapsed time: {end - self._invocation.start}')
@@ -363,6 +363,11 @@ class EvaluationInvocation(Invocation):
         super().resolve()
         if self._threshold is None:
             self._threshold = 0.5
+
+        if self._folder is None:
+            raise ValueError('No CaTabRa directory specified.')
+        else:
+            self._folder = io.make_path(self._folder, absolute=True)
 
         if self._out is None:
             self._out = self._table[0]
