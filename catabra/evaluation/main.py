@@ -47,7 +47,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
-    evaluator = Evaluator(invocation=from_invocation)
+    evaluator = CaTabRaEvaluation(invocation=from_invocation)
     evaluator(
         *table,
         folder=folder,
@@ -65,7 +65,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     )
 
 
-class Evaluator(CaTabRaBase):
+class CaTabRaEvaluation(CaTabRaBase):
 
     @property
     def invocation_class(self) -> Type['EvaluationInvocation']:

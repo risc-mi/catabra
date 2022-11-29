@@ -51,7 +51,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
 
-    analyzer = Analyzer(invocation=from_invocation)
+    analyzer = CaTabRaAnalysis(invocation=from_invocation)
     analyzer(
         *table,
         classify=classify,
@@ -68,7 +68,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     )
 
 
-class Analyzer(CaTabRaBase):
+class CaTabRaAnalysis(CaTabRaBase):
 
     @property
     def invocation_class(self) -> Type['AnalysisInvocation']:
@@ -192,8 +192,8 @@ class Analyzer(CaTabRaBase):
             logging.log(f'### Output saved in {self._invocation.out.as_posix()}')
 
             if len(split_masks) > 0:
-                from ..evaluation import Evaluator
-                evaluate = Evaluator(invocation=self._invocation_src)
+                from ..evaluation import CaTabRaEvaluation
+                evaluate = CaTabRaEvaluation(invocation=self._invocation_src)
                 evaluate(df,
                          folder=self._invocation.out,
                          split=self._invocation.split,
