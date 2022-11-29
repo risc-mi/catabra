@@ -41,22 +41,10 @@ def make_parser():
 
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
-
-        analyze(
-            *args.table,
-            classify=args.classify,
-            regress=args.regress,
-            group=args.group,
-            split=args.split,
-            sample_weight=args.sample_weight,
-            ignore=args.ignore,
-            time=args.time,
-            out=args.out,
-            config=args.config,
-            default_config=args.default_config,
-            jobs=args.jobs,
-            from_invocation=getattr(args, 'from', None)
-        )
+        analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
+                sample_weight=args.sample_weight, ignore=args.ignore, calibrate=args.calibrate, time=args.time,
+                out=args.out, config=args.config, default_config=args.default_config, jobs=args.jobs,
+                from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -134,6 +122,16 @@ def make_parser():
         help='Name of the column used for splitting the data into train- and test set.'
              ' If given, models are trained on the training data and automatically evaluated on all test splits'
              ' afterward.'
+    )
+    analyzer.add_argument(
+        '--calibrate',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='CALIBRATE',
+        help='Value in column SPLIT defining the subset to calibrate the trained classifier on. For instance, if the'
+             ' column specified by SPLIT contains values "train", "val" and "test", and CALIBRATION is set to "val",'
+             ' the classifier is calibrated on the "val"-entries. If omitted, no calibration happens.'
     )
     _add_weights(analyzer)
     analyzer.add_argument(
