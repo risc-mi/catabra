@@ -84,6 +84,11 @@ def make_parser():
                 model_id=args.model_id, out=args.out, glob=glob, jobs=args.jobs, batch_size=args.batch_size,
                 from_invocation=getattr(args, 'from', None))
 
+    def _calibrate(args: argparse.Namespace):
+        from .calibration import calibrate
+        calibrate(*(args.on or []), folder=args.src, split=args.split, subset=args.subset, method=args.method,
+                  sample_weight=args.sample_weight, out=args.out, from_invocation=getattr(args, 'from', None))
+
     analyzer = subparsers.add_parser(
         'analyze',
         help='Analyze a table, for instance by training classification- or regression models.'
@@ -332,6 +337,64 @@ def make_parser():
     _add_jobs(explainer)
     _add_from(explainer)
     explainer.set_defaults(func=_explain)
+
+    calibrator = subparsers.add_parser(
+        'calibrate',
+        help='Calibrate an existing CaTabRa classifier.'
+    )
+    calibrator.add_argument(
+        'src',
+        type=str,
+        nargs='?',
+        metavar='SOURCE',
+        help='The CaTabRa object to calibrate. Must be the path to a folder which was the output directory of a'
+             ' previous invocation of `analyze`. "." is a shortcut for the current working directory.'
+    )
+    calibrator.add_argument(
+        '--on',
+        type=str,
+        nargs='+',
+        metavar='ON',
+        help='The table(s) on which to calibrate SOURCE. Must be CSV- or Excel files, or tables stored in HDF5 files.'
+    )
+    calibrator.add_argument(
+        '-s', '--split',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='SPLIT',
+        help='The name of the column containing information about data splits. In conjunction with SUBSET this enables'
+             ' restricting the data used for calibration to a subset of TABLE.'
+    )
+    calibrator.add_argument(
+        '--subset',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='SUBSET',
+        help='Value in column SPLIT to consider for calibration. For instance, if the column specified by SPLIT'
+             ' contains values "train", "val" and "test", and SUBSET is set to "val", the classifier is calibrated'
+             ' only on the "val"-entries.'
+    )
+    calibrator.add_argument(
+        '--method',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='METHOD',
+        help='Calibration method. Must be one of "sigmoid", "isotonic" or "auto".'
+    )
+    _add_weights(calibrator)
+    calibrator.add_argument(
+        '-o', '--out',
+        type=str,
+        metavar='OUT',
+        help='The name of the directory where to store generated artifacts.'
+             ' Defaults to "SOURCE/calibrate_ON_DATE_TIME", where DATE and TIME are the current date and time.'
+             ' "." is a shortcut for the current working directory.'
+    )
+    _add_from(calibrator)
+    calibrator.set_defaults(func=_calibrate)
 
     applier = subparsers.add_parser(
         'apply',
