@@ -86,8 +86,8 @@ class CaTabRaCalibration(CaTabRaBase):
             io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
 
             encoder = loader.get_encoder()
-            if encoder.task_ != 'binary_classification':
-                raise ValueError('Only binary classification models can be calibrated, but found task ' + encoder.task_)
+            if encoder.task_ == 'regression':
+                raise ValueError('Only classification models can be calibrated, but found task ' + encoder.task_)
 
             # merge tables
             df, _ = tu.merge_tables(self._invocation.table)
