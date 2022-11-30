@@ -3,6 +3,7 @@ class CaTabRaPaths:
     Config = 'config.json'
     TrainData = 'train_data.h5'
     TestData = 'test_data.h5'
+    ExplanationData = 'explanation_data.h5'
     Statistics = 'statistics'
     Encoder = 'encoder.json'
     ModelSummary = 'model_summary.json'
