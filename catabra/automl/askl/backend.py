@@ -348,7 +348,12 @@ class AutoSklearnBackend(AutoMLBackend):
                 run_config = configs[run_key.config_id]._values
                 types.append(run_config[f'{self._get_estimator_name()}:__choice__'])
 
-        result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp, type=types))
+        result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp))
+        if hasattr(self, 'fit_start_time_'):
+            result['total_elapsed_time'] = \
+                result['timestamp'] - \
+                pd.Timestamp(self.fit_start_time_, unit='s', tz='utc').tz_convert(py_time.tzname[0]).tz_localize(None)
+        result['type'] = types
         result['val_' + main_metric[0]] = val_metric
         for name, values in metric_dict.items():
             result['val_' + name] = values
@@ -483,6 +488,7 @@ class AutoSklearnBackend(AutoMLBackend):
                 groups = groups[mask]
 
         # TODO: Tweak autosklearn to handle sample weights.
+        #   https://github.com/automl/auto-sklearn/issues/288
         if sample_weights is not None:
             logging.warn('auto-sklearn backend does not support sample weights for training.')
 
@@ -532,13 +538,16 @@ class AutoSklearnBackend(AutoMLBackend):
         else:
             from autosklearn.classification import AutoSklearnClassifier as Estimator
 
+        self.fit_start_time_ = py_time.time()
+
         # logging 1: ensemble building
         if kwargs.get('n_jobs', 1) == 1:
             # only works if 1 job is used, because otherwise only <Future: ...> messages are logged
             import autosklearn.util.logging_ as logging_
             with open(io.make_path(logging_.__file__).parent / 'logging.yaml', mode='rt') as fh:
                 logging_config = yaml.safe_load(fh)
-            askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler', 'start_time': str(py_time.time())}
+            askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler',
+                            'start_time': str(self.fit_start_time_)}
             if metric is not None:
                 askl_handler.update(
                     metric=str(metric.name),
@@ -557,7 +566,7 @@ class AutoSklearnBackend(AutoMLBackend):
             metric if metric is None else (metric.name, metric._optimum, metric._sign),
             [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
             self._get_estimator_name(),
-            start_time=py_time.time()
+            start_time=self.fit_start_time_
         )
         if Estimator.__name__ != 'AutoSklearn2Classifier':
             kwargs['get_trials_callback'] = smac_callback
@@ -576,13 +585,12 @@ class AutoSklearnBackend(AutoMLBackend):
                     kwargs[k] = v
 
         self.model_ = Estimator(**kwargs)
-        tic = py_time.time()
         interrupted = False
         try:
             self.model_.fit(x_train, y_train, dataset_name=dataset_name)
         except KeyboardInterrupt:
             logging.warn('Hyperparameter optimization interrupted after'
-                         f' {repr_timedelta(py_time.time() - tic, subsecond_resolution=2)}.'
+                         f' {repr_timedelta(py_time.time() - self.fit_start_time_, subsecond_resolution=2)}.'
                          ' Trying to build final ensemble with models trained so far,'
                          ' but consistency of internal state cannot be ensured. Use result with care.')
             self.model_.automl_._budget_type = None

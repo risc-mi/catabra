@@ -415,7 +415,9 @@ class CaTabRaAnalysis(CaTabRaBase):
         else:
             backend = plotting.mpl_backend
 
-        if 'timestamp' in hist.columns:
+        if 'total_elapsed_time' in hist.columns:
+            x = hist['total_elapsed_time']
+        elif 'timestamp' in hist.columns:
             x = hist['timestamp'] - hist['timestamp'].iloc[0]
         else:
             x = np.arange(len(hist))
