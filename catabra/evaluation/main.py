@@ -429,6 +429,10 @@ class EvaluationInvocation(Invocation):
                 raise ValueError('Cannot explain models that are not being evaluated.')
             self._explain = list(self._explain)
 
+    @staticmethod
+    def requires_table() -> bool:
+        return True
+
 
 def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,
                    y_true_decoded=None, y_hat_decoded=None, sample_weight: Optional[np.ndarray] = None,

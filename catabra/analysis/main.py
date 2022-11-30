@@ -573,3 +573,7 @@ class AnalysisInvocation(Invocation):
             time=self._time,
         ))
         return dic
+
+    @staticmethod
+    def requires_table() -> bool:
+        return True

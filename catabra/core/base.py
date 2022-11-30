@@ -8,7 +8,7 @@ import pandas as pd
 from ..util import io, logging
 
 
-class Invocation:
+class Invocation(ABC):
 
     @property
     def start(self) -> pd.Timestamp:
@@ -77,7 +77,7 @@ class Invocation:
             self._sample_weight = None
 
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
-        if len(self._table) == 0:
+        if self.requires_table() and len(self._table) == 0:
             raise ValueError('No table specified.')
 
     def resolve_output_dir(self, prompt: str) -> bool:
@@ -118,6 +118,11 @@ class Invocation:
             jobs=self._jobs,
             timestamp=self._start
         )
+
+    @staticmethod
+    @abstractmethod
+    def requires_table() -> bool:
+        pass
 
 
 class CaTabRaBase(ABC):

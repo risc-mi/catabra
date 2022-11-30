@@ -232,6 +232,10 @@ class CalibrationInvocation(Invocation):
 
         return df
 
+    @staticmethod
+    def requires_table() -> bool:
+        return True
+
 
 class Calibrator(BaseEstimator, TransformerMixin):
 
