@@ -357,7 +357,7 @@ class EvaluationInvocation(Invocation):
             if self._bootstrapping_metrics is None:
                 self._bootstrapping_metrics = src.get('bootstrapping_metrics')
             if self._batch_size is None:
-                self._batch_size = src.get('bootstrapping_metrics')
+                self._batch_size = src.get('batch_size')
 
     def resolve(self):
         super().resolve()
@@ -390,14 +390,10 @@ class EvaluationInvocation(Invocation):
             model_id=self._model_id,
             explain=self._explain,
             glob=self._glob,
-            split=self._split,
-            sample_weight=self._sample_weight,
-            out=self._out,
-            jobs=self._jobs,
             threshold=self._threshold,
             bootstrapping_repetitions=self._bootstrapping_repetitions,
             bootstrapping_metrics=self._bootstrapping_metrics,
-            timestamp=self._start
+            batch_size=self._batch_size
         ))
         return dic
 
