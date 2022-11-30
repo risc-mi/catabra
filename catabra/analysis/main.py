@@ -268,6 +268,7 @@ class CaTabRaAnalysis(CaTabRaBase):
         try:
             explainer = EnsembleExplainer.get(
                 explainer,
+                config=self._config,
                 ensemble=backend.fitted_ensemble(),
                 feature_names=encoder.feature_names_,
                 target_names=encoder.get_target_or_class_names(),

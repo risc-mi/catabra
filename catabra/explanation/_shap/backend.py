@@ -12,10 +12,10 @@ from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_predictio
 
 class SHAPEnsembleExplainer(EnsembleExplainer):
 
-    def __init__(self, ensemble: FittedEnsemble = None, feature_names: Optional[list] = None,
-                 target_names: Optional[list] = None, x: Optional[pd.DataFrame] = None,
-                 y: Optional[pd.DataFrame] = None, params=None):
-        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, feature_names=feature_names,
+    def __init__(self, ensemble: FittedEnsemble = None, config: Optional[dict] = None,
+                 feature_names: Optional[list] = None, target_names: Optional[list] = None,
+                 x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
+        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, config=config, feature_names=feature_names,
                                                     target_names=target_names, x=x, y=y, params=params)
         self._ensemble = ensemble
 
