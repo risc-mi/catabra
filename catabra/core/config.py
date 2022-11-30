@@ -45,27 +45,24 @@ DEFAULT_CONFIG = {
         "mean_squared_error"
     ],
 
-    "ood": {
-        # name of module/class for OOD detector
-        # if 'source' is 'internal': name of one of the modules in catabra.ood.internal (e.g. soft_brownian_offset)
-        # if 'source' is 'pyod': name of one of the modules in pyod.models (e.g. kde)
-        # if 'source' is 'external': full import path consisting of modules and class (e.g. custom.module.CustomOOD)
-        # if value is <None> no OOD detection is performed
-        "class": "autoencoder",
-        # Import from CaTabRa OODDetector subclasses ('internal'), PyOD ('pyod') or custom source ('external')
-        "source": "internal",
-        # Keyword arguments for different OOD detectors in the form 'name': value.
-        # If none are specified default values are used.
-        "kwargs": {}
-    },
+    # name of module/class for OOD detector
+    # if 'source' is 'internal': name of one of the modules in catabra.ood.internal (e.g. soft_brownian_offset)
+    # if 'source' is 'pyod': name of one of the modules in pyod.models (e.g. kde)
+    # if 'source' is 'external': full import path consisting of modules and class (e.g. custom.module.CustomOOD)
+    # if value is <None> no OOD detection is performed
+    "ood_class": "autoencoder",
+    # Import from CaTabRa OODDetector subclasses ('internal'), PyOD ('pyod') or custom source ('external')
+    "ood_source": "internal",
+    # Keyword arguments for different OOD detectors in the form 'name': value.
+    # If none are specified default values are used.
+    "ood_kwargs": {},
 
     # auto-sklearn specific config; see https://automl.github.io/auto-sklearn/master/api.html
-    "auto-sklearn": {
-        "include": None,
-        "exclude": None,
-        "resampling_strategy": None,    # can also be the name of a subclass of `BaseCrossValidator`, `_RepeatedSplits` or `BaseShuffleSplit` in `sklearn.model_selection`
-        "resampling_strategy_arguments": None
-    }
+    # we use flat config params instead of nested dicts => simplifies update semantics (e.g., in `add_defaults()`)
+    "auto-sklearn_include": None,
+    "auto-sklearn_exclude": None,
+    "auto-sklearn_resampling_strategy": None,    # can also be the name of a subclass of `BaseCrossValidator`, `_RepeatedSplits` or `BaseShuffleSplit` in `sklearn.model_selection`
+    "auto-sklearn_resampling_strategy_arguments": None,
 }
 
 
@@ -74,27 +71,25 @@ BASIC_CONFIG = {
     "ensemble_size": 5,
     "ensemble_nbest": 5,
 
-    "auto-sklearn": {
-        "include": {
-            # data preprocessor cannot be configured
-            "feature_preprocessor": [
-                "no_preprocessing"
-            ],
-            "classifier": [
-                "decision_tree",
-                "k_nearest_neighbors",
-                "lda",
-                "liblinear_svc",
-                "qda",
-                "random_forest"
-            ],
-            "regressor": [
-                "decision_tree",
-                "k_nearest_neighbors",
-                "liblinear_svr",
-                "random_forest"
-            ]
-        }
+    "auto-sklearn_include": {
+        # data preprocessor cannot be configured
+        "feature_preprocessor": [
+            "no_preprocessing"
+        ],
+        "classifier": [
+            "decision_tree",
+            "k_nearest_neighbors",
+            "lda",
+            "liblinear_svc",
+            "qda",
+            "random_forest"
+        ],
+        "regressor": [
+            "decision_tree",
+            "k_nearest_neighbors",
+            "liblinear_svr",
+            "random_forest"
+        ]
     }
 }
 
@@ -104,61 +99,59 @@ INTERPRETABLE_CONFIG = {
     "ensemble_size": 5,
     "ensemble_nbest": 5,
 
-    "auto-sklearn": {
-        "include": {
-            "feature_preprocessor": [
-                "densifier",
-                "extra_trees_preproc_for_classification",
-                "extra_trees_preproc_for_regression",
-                "fast_ica",
-                "feature_agglomeration",
-                # "kernel_pca",
-                "kitchen_sinks",
-                "liblinear_svc_preprocessor",
-                "no_preprocessing",
-                # "nystroem",
-                "pca",
-                # "polynomial",
-                # "random_trees_embedding",
-                "select_percentile_classification",
-                "select_percentile_regression",
-                "select_rates_classification",
-                "select_rates_regression",
-                "truncatedSVD"
-            ],
-            "classifier": [
-                "adaboost",
-                # "bernoulli_nb",
-                "decision_tree",
-                "extra_trees",
-                # "gaussian_nb",
-                "gradient_boosting",
-                # "k_nearest_neighbors",
-                "lda",
-                "liblinear_svc",
-                # "libsvm_svc",
-                # "mlp",
-                # "multinomial_nb",
-                "passive_aggressive",
-                # "qda",
-                "random_forest",
-                "sgd"
-            ],
-            "regressor": [
-                "adaboost",
-                "ard_regression",
-                "decision_tree",
-                "extra_trees",
-                # "gaussian_process",
-                "gradient_boosting",
-                # "k_nearest_neighbors",
-                "liblinear_svr",
-                # "libsvm_svr",
-                # "mlp",
-                "random_forest",
-                "sgd"
-            ]
-        }
+    "auto-sklearn_include": {
+        "feature_preprocessor": [
+            "densifier",
+            "extra_trees_preproc_for_classification",
+            "extra_trees_preproc_for_regression",
+            "fast_ica",
+            "feature_agglomeration",
+            # "kernel_pca",
+            "kitchen_sinks",
+            "liblinear_svc_preprocessor",
+            "no_preprocessing",
+            # "nystroem",
+            "pca",
+            # "polynomial",
+            # "random_trees_embedding",
+            "select_percentile_classification",
+            "select_percentile_regression",
+            "select_rates_classification",
+            "select_rates_regression",
+            "truncatedSVD"
+        ],
+        "classifier": [
+            "adaboost",
+            # "bernoulli_nb",
+            "decision_tree",
+            "extra_trees",
+            # "gaussian_nb",
+            "gradient_boosting",
+            # "k_nearest_neighbors",
+            "lda",
+            "liblinear_svc",
+            # "libsvm_svc",
+            # "mlp",
+            # "multinomial_nb",
+            "passive_aggressive",
+            # "qda",
+            "random_forest",
+            "sgd"
+        ],
+        "regressor": [
+            "adaboost",
+            "ard_regression",
+            "decision_tree",
+            "extra_trees",
+            # "gaussian_process",
+            "gradient_boosting",
+            # "k_nearest_neighbors",
+            "liblinear_svr",
+            # "libsvm_svr",
+            # "mlp",
+            "random_forest",
+            "sgd"
+        ]
     }
 }
 
@@ -179,10 +172,5 @@ def add_defaults(config: dict, default: Optional[str] = None) -> dict:
     for k, v in default.items():
         if k not in config:
             config[k] = copy.deepcopy(v)
-        elif k in ('auto-sklearn',):
-            v_ = config[k]
-            if isinstance(v_, dict) and isinstance(v, dict):
-                for k0, v0 in v.items():
-                    if k0 not in v_:
-                        v_[k0] = copy.deepcopy(v0)
+
     return config

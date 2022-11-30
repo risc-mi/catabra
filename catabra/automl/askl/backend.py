@@ -439,7 +439,8 @@ class AutoSklearnBackend(AutoMLBackend):
                 kwargs[askl_param or config_param] = value
 
         # include/exclude pipeline components
-        specific = self.config.get(self.name(), {})
+        prefix = self.name() + '_'
+        specific = {k[len(prefix):]: v for k, v in self.config.items() if k.startswith(prefix)}
         include = specific.get('include')
         exclude = specific.get('exclude')
         if include is not None:

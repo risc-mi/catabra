@@ -252,10 +252,10 @@ class CaTabRaAnalysis(CaTabRaBase):
             plotting.save(self.plot_training_history(hist, interactive=True), self._invocation.out)
 
     def _make_ood_detector(self, x_train, y_train):
-        ood = self._config.get('ood') or {}
-        ood_class = ood.get('class')
+        ood_class = self._config.get('ood_class')
         if ood_class is not None:
-            ood = OODDetector.create(ood_class, source=ood.get('source'), kwargs=ood.get('kwargs'))
+            ood = OODDetector.create(ood_class, source=self._config.get('ood_source'),
+                                     kwargs=self._config.get('ood_kwargs'))
             ood.fit(x_train, y_train)
             io.dump(ood, self._invocation.out / CaTabRaPaths.OODModel)
 
