@@ -18,12 +18,12 @@ from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
 
 from ...util import io, logging
-from ...util.common import repr_timedelta
+from ...util.common import repr_timedelta, repr_list
 from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
 from . import explanation
-
+from ...util.preprocessing import FeatureFilter
 
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')
@@ -255,14 +255,16 @@ def strip_autosklearn(obj):
 
                 steps = getattr(obj, 'steps', None)
                 if isinstance(steps, list):
-                    assert all(isinstance(s, tuple) for s in steps)
+                    assert all(isinstance(s, (tuple, list)) for s in steps)
                     steps = [(s[0], strip_autosklearn(s[1])) for s in steps]
                     steps = [(n, t) for n, t in steps if t not in (None, 'passthrough')]
                     if steps:
                         if len(steps) == 1:
                             return steps[0][1]
                         else:
-                            steps.append(('dummy', 'passthrough'))
+                            if not hasattr(steps[-1][1], 'predict'):
+                                # add "passthrough" iff last step is no estimator
+                                steps.append(('dummy', 'passthrough'))
                             return sklearn.pipeline.Pipeline(steps)
                     else:
                         return 'passthrough'
@@ -318,7 +320,8 @@ class AutoSklearnBackend(AutoMLBackend):
         # A dict mapping model ids to their configurations
         configs = self.model_.automl_.runhistory_.ids_config
 
-        metric_dict = {metric.name: [] for metric in self.model_.scoring_functions}
+        scoring_functions = self.model_.scoring_functions or []
+        metric_dict = {metric.name: [] for metric in scoring_functions}
         timestamp = []
         model_id = []
         val_metric = []
@@ -327,7 +330,7 @@ class AutoSklearnBackend(AutoMLBackend):
         duration = []
         types = []
         main_metric = (self.model_.metric.name, self.model_.metric._optimum, self.model_.metric._sign)
-        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in self.model_.scoring_functions]
+        other_metrics = [(metric.name, metric._optimum, metric._sign) for metric in scoring_functions]
         for run_key, run_value in self.model_.automl_.runhistory_.data.items():
             if run_value.status == StatusType.SUCCESS and run_value.additional_info \
                     and 'num_run' in run_value.additional_info.keys():
@@ -345,7 +348,12 @@ class AutoSklearnBackend(AutoMLBackend):
                 run_config = configs[run_key.config_id]._values
                 types.append(run_config[f'{self._get_estimator_name()}:__choice__'])
 
-        result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp, type=types))
+        result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp))
+        if hasattr(self, 'fit_start_time_'):
+            result['total_elapsed_time'] = \
+                result['timestamp'] - \
+                pd.Timestamp(self.fit_start_time_, unit='s', tz='utc').tz_convert(py_time.tzname[0]).tz_localize(None)
+        result['type'] = types
         result['val_' + main_metric[0]] = val_metric
         for name, values in metric_dict.items():
             result['val_' + name] = values
@@ -431,7 +439,8 @@ class AutoSklearnBackend(AutoMLBackend):
                 kwargs[askl_param or config_param] = value
 
         # include/exclude pipeline components
-        specific = self.config.get(self.name(), {})
+        prefix = self.name() + '_'
+        specific = {k[len(prefix):]: v for k, v in self.config.items() if k.startswith(prefix)}
         include = specific.get('include')
         exclude = specific.get('exclude')
         if include is not None:
@@ -480,6 +489,7 @@ class AutoSklearnBackend(AutoMLBackend):
                 groups = groups[mask]
 
         # TODO: Tweak autosklearn to handle sample weights.
+        #   https://github.com/automl/auto-sklearn/issues/288
         if sample_weights is not None:
             logging.warn('auto-sklearn backend does not support sample weights for training.')
 
@@ -529,13 +539,16 @@ class AutoSklearnBackend(AutoMLBackend):
         else:
             from autosklearn.classification import AutoSklearnClassifier as Estimator
 
+        self.fit_start_time_ = py_time.time()
+
         # logging 1: ensemble building
         if kwargs.get('n_jobs', 1) == 1:
             # only works if 1 job is used, because otherwise only <Future: ...> messages are logged
             import autosklearn.util.logging_ as logging_
             with open(io.make_path(logging_.__file__).parent / 'logging.yaml', mode='rt') as fh:
                 logging_config = yaml.safe_load(fh)
-            askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler', 'start_time': str(py_time.time())}
+            askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler',
+                            'start_time': str(self.fit_start_time_)}
             if metric is not None:
                 askl_handler.update(
                     metric=str(metric.name),
@@ -554,7 +567,7 @@ class AutoSklearnBackend(AutoMLBackend):
             metric if metric is None else (metric.name, metric._optimum, metric._sign),
             [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
             self._get_estimator_name(),
-            start_time=py_time.time()
+            start_time=self.fit_start_time_
         )
         if Estimator.__name__ != 'AutoSklearn2Classifier':
             kwargs['get_trials_callback'] = smac_callback
@@ -573,13 +586,12 @@ class AutoSklearnBackend(AutoMLBackend):
                     kwargs[k] = v
 
         self.model_ = Estimator(**kwargs)
-        tic = py_time.time()
         interrupted = False
         try:
             self.model_.fit(x_train, y_train, dataset_name=dataset_name)
         except KeyboardInterrupt:
             logging.warn('Hyperparameter optimization interrupted after'
-                         f' {repr_timedelta(py_time.time() - tic, subsecond_resolution=2)}.'
+                         f' {repr_timedelta(py_time.time() - self.fit_start_time_, subsecond_resolution=2)}.'
                          ' Trying to build final ensemble with models trained so far,'
                          ' but consistency of internal state cannot be ensured. Use result with care.')
             self.model_.automl_._budget_type = None

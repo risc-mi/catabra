@@ -166,12 +166,13 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def __init__(self, ensemble: 'FittedEnsemble' = None, feature_names: Optional[list] = None,
-                 target_names: Optional[list] = None, x: Optional[pd.DataFrame] = None,
-                 y: Optional[pd.DataFrame] = None, params=None):
+    def __init__(self, ensemble: 'FittedEnsemble' = None, config: Optional[dict] = None,
+                 feature_names: Optional[list] = None, target_names: Optional[list] = None,
+                 x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
         """
         Initialize an EnsembleExplainer for explaining the given ensemble, or constituents of it.
         :param ensemble: The ensemble to explain, an instance of FittedEnsemble.
+        :param config: Config dict, optional.
         :param feature_names: List of feature names, optional. None defaults to `range(n_features)`, where `n_features`
         is determined from `x`.
         :param target_names: List of target names, optional. In case of regression this is the list of target
@@ -185,6 +186,7 @@ class EnsembleExplainer:
         """
         if not (params is None or (feature_names is None and target_names is None and x is None and y is None)):
             raise ValueError('If params is given, feature_names, target_names, x and y must be None.')
+        self.config: dict = config or {}
 
     @property
     def params_(self) -> dict:

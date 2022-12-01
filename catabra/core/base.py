@@ -8,7 +8,7 @@ import pandas as pd
 from ..util import io, logging
 
 
-class Invocation:
+class Invocation(ABC):
 
     @property
     def start(self) -> pd.Timestamp:
@@ -77,6 +77,8 @@ class Invocation:
             self._sample_weight = None
 
         self._table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in self._table]
+        if self.requires_table() and len(self._table) == 0:
+            raise ValueError('No table specified.')
 
     def resolve_output_dir(self, prompt: str) -> bool:
         if self._out.exists():
@@ -92,14 +94,13 @@ class Invocation:
         return True
 
     def get_sample_weights(self, df) -> Optional[np.ndarray]:
-        if self._sample_weight is None:
+        if self._sample_weight is None or df is None:
             return None
         elif self._sample_weight in df.columns:
             if df[self._sample_weight].dtype.kind not in 'fiub':
                 raise ValueError(f'Column "{self._sample_weight}" must have numeric data type,'
                                  f' but found {df[self._sample_weight].dtype.name}.')
             logging.log(f'Weighting samples by column "{self._sample_weight}"')
-            # ignore.add(sample_weight)
             sample_weights = df[self._sample_weight].values
             na_mask = np.isnan(sample_weights)
             if na_mask.any():
@@ -118,6 +119,11 @@ class Invocation:
             timestamp=self._start
         )
 
+    @staticmethod
+    @abstractmethod
+    def requires_table() -> bool:
+        pass
+
 
 class CaTabRaBase(ABC):
 
@@ -132,7 +138,6 @@ class CaTabRaBase(ABC):
     ):
         if isinstance(invocation, (str, Path)):
             self._invocation_src = io.load(invocation)
-            print(self._invocation_src)
         elif isinstance(invocation, dict):
             self._invocation_src = invocation
         else:
@@ -142,7 +147,6 @@ class CaTabRaBase(ABC):
         self._invocation = self.invocation_class(*table, **kwargs)
         self._invocation.update(self._invocation_src)
         self._invocation.resolve()
-        print(self._invocation.to_dict())
         self._call()
 
     @abstractmethod

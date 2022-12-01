@@ -1,4 +1,4 @@
-from .main import Analyzer, analyze
+from .main import CaTabRaAnalysis, analyze
 
 
-__all__ = ['Analyzer', 'analyze']
+__all__ = ['CaTabRaAnalysis', 'analyze']

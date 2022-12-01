@@ -43,11 +43,13 @@ class Bootstrapping:
         assert self._size_n <= self._n or self._replace
         self._results = None
         self._idx = []
+        self._seeds = []
 
     def reset(self, seed=None):
         self._rng = np.random.RandomState(seed=seed)
         self._results = None
         self._idx = []
+        self._seeds = []
 
     def run(self, n_repetitions: int = 100, sample_indices: Optional[np.ndarray] = None) -> 'Bootstrapping':
         """
@@ -61,9 +63,14 @@ class Bootstrapping:
             assert sample_indices.ndim == 2
             assert sample_indices.shape[1] == self._size_n
         for i in range(n_repetitions):
-            idx = self._rng.choice(self._n, size=self._size_n, replace=self._replace) \
-                if sample_indices is None else sample_indices[i]
+            if sample_indices is None:
+                seed = self._rng.randint(2 ** 32)
+                idx = self.subsample(seed=seed)
+            else:
+                seed = None
+                idx = sample_indices[i]
             self._idx.append(idx)
+            self._seeds.append(seed)
             res = Bootstrapping._apply_function(
                 self._fn,
                 [a[idx] if isinstance(a, np.ndarray) else a.iloc[idx] for a in self._args],
@@ -74,6 +81,17 @@ class Bootstrapping:
             else:
                 Bootstrapping._update_results(self._results, res)
         return self
+
+    def subsample(self, seed: Optional[int] = None) -> np.ndarray:
+        """
+        Construct a subsample.
+        :param seed: Random seed to use.
+        :return: Array with subsample indices.
+        """
+
+        # create new random state to make result independent of previous calls to this method
+        rng = np.random.RandomState(seed=seed)
+        return rng.choice(self._n, size=self._size_n, replace=self._replace)
 
     @property
     def replace(self) -> bool:
@@ -90,6 +108,10 @@ class Bootstrapping:
     @property
     def results(self):
         return self._results
+
+    @property
+    def seeds(self) -> list:
+        return self._seeds
 
     def get_sample_indices(self) -> np.ndarray:
         """
@@ -135,15 +157,14 @@ class Bootstrapping:
     def sum(self):
         return Bootstrapping._aggregate(self._results, np.sum)
 
-    def describe(self, keys=None) -> Union[pd.Series, pd.DataFrame]:
+    def dataframe(self, keys=None) -> Optional[pd.DataFrame]:
         """
-        Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
-        `describe()` method. Only works for (dicts/tuples of) scalar values.
-        :return: DataFrame or Series with descriptive statistics.
+        Construct a DataFrame with all results, if possible. Only works for (dicts/tuples of) scalar values.
+        :return: DataFrame whose columns correspond to individual metrics and whose rows correspond to runs, or None.
         """
         if isinstance(self._results, list):
             if all(np.isscalar(r) for r in self._results):
-                return pd.Series(self._results).describe()
+                return pd.Series(self._results).to_frame('')
             else:
                 res = {}
         elif isinstance(self._results, tuple):
@@ -158,9 +179,23 @@ class Bootstrapping:
             keys = [keys]
         res = {k: v for k, v in res.items() if k in keys and isinstance(v, list) and all(np.isscalar(x) for x in v)}
         if res:
-            return pd.DataFrame(res).describe()
+            return pd.DataFrame(res)
         else:
+            return None
+
+    def describe(self, keys=None) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
+        `describe()` method. Only works for (dicts/tuples of) scalar values.
+        :return: DataFrame or Series with descriptive statistics.
+        """
+        df = self.dataframe(keys=keys)
+        if df is None:
             return pd.DataFrame(index=['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max'])
+        elif df.shape[1] == 1 and df.columns[0] == '':
+            return df.iloc[:, 0].describe()
+        else:
+            return df.describe()
 
     @staticmethod
     def _apply_function(fn, args: list, kwargs: dict):

@@ -322,14 +322,15 @@ class CaTabRaLoader:
         :param fitted_ensemble: Pre-loaded FittedEnsemble object. If None, method `get_fitted_ensemble()` is used for
         loading it.
         """
-        explainer = (self.get_config() or {}).get('explainer')
+        config = self.get_config() or {}
+        explainer = config.get('explainer')
         if explainer is not None and (self._path / explainer / 'params.joblib').exists():
             params = load(self._path / explainer / 'params.joblib')
             if fitted_ensemble is None:
                 fitted_ensemble = self.get_fitted_ensemble(from_model=True)
             if fitted_ensemble is not None:
                 from ..explanation import EnsembleExplainer
-                return EnsembleExplainer.get(explainer, ensemble=fitted_ensemble, params=params)
+                return EnsembleExplainer.get(explainer, config=config, ensemble=fitted_ensemble, params=params)
 
     def get_train_data(self) -> Optional[pd.DataFrame]:
         """

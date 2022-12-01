@@ -12,10 +12,10 @@ from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_predictio
 
 class SHAPEnsembleExplainer(EnsembleExplainer):
 
-    def __init__(self, ensemble: FittedEnsemble = None, feature_names: Optional[list] = None,
-                 target_names: Optional[list] = None, x: Optional[pd.DataFrame] = None,
-                 y: Optional[pd.DataFrame] = None, params=None):
-        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, feature_names=feature_names,
+    def __init__(self, ensemble: FittedEnsemble = None, config: Optional[dict] = None,
+                 feature_names: Optional[list] = None, target_names: Optional[list] = None,
+                 x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
+        super(SHAPEnsembleExplainer, self).__init__(ensemble=ensemble, config=config, feature_names=feature_names,
                                                     target_names=target_names, x=x, y=y, params=params)
         self._ensemble = ensemble
 
@@ -136,6 +136,13 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         preprocessing, estimator = self._explainers[model_id]
         if len(x) <= batch_size or glob:
             return func(preprocessing, estimator, x)
+        elif jobs == 1:
+            # Sometimes multiprocessing still does not work properly, especially with XGBoost. Therefore, if the number
+            # of jobs is 1, we circumvent multiprocessing entirely.
+            explanations = [func(preprocessing, estimator, x.iloc[i * batch_size:(i + 1) * batch_size], copy=True)
+                            for i in progress_bar(range((len(x) + batch_size - 1) // batch_size), disable=silent,
+                                                  desc='Sample batches')]
+            return np.concatenate(explanations, axis=-2)  # sample axis is last-but-one
         else:
             # joblib with loky backend may lead to segmentation faults, when existing explainers are "shared" among
             # processes. Built-in multiprocessing module works just fine.

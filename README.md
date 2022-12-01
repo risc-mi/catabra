@@ -92,8 +92,10 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
 * `--sample-weight SAMPLE_WEIGHT`: Column with sample weights, which are used for training, evaluating and
     explaining prediction models.
     Note, however, that not all AutoML-backends may support sample weights (auto-sklearn currently does not).
-* `--ignore IGNORE`: List of columns to ignore when training prediction models. Automatically includes `GROUP` and
-    `SPLIT`, if specified, but may contain further columns.
+* `--ignore IGNORE`: List of columns to ignore when training prediction models. Automatically includes `GROUP`, `SPLIT`
+    and `SAMPLE_WEIGHT`, if specified, but may contain further columns.
+* `--calibrate CALIBRATE`: Value in column `SPLIT` defining the subset to calibrate the trained classifier on.
+    If omitted, no calibration happens.
 * `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in the parent directory
     of `TABLE`, with a name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify
     whether it should be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current

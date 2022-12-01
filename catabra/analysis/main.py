@@ -16,9 +16,9 @@ from ..core.paths import CaTabRaPaths
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
             split: Optional[str] = None, sample_weight: Optional[str] = None, ignore: Optional[Iterable[str]] = None,
-            time: Optional[int] = None, out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
-            default_config: Optional[str] = None, jobs: Optional[int] = None,
-            from_invocation: Union[str, Path, dict, None] = None):
+            calibrate: Optional[str] = None, time: Optional[int] = None, out: Union[str, Path, None] = None,
+            config: Union[str, Path, dict, None] = None, default_config: Optional[str] = None,
+            jobs: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
     the remaining ones.
@@ -38,6 +38,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     Sample weights are used both for training and evaluating prediction models.
     :param ignore: Optional, list of columns to ignore when training prediction models. Automatically includes `group`
     and `split`, but may contain further columns.
+    :param calibrate: Optional, value in column `split` defining the subset to calibrate the trained classifier on. If
+    None, no calibration happens. Ignored in regression tasks or if `split` is not specified.
     :param time: Optional, time budget for model training, in minutes. Some AutoML backends require a fixed budget,
     others might not. Overwrites the "time_limit" config param.
     :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in the
@@ -51,7 +53,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
 
-    analyzer = Analyzer(invocation=from_invocation)
+    analyzer = CaTabRaAnalysis(invocation=from_invocation)
     analyzer(
         *table,
         classify=classify,
@@ -60,6 +62,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         split=split,
         sample_weight=sample_weight,
         ignore=ignore,
+        calibrate=calibrate,
         time=time,
         out=out,
         config=config,
@@ -68,16 +71,13 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     )
 
 
-class Analyzer(CaTabRaBase):
+class CaTabRaAnalysis(CaTabRaBase):
 
     @property
     def invocation_class(self) -> Type['AnalysisInvocation']:
         return AnalysisInvocation
 
     def _call(self):
-        if len(self._invocation.table) == 0:
-            raise ValueError('No table specified.')
-
         if isinstance(self._invocation.table[0], Path):
             dataset_name = self._invocation.table[0].stem
         else:
@@ -118,7 +118,7 @@ class Analyzer(CaTabRaBase):
             # train-test split
             df_train, split_masks = self._make_train_split(df, self._invocation.split)
             if self._invocation.split is not None:
-                self._invocation.ignore.update(self._invocation.split)
+                self._invocation.ignore.add(self._invocation.split)
 
             # copy training data
             copy_data = self._config.get('copy_analysis_data', False)
@@ -128,10 +128,15 @@ class Analyzer(CaTabRaBase):
                 io.write_df(df_train, self._invocation.out / CaTabRaPaths.TrainData)
 
             # grouping
-            self._invocation.ignore.update({self._invocation.group})
+            if self._invocation.group is not None:
+                self._invocation.ignore.add(self._invocation.group)
             group_indices = self.get_group_indices(df, df_train, self._invocation.group, split_masks)
 
+            # sample weights
+            if self._invocation.sample_weight is not None:
+                self._invocation.ignore.add(self._invocation.sample_weight)
             sample_weights = self._invocation.get_sample_weights(df_train)
+
             self.check_for_id_cols(df_train, id_cols, target)
 
             # drop columns
@@ -163,7 +168,8 @@ class Analyzer(CaTabRaBase):
                         raise ValueError(f'Unknown AutoML backend: {automl}')
                     logging.log(f'Using AutoML-backend {automl} for {encoder.task_}')
                     versions.update(backend.get_versions())
-                    cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())   # overwrite existing file
+                    # overwrite existing file
+                    cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())
 
                     backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights,
                                 time=self._invocation.time, jobs=self._invocation.jobs, dataset_name=dataset_name)
@@ -181,7 +187,8 @@ class Analyzer(CaTabRaBase):
 
                     self._make_explainer(backend, encoder, x_train, y_train, versions)
 
-            cu.save_versions(versions, (self._invocation.out / CaTabRaPaths.Versions).as_posix())  # overwrite existing file
+            # overwrite existing file
+            cu.save_versions(versions, (self._invocation.out / CaTabRaPaths.Versions).as_posix())
             self._make_ood_detector(x_train, y_train)
 
             end = pd.Timestamp.now()
@@ -189,9 +196,21 @@ class Analyzer(CaTabRaBase):
             logging.log(f'### Elapsed time: {end - self._invocation.start}')
             logging.log(f'### Output saved in {self._invocation.out.as_posix()}')
 
+            if self._invocation.calibrate is not None and self._invocation.split is not None \
+                    and encoder.task_ != 'regression':
+                from ..calibration import CaTabRaCalibration
+                calib = CaTabRaCalibration(invocation=self._invocation_src)
+                calib(df,
+                      folder=self._invocation.out,
+                      split=self._invocation.split,
+                      subset=self._invocation.calibrate,
+                      sample_weight=self._invocation.sample_weight,
+                      out=self._invocation.out / 'calib',
+                      jobs=self._invocation.jobs)
+
             if len(split_masks) > 0:
-                from ..evaluation import Evaluator
-                evaluate = Evaluator(invocation=self._invocation_src)
+                from ..evaluation import CaTabRaEvaluation
+                evaluate = CaTabRaEvaluation(invocation=self._invocation_src)
                 evaluate(df,
                          folder=self._invocation.out,
                          split=self._invocation.split,
@@ -233,10 +252,10 @@ class Analyzer(CaTabRaBase):
             plotting.save(self.plot_training_history(hist, interactive=True), self._invocation.out)
 
     def _make_ood_detector(self, x_train, y_train):
-        ood = self._config.get('ood') or {}
-        ood_class = ood.get('class')
+        ood_class = self._config.get('ood_class')
         if ood_class is not None:
-            ood = OODDetector.create(ood_class, source=ood.get('source'), kwargs=ood.get('kwargs'))
+            ood = OODDetector.create(ood_class, source=self._config.get('ood_source'),
+                                     kwargs=self._config.get('ood_kwargs'))
             ood.fit(x_train, y_train)
             io.dump(ood, self._invocation.out / CaTabRaPaths.OODModel)
 
@@ -249,6 +268,7 @@ class Analyzer(CaTabRaBase):
         try:
             explainer = EnsembleExplainer.get(
                 explainer,
+                config=self._config,
                 ensemble=backend.fitted_ensemble(),
                 feature_names=encoder.feature_names_,
                 target_names=encoder.get_target_or_class_names(),
@@ -395,7 +415,9 @@ class Analyzer(CaTabRaBase):
         else:
             backend = plotting.mpl_backend
 
-        if 'timestamp' in hist.columns:
+        if 'total_elapsed_time' in hist.columns:
+            x = hist['total_elapsed_time']
+        elif 'timestamp' in hist.columns:
             x = hist['timestamp'] - hist['timestamp'].iloc[0]
         else:
             x = np.arange(len(hist))
@@ -439,6 +461,10 @@ class AnalysisInvocation(Invocation):
         return self._ignore
 
     @property
+    def calibrate(self) -> Optional[str]:
+        return self._calibrate
+
+    @property
     def config_src(self) -> Union[str, Path, dict, None]:
         return self._config_src
 
@@ -462,6 +488,7 @@ class AnalysisInvocation(Invocation):
         split: Optional[str] = None,
         time: Optional[str] = None,
         ignore: Optional[Iterable[str]] = None,
+        calibrate: Optional[str] = None,
         config: Union[str, Path, dict, None] = None,
         default_config: Optional[str] = None,
         **_
@@ -474,6 +501,7 @@ class AnalysisInvocation(Invocation):
         self._group = group
         self._time = time
         self._ignore = ignore
+        self._calibrate = calibrate
         self._config_src = config
         self._default_config = default_config
         self._target = None
@@ -491,6 +519,8 @@ class AnalysisInvocation(Invocation):
                 self._time = src.get('time')
             if self._ignore is None:
                 self._ignore = src.get('ignore')
+            if self._calibrate is None:
+                self._calibrate = src.get('calibrate')
             if self._config_src is None:
                 self._config_src = src.get('config')
             if self._default_config is None:
@@ -501,6 +531,8 @@ class AnalysisInvocation(Invocation):
         super().resolve()
         if self._group == '':
             self._group = None
+        if self._calibrate == '':
+            self._calibrate = None
         if self._config_src == '':
             self._config_src = None
         if self._default_config in (None, ''):
@@ -538,8 +570,13 @@ class AnalysisInvocation(Invocation):
             classify=self._classify,
             group=self._group,
             ignore=self._ignore,
+            calibrate=self._calibrate,
             config=self._config_src,
             default_config=self._default_config,
             time=self._time,
         ))
         return dic
+
+    @staticmethod
+    def requires_table() -> bool:
+        return True

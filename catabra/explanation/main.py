@@ -1,11 +1,10 @@
-from typing import Union, Optional, Tuple
-import shutil
+from typing import Union, Optional, Tuple, Type
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu, io, logging
-from ..util import plotting
+from ..util import table as tu, io, logging, plotting
+from ..core import CaTabRaBase, Invocation
 from ..core.paths import CaTabRaPaths
 
 
@@ -37,161 +36,200 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
     """
+    expl = CaTabRaExplanation(invocation=from_invocation)
+    expl(
+        *table,
+        folder=folder,
+        model_id=model_id,
+        glob=glob,
+        split=split,
+        sample_weight=sample_weight,
+        out=out,
+        jobs=jobs,
+        batch_size=batch_size
+    )
 
-    if isinstance(from_invocation, (str, Path)):
-        from_invocation = io.load(from_invocation)
-    if isinstance(from_invocation, dict):
-        if len(table) == 0:
-            table = from_invocation.get('table') or []
-            if '<DataFrame>' in table:
-                raise ValueError('Invocations must not contain "<DataFrame>" tables.')
-        if folder is None:
-            folder = from_invocation.get('folder')
-        if model_id is None:
-            model_id = from_invocation.get('model_id')
-        if split is None:
-            split = from_invocation.get('split')
-        if sample_weight is None:
-            sample_weight = from_invocation.get('sample_weight')
-        if out is None:
-            out = from_invocation.get('out')
-        if glob is None:
-            glob = from_invocation.get('glob')
-        if jobs is None:
-            jobs = from_invocation.get('jobs')
 
-    if len(table) == 0:
-        raise ValueError('No table specified.')
-    if folder is None:
-        raise ValueError('No CaTabRa directory specified.')
+class CaTabRaExplanation(CaTabRaBase):
 
-    loader = io.CaTabRaLoader(folder, check_exists=True)
-    config = loader.get_config()
+    @property
+    def invocation_class(self) -> Type['ExplanationInvocation']:
+        return ExplanationInvocation
 
-    start = pd.Timestamp.now()
-    table = [io.make_path(tbl, absolute=True) if isinstance(tbl, (str, Path)) else tbl for tbl in table]
+    def _call(self):
+        loader = io.CaTabRaLoader(self._invocation.folder, check_exists=True)
+        self._config = loader.get_config()
 
-    if out is None:
-        out = table[0]
-        if isinstance(out, pd.DataFrame):
-            out = loader.path / ('explain_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-        else:
-            out = loader.path / ('explain_' + out.stem + '_' + start.strftime('%Y-%m-%d_%H-%M-%S'))
-    else:
-        out = io.make_path(out, absolute=True)
-    if out == loader.path:
-        raise ValueError(f'Output directory must differ from CaTabRa directory, but both are "{out.as_posix()}".')
-    elif out.exists():
-        if logging.prompt(f'Explanation folder "{out.as_posix()}" already exists. Delete?',
-                          accepted=['y', 'n'], allow_headless=False) == 'y':
-            if out.is_dir():
-                shutil.rmtree(out.as_posix())
-            else:
-                out.unlink()
-        else:
+        out_ok = self._invocation.resolve_output_dir(
+            prompt=f'Explanation folder "{self._invocation.out.as_posix()}" already exists. Delete?'
+        )
+        if not out_ok:
             logging.log('### Aborting')
             return
-    out.mkdir(parents=True)
 
-    explainer = loader.get_explainer()
-    if explainer is None:
-        logging.log('### Aborting: no trained prediction model or no explainer params found')
-        return
-    global_behavior = explainer.global_behavior()
+        explainer = loader.get_explainer()
+        if explainer is None:
+            logging.log('### Aborting: no trained prediction model or no explainer params found')
+            return
+        global_behavior = explainer.global_behavior()
 
-    if split == '':
-        split = None
-    if sample_weight == '':
-        sample_weight = None
-    if glob is None:
-        glob = not (global_behavior.get('mean_of_local', False) or len(table) > 0)
+        glob = self._invocation.glob
+        if glob is None:
+            glob = not (global_behavior.get('mean_of_local', False) or len(self._invocation.table) > 0)
 
-    with logging.LogMirror((out / CaTabRaPaths.ConsoleLogs).as_posix()):
-        logging.log(f'### Explanation started at {start}')
-        invocation = dict(
-            table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in table],
-            folder=loader.path,
-            model_id=model_id,
-            split=split,
-            sample_weight=sample_weight,
-            out=out,
-            glob=glob,
-            jobs=jobs,
-            timestamp=start
-        )
-        io.dump(io.to_json(invocation), out / CaTabRaPaths.Invocation)
+        with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
+            logging.log(f'### Explanation started at {self._invocation.start}')
+            io.dump(io.to_json(self._invocation), self._invocation.out / CaTabRaPaths.Invocation)
 
-        encoder = loader.get_encoder()
+            encoder = loader.get_encoder()
 
-        # merge tables
-        df, _ = tu.merge_tables(table)
+            # merge tables
+            df, _ = tu.merge_tables(self._invocation.table)
+            if df is None:
+                if not glob or global_behavior.get('requires_x', False):
+                    raise ValueError('No table(s) to explain models on specified.')
+                x_test = None
+            else:
+                if df.columns.nlevels != 1:
+                    raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
+
+                # copy test data
+                copy_data = self._config.get('copy_evaluation_data', False)
+                if isinstance(copy_data, (int, float)):
+                    copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
+                if copy_data:
+                    io.write_df(df, self._invocation.out / CaTabRaPaths.ExplanationData)
+
+                x_test = encoder.transform(x=df)
+
+            _iter_splits = self._get_split_iterator(df)
+            sample_weights = self._invocation.get_sample_weights(df)
+
+            static_plots = self._config.get('static_plots', True)
+            interactive_plots = self._config.get('interactive_plots', False)
+            if interactive_plots and plotting.plotly_backend is None:
+                logging.warn(plotting.PLOTLY_WARNING)
+                interactive_plots = False
+
+            model_id = self._invocation.model_id
+            if model_id == '__ensemble__':
+                model_id = None
+            for mask, directory in _iter_splits():
+                if mask is not None:
+                    logging.log('*** Split ' + directory.stem)
+                explain_split(explainer, x=x_test if mask is None else x_test[mask],
+                              sample_weight=sample_weights if sample_weights is None or mask is None else
+                              sample_weights[mask],
+                              directory=directory, glob=glob, model_id=model_id, batch_size=self._invocation.batch_size,
+                              jobs=self._invocation.jobs, static_plots=static_plots,
+                              interactive_plots=interactive_plots, verbose=True)
+
+            end = pd.Timestamp.now()
+            logging.log(f'### Explanation finished at {end}')
+            logging.log(f'### Elapsed time: {end - self._invocation.start}')
+            logging.log(f'### Output saved in {self._invocation.out.as_posix()}')
+
+    def _get_split_iterator(self, df):
         if df is None:
-            if not glob or global_behavior.get('requires_x', False):
-                raise ValueError('No table(s) to explain models on specified.')
+            def _iter_splits():
+                yield None, self._invocation.out
+        elif self._invocation.split is None:
+            def _iter_splits():
+                yield None, self._invocation.out
+        else:
+            split_masks, _ = tu.train_test_split(df, self._invocation.split)
 
             def _iter_splits():
-                yield None, out
+                for _k, _m in split_masks.items():
+                    yield _m, self._invocation.out / _k
 
-            x_test = None
+        return _iter_splits
+
+
+class ExplanationInvocation(Invocation):
+
+    @property
+    def folder(self) -> Union[str, Path]:
+        return self._folder
+
+    @property
+    def model_id(self) -> Optional[str]:
+        return self._model_id
+
+    @property
+    def glob(self) -> Optional[bool]:
+        return self._glob
+
+    @property
+    def batch_size(self) -> Optional[int]:
+        return self._batch_size
+
+    def __init__(
+            self,
+            *table,
+            split: Optional[str] = None,
+            sample_weight: Optional[str] = None,
+            out: Union[str, Path, None] = None,
+            jobs: Optional[int] = None,
+            folder: Union[str, Path] = None,
+            model_id=None,
+            glob: Optional[bool] = False,
+            batch_size: Optional[int] = None
+    ):
+        super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)
+        self._folder = folder
+        self._model_id = model_id
+        self._glob = glob
+        self._batch_size = batch_size
+
+    def update(self, src: dict = None):
+        super().update(src)
+        if src:
+            if self._folder is None:
+                self._folder = src.get('folder')
+            if self._model_id is None:
+                self._model_id = src.get('model_id')
+            if self._glob is None:
+                self._glob = src.get('glob')
+            if self._batch_size is None:
+                self._batch_size = src.get('batch_size')
+
+    def resolve(self):
+        super().resolve()
+
+        if self._folder is None:
+            raise ValueError('No CaTabRa directory specified.')
         else:
-            if df.columns.nlevels != 1:
-                raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
+            self._folder = io.make_path(self._folder, absolute=True)
 
-            # copy test data
-            copy_data = config.get('copy_evaluation_data', False)
-            if isinstance(copy_data, (int, float)):
-                copy_data = df.memory_usage(index=True, deep=True).sum() <= copy_data * 1000000
-            if copy_data:
-                io.write_df(df, out / 'explanation_data.h5')
-
-            # split
-            if split is None:
-                def _iter_splits():
-                    yield None, out
+        if self._out is None:
+            self._out = self._table[0] if self._table else None
+            if self._out is None or isinstance(self._out, pd.DataFrame):
+                self._out = self._folder / ('explain_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
             else:
-                split_masks, _ = tu.train_test_split(df, split)
-
-                def _iter_splits():
-                    for _k, _m in split_masks.items():
-                        yield _m, out / _k
-
-            x_test = encoder.transform(x=df)
-
-        if sample_weight is None or df is None:
-            sample_weights = None
-        elif sample_weight in df.columns:
-            if df[sample_weight].dtype.kind not in 'fiub':
-                raise ValueError(f'Column "{sample_weight}" must have numeric data type,'
-                                 f' but found {df[sample_weight].dtype.name}.')
-            logging.log(f'Weighting samples by column "{sample_weight}"')
-            sample_weights = df[sample_weight].values
-            na_mask = np.isnan(sample_weights)
-            if na_mask.any():
-                sample_weights = sample_weights.copy()
-                sample_weights[na_mask] = 1.
+                self._out = \
+                    self._folder / ('explain_' + self._out.stem + '_' + self._start.strftime('%Y-%m-%d_%H-%M-%S'))
         else:
-            raise ValueError(f'"{sample_weight}" is no column of the specified table.')
+            self._out = io.make_path(self._out, absolute=True)
+        if self._out == self._folder:
+            raise ValueError(
+                f'Output directory must differ from CaTabRa directory, but both are "{self._out.as_posix()}".'
+            )
 
-        static_plots = config.get('static_plots', True)
-        interactive_plots = config.get('interactive_plots', False)
-        if interactive_plots and plotting.plotly_backend is None:
-            logging.warn(plotting.PLOTLY_WARNING)
-            interactive_plots = False
+    def to_dict(self) -> dict:
+        dct = super().to_dict()
+        dct.update(dict(
+            table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in self._table],
+            folder=self._folder,
+            model_id=self._model_id,
+            glob=self._glob,
+            batch_size=self._batch_size
+        ))
+        return dct
 
-        if model_id == '__ensemble__':
-            model_id = None
-        for mask, directory in _iter_splits():
-            if mask is not None:
-                logging.log('*** Split ' + directory.stem)
-            explain_split(explainer, x=x_test if mask is None else x_test[mask],
-                          sample_weight=sample_weights if sample_weights is None or mask is None else sample_weights[mask],
-                          directory=directory, glob=glob, model_id=model_id, batch_size=batch_size, jobs=jobs,
-                          static_plots=static_plots, interactive_plots=interactive_plots, verbose=True)
-
-        end = pd.Timestamp.now()
-        logging.log(f'### Explanation finished at {end}')
-        logging.log(f'### Elapsed time: {end - start}')
-        logging.log(f'### Output saved in {out.as_posix()}')
+    @staticmethod
+    def requires_table() -> bool:
+        return False
 
 
 def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None,

@@ -411,7 +411,7 @@ class FittedEnsemble:
                 np.clip(pred, 0., 1., out=pred)
             elif self.task == 'multilabel_classification':
                 pred = pred >= 0.5
-            else:
+            elif self.task == 'multiclass_classification':
                 pred = metrics.multiclass_proba_to_pred(pred)
         elif proba:
             pred = self.meta_estimator_.predict_proba(all_predictions)
