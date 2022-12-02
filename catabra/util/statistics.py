@@ -1,7 +1,10 @@
-import pandas as pd
-from catabra.util.io import Path, make_path, write_df, write_dfs, convert_rows_to_str
-from . import logging
 from typing import Union, Tuple, Optional
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+from .io import Path, make_path, write_df, write_dfs, convert_rows_to_str
+from . import logging
 
 
 def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
@@ -21,6 +24,19 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
             df_stat_cat = pd.DataFrame()
             df_stat_temp = df.groupby(label_).describe()
 
+            unique = df[label_].unique()
+            tests = np.empty((len(dict_stat['overall']), len(unique)), dtype=np.float64)
+            for j, v in enumerate(unique):
+                if j == 1 and len(unique) == 2:
+                    # Mann-Whitney U test is symmetric => no need to calculate it twice
+                    tests[:, 1] = tests[:, 0]
+                else:
+                    mask = df[label_] == v
+                    for i, col_ in enumerate(dict_stat['overall'].index):
+                        tests[i, j] = mann_whitney_u(df.loc[mask, col_], df.loc[~mask, col_])
+            tests = pd.Series(index=pd.MultiIndex.from_product([dict_stat['overall'].index, unique]),
+                              data=tests.reshape(-1))
+
             for col_ in list(dict_stat['overall'].index):
                 temp = df_stat_temp.iloc[:, df_stat_temp.columns.get_level_values(0) == col_]
                 temp.columns = temp.columns.droplevel()
@@ -29,6 +45,7 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
                 df_stat_cat = pd.concat([df_stat_cat, temp.set_index(index)])
 
             df_stat_cat['count'] = df_stat_cat['count'].astype(int)
+            df_stat_cat['mann_whitney_u'] = tests
             dict_stat[label_] = df_stat_cat
 
     return dict_stat
@@ -69,17 +86,26 @@ def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) 
     """
     dict_non_num_stat = {'overall': create_non_numeric_statistics(df, [t_ for t_ in target if classify])}
 
-    for label_ in target:
-        df_non_num_stat = create_non_numeric_statistics(df, [l_ for l_ in [label_] if classify], 'Overall - ')
-
-        if classify:
-            for value_ in df[label_].unique():
+    if classify:
+        for label_ in target:
+            unique = df[label_].unique()
+            df_label = []
+            for value_ in unique:
                 mask = df[label_] == value_ if pd.notna(value_) else df[label_].isnull()
-                df_non_num_stat = df_non_num_stat.join(create_non_numeric_statistics(df[mask],
-                                                                                     [l_ for l_ in [label_] if classify],
-                                                                                     str(value_) + ' - '))
+                df_value = \
+                    create_non_numeric_statistics(df[mask], [l_ for l_ in [label_] if classify], str(value_) + ' - ')
+                df_value = df_value.reindex(dict_non_num_stat['overall'].index, fill_value=0)
 
-        dict_non_num_stat[label_] = df_non_num_stat
+                idx = dict_non_num_stat['overall'].index.levels[0]
+                s = pd.Series(index=idx, data=[chi_square(df.loc[mask, col_], df.loc[~mask, col_]) for col_ in idx])
+                s.name = str(value_) + ' - chi_square'
+                s = s.reindex(df_value.index.get_level_values(0))
+                s[s.index.duplicated()] = np.nan
+                s.index = df_value.index
+
+                df_label.append(df_value.join(s, how='left'))
+
+            dict_non_num_stat[label_] = pd.concat(df_label, axis=1, sort=False)
 
     return dict_non_num_stat
 
@@ -99,7 +125,7 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
     num_stats, non_num_stats, corr = calc_descriptive_statistics(df, target, classify, corr_threshold=corr_threshold)
     # calculate and save descriptive statistics & correlations
     cols_to_str = list(df.select_dtypes(include=['timedelta64[ns]']).columns)
-    convert_rows_to_str(num_stats, cols_to_str, inplace=True, skip=['count'])
+    convert_rows_to_str(num_stats, cols_to_str, inplace=True, skip=['count', 'mann_whitney_u'])
 
     write_dfs(num_stats, fn / 'statistics_numeric.xlsx')
     write_dfs(non_num_stats, fn / 'statistics_non_numeric.xlsx')
@@ -132,3 +158,73 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
 
     return dict_stat, dict_non_num_stat, (df.corr() if df.shape[1] <= corr_threshold else None)
+
+
+def mann_whitney_u(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
+    """
+    Mann-Whitney U test for testing whether two samples are equal (more precisely: have equal median). Only applicable
+    to numerical observations; categorical observations should be treated with the chi square test.
+
+    The Mann-Whitney U test is a special case of the Kruskal-Wallis H test, which works for more than two samples.
+
+    :param x: First sample, array-like with numerical values.
+    :param y: Second sample, array-like with numerical values.
+    :param kwargs: Keyword arguments passed to `scipy.stats.mannwhitneyu()`.
+    :return: p-value. Smaller values mean that `x` and `y` are distributed differently.
+    Note that this test is symmetric between `x` and `y`.
+    """
+    args = []
+    for a in (x, y):
+        if a.dtype.kind == 'b':
+            a = a.astype(np.float32)
+        elif a.dtype.kind == 'm':
+            a = a[~np.isnan(a)] / pd.Timedelta(1, unit='s')
+        elif a.dtype.kind == 'M':
+            a = (a[~np.isnan(a)] - pd.Timestamp(0)) / pd.Timedelta(1, unit='s')
+        elif a.dtype.kind == 'O':
+            raise TypeError(f'Invalid data type for Mann-Whitney U test: expected numerical but found {a.dtype}')
+        else:
+            try:
+                na_mask = np.isnan(a)
+                if na_mask.any():
+                    a = a[~na_mask]
+            except:     # noqa
+                pass
+        args.append(a)
+
+    try:
+        return stats.mannwhitneyu(*args, **kwargs).pvalue
+    except TypeError:
+        return np.nan
+
+
+def chi_square(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
+    """
+    Chi square test for testing whether a sample of categorical observations is distributed according to another sample
+    of categorical observations.
+    :param x: First sample, array-like with categorical values.
+    :param y: Second sample, array-like with categorical values.
+    :param kwargs: Keyword arguments passed to `scipy.stats.chisquare()`.
+    :return: p-value. Smaller values mean that `x` is distributed differently from `y`.
+    Note that this test is *not* symmetric between `x` and `y`!
+    """
+    if not isinstance(x, pd.Series):
+        x = pd.Series(x)
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y)
+
+    x = x.value_counts()
+    y = y.value_counts(normalize=True) * x.sum()
+
+    all_cats = list(set(x.index).union(y.index))
+    x = x.reindex(all_cats, fill_value=0)
+    y = y.reindex(all_cats, fill_value=0)
+
+    old = np.seterr(all='ignore')
+    try:
+        out = stats.chisquare(x, y, **kwargs).pvalue
+        np.seterr(**old)
+        return out
+    except:     # noqa
+        np.seterr(**old)
+        return np.nan
