@@ -348,7 +348,8 @@ class AutoSklearnBackend(AutoMLBackend):
                 run_config = configs[run_key.config_id]._values
                 types.append(run_config[f'{self._get_estimator_name()}:__choice__'])
 
-        result = pd.DataFrame(data=dict(model_id=model_id, timestamp=timestamp))
+        result = pd.DataFrame(data=dict(model_id=model_id))
+        result['timestamp'] = pd.to_datetime(timestamp)
         if hasattr(self, 'fit_start_time_'):
             result['total_elapsed_time'] = \
                 result['timestamp'] - \
