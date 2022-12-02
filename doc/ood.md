@@ -5,25 +5,22 @@
 Configuration for the command line tools should be done in the following format: 
 
 
-    "ood": {
-        
-        "class": "autoencoder",
-        "source": "internal",
-        "kwargs": {}
-    },
+    "ood_class": "autoencoder",
+    "ood_source": "internal",
+    "ood_kwargs": {}
 
-* `source` defines the origin of the detector. The following values are accepted:
+* `ood_source` defines the origin of the detector. The following values are accepted:
     * `internal`: detector implemented directly in CaTabRa.
     * `pyod`: detector from PyOD library
     * `external`: detector implemented by an outside module
 
-* `class` is the name/path of an OOD detector:
-        * if `source` is `internal`: name of one of the modules in catabra.ood.internal (e.g. `soft_brownian_offset`)
-        * if `source` is `pyod`: name of one of the modules in pyod.models (e.g. `kde`)
-        * if `source` is `external`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
+* `ood_class` is the name/path of an OOD detector:
+        * if `ood_source` is `internal`: name of one of the modules in catabra.ood.internal (e.g. `soft_brownian_offset`)
+        * if `ood_source` is `pyod`: name of one of the modules in pyod.models (e.g. `kde`)
+        * if `ood_source` is `external`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
         * if value is <None> no OOD detection is performed
 
-* `kwargs` is a dictionary of optional parameters for specific OOD detectors in the form {"parameter-name": value, ...}.
+* `ood_kwargs` is a dictionary of optional parameters for specific OOD detectors in the form {"parameter-name": value, ...}.
 e.g. for the autoencoder `{"target_dim_factor": 0.25, "reduction_factor": 0.9}`
 
 
