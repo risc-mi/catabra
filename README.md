@@ -287,12 +287,22 @@ tbd
 * `automl/base.py`
   * Abstract interface for AutoML backends.
   * Resembles the `BaseEstimator` interface of scikit-learn.
+* `base/config.py`
+  * Default configuration.
 * `automl/askl/__init__.py`
   * Implementation of the auto-sklearn backend.
   * Necessary packages are only imported if this backend is actually used; other backends should follow a similar
       pattern.
-* `util/config.py`
-  * Default configuration.
+* `ood/base.py`
+  * Abstract base class for out-of-distribution (OOD) detection.
+  * Contains factory method for creation of sub-classes.
+* `ood/internal/`
+  * Folder for OOD detectors implemented in CaTaBra.
+* `ood/internal/`
+  * Folder for OOD detectors implemented in CaTaBra.
+* `ood/pyod.py`
+  * Wrapper class for making PyOD detectors confirm with the base class. 
+  * [PyOD](https://pyod.readthedocs.io/en/latest/) is a library for anonmaly detection
 * `util/encofing.py`
   * Implementation of the feature encoding functionality.
   * Responsible for converting time-like attributes into numeric attributes, among other things.
