@@ -1492,7 +1492,8 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
 
 
 def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task: str = None, metric_list=None,
-                        threshold: float = 0.5) -> Union[dict, Callable[[np.ndarray, np.ndarray], dict]]:
+                        threshold: float = 0.5, add_na_results: bool = True) \
+        -> Union[dict, Callable[[np.ndarray, np.ndarray], dict]]:
     """
     Summarize the quality of predictions by evaluating a given set of performance metrics. In contrast to functions
     `calc_regression_metrics()` etc., this function is more "light-weight", for instance in the sense that it only
@@ -1506,6 +1507,8 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
     :param metric_list: List of metrics to evaluate. Metrics that do not fit to the given prediction task are tacitly
     skipped.
     :param threshold: Decision threshold for binary- and multilabel classification problems.
+    :param add_na_results: Whether to add N/A results in the output, e.g., if one of the requested metrics cannot be
+    calculated. If False, these metrics are tacitly skipped.
     :return: If `args` is pair `(y_true, y_hat)`: dict whose keys are names of metrics and whose values are the results
     of the respective metrics evaluated on `y_true` and `y_hat`. Otherwise, if `args` is empty, callable which can be
     applied to `y_true` and `y_hat` (and optionally `sample_weight`).
@@ -1553,7 +1556,8 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
                 # e.g., "mean_squared_log_error" cannot be applied to negative values => skip
                 out[n] = f(y_true, y_hat, sample_weight=sample_weight)
             except:     # noqa
-                pass
+                if add_na_results:
+                    out[n] = np.nan
 
         if cm_mapping:
             if sample_weight is None:
@@ -1569,7 +1573,8 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
                 try:
                     out[n] = f(tp=tp, fp=fp, tn=tn, fn=fn, average=avg)
                 except:  # noqa
-                    pass
+                    if add_na_results:
+                        out[n] = np.nan
 
         return out
 
