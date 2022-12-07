@@ -207,7 +207,12 @@ class Bootstrapping:
         elif isinstance(fn, tuple):
             return tuple(Bootstrapping._apply_function(f, args, kwargs) for f in fn)
         else:
-            return fn(*args, **kwargs)
+            try:
+                return fn(*args, **kwargs)
+            except:     # noqa
+                # It could be that due to resampling some metrics raise exceptions (e.g., if no condition positives
+                # appear anymore). We catch all exceptions and simply return NaN in this case.
+                return np.nan
 
     @staticmethod
     def _init_results(new):
