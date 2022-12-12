@@ -216,6 +216,10 @@ def chi_square(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series],
     x = x.value_counts()
     y = y.value_counts(normalize=True) * x.sum()
 
+    # with categorical data types, all categories are listed even if they don't actually appear; must be dropped
+    x = x[x > 0]
+    y = y[y > 0]
+
     all_cats = list(set(x.index).union(y.index))
     x = x.reindex(all_cats, fill_value=0)
     y = y.reindex(all_cats, fill_value=0)
