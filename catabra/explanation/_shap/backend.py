@@ -510,7 +510,7 @@ def _get_explainer(estimator, data, permutation, proba):
     except:  # noqa
         pass
 
-    kwargs = dict(data=data_sample, keep_index=True)
+    kwargs = dict(data=data_sample, keep_index=isinstance(data_sample, pd.DataFrame))
     explainer = CustomKernelExplainer(get_prediction_function(estimator, proba=proba), **kwargs)
     return explainer, dict(explainer_class='CustomKernelExplainer', init_kwargs=kwargs, pre='prediction_function',
                            call_kwargs=dict(silent=True))
