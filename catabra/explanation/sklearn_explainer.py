@@ -734,6 +734,16 @@ class RBFSamplerExplainer(_LinearTransformationExplainer):
 
 class FeatureFilterExplainer(TransformationExplainer):
 
+    def __init__(self, transformer, params=None):
+        super(FeatureFilterExplainer, self).__init__(transformer=transformer, params=params)
+        self.input_columns_ = None if params is None else params.get('input_columns')
+
+    @property
+    def params_(self) -> dict:
+        out = super(FeatureFilterExplainer, self).params_
+        out['input_columns'] = self.input_columns_
+        return out
+
     def fit_forward(self, x: pd.DataFrame, y) -> pd.DataFrame:
         self.input_columns_ = x.columns
         return self.forward(x)
