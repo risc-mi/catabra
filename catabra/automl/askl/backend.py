@@ -503,7 +503,13 @@ class AutoSklearnBackend(AutoMLBackend):
             resampling_args = resampling_args.copy()
             if 'groups' in resampling_args:
                 raise ValueError('"groups" must not occur in the resampling strategy arguments.')
-        if resampling_strategy is not None:
+        if resampling_strategy == 'CustomPredefinedSplit':
+            from ...util.split import CustomPredefinedSplit
+            resampling_strategy = CustomPredefinedSplit.from_data(x_train, resampling_args['columns'])
+            x_train = x_train.drop(resampling_args['columns'], axis=1)
+            resampling_args = {}
+            self._feature_filter = FeatureFilter().fit(x_train)
+        elif resampling_strategy is not None:
             cls = getattr(grouped_split, resampling_strategy, None) or \
                   getattr(sklearn.model_selection, resampling_strategy, None)
             if cls is not None and issubclass(cls, (sklearn.model_selection.BaseCrossValidator,
