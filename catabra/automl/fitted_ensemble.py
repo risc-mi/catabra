@@ -1,8 +1,10 @@
 from typing import Union, Optional, Dict, Any
+from functools import partial
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import sklearn
+import sklearn.ensemble
 import joblib
 
 from ..util import metrics, io
@@ -14,48 +16,50 @@ def _preprocess(x, pp: list):
     return x
 
 
+def _predict_proba(estimator, x, **kwargs):
+    prediction = estimator.predict_proba(x, **kwargs)
+    # multilabel output might be a list => convert to array
+    # copied from autosklearn.pipeline.implementations.util.convert_multioutput_multiclass_to_multilabel()
+    if isinstance(prediction, list):
+        if prediction:
+            assert all(isinstance(p, np.ndarray) and p.ndim == 2 for p in prediction)
+            tmp = np.empty((prediction[0].shape[0], len(prediction)), dtype=prediction[0].dtype)
+            for i, label_scores in enumerate(prediction):
+                if label_scores.shape[1] == 1:
+                    tmp[:, i] = label_scores
+                elif label_scores.shape[1] == 2:
+                    tmp[:, i] = label_scores[:, 1]
+                elif label_scores.shape[1] > 2:
+                    raise ValueError('Multioutput-Multiclass supported by'
+                                     ' scikit-learn, but not by auto-sklearn!')
+                else:
+                    RuntimeError(f'Unknown predict_proba output={prediction}')
+
+            prediction = tmp
+        else:
+            prediction = np.empty((len(x), 0), dtype=np.float32)
+
+    np.clip(prediction, 0., 1., out=prediction)
+    return prediction
+
+
+def _predict_voting_regressor(estimator: sklearn.ensemble.VotingRegressor, x, **kwargs):
+    # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
+    # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
+    # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
+    prediction = np.average(estimator.transform(x, **kwargs), axis=-1, weights=estimator._weights_not_none)
+    if prediction.ndim == 2:
+        prediction = prediction.T
+    return prediction
+
+
 def get_prediction_function(estimator, proba: bool = False):
     if isinstance(estimator, FittedModel):
         return estimator.predict_proba if proba else estimator.predict
     elif proba:
-        def _predict(x, **kwargs):
-            prediction = estimator.predict_proba(x, **kwargs)
-            # multilabel output might be a list => convert into array
-            # copied from autosklearn.pipeline.implementations.util.convert_multioutput_multiclass_to_multilabel()
-            if isinstance(prediction, list):
-                if prediction:
-                    assert all(isinstance(p, np.ndarray) and p.ndim == 2 for p in prediction)
-                    tmp = np.empty((prediction[0].shape[0], len(prediction)), dtype=prediction[0].dtype)
-                    for i, label_scores in enumerate(prediction):
-                        if label_scores.shape[1] == 1:
-                            tmp[:, i] = label_scores
-                        elif label_scores.shape[1] == 2:
-                            tmp[:, i] = label_scores[:, 1]
-                        elif label_scores.shape[1] > 2:
-                            raise ValueError('Multioutput-Multiclass supported by'
-                                             ' scikit-learn, but not by auto-sklearn!')
-                        else:
-                            RuntimeError(f'Unkown predict_proba output={prediction}')
-
-                    prediction = tmp
-                else:
-                    prediction = np.empty((len(x), 0), dtype=np.float32)
-
-            np.clip(prediction, 0., 1., out=prediction)
-            return prediction
-
-        return _predict
+        return partial(_predict_proba, estimator)               # `partial` works well with multiprocessing
     elif isinstance(estimator, sklearn.ensemble.VotingRegressor):
-        # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
-        # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
-        # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
-        def _predict(x, **kwargs):
-            prediction = np.average(estimator.transform(x, **kwargs), axis=-1, weights=estimator._weights_not_none)
-            if prediction.ndim == 2:
-                prediction = prediction.T
-            return prediction
-
-        return _predict
+        return partial(_predict_voting_regressor, estimator)    # `partial` works well with multiprocessing
     else:
         return estimator.predict
 
