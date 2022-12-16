@@ -17,9 +17,8 @@ from smac.tae import StatusType
 from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
 
-from ...util import io, logging
+from ...util import io, logging, split
 from ...util.common import repr_timedelta, repr_list
-from ...analysis import grouped_split
 from ..base import FittedEnsemble, AutoMLBackend
 from .scorer import get_scorer
 from . import explanation
@@ -504,13 +503,12 @@ class AutoSklearnBackend(AutoMLBackend):
             if 'groups' in resampling_args:
                 raise ValueError('"groups" must not occur in the resampling strategy arguments.')
         if resampling_strategy == 'CustomPredefinedSplit':
-            from ...util.split import CustomPredefinedSplit
-            resampling_strategy = CustomPredefinedSplit.from_data(x_train, resampling_args['columns'])
+            resampling_strategy = split.CustomPredefinedSplit.from_data(x_train, resampling_args['columns'])
             x_train = x_train.drop(resampling_args['columns'], axis=1)
             resampling_args = {}
             self._feature_filter = FeatureFilter().fit(x_train)
         elif resampling_strategy is not None:
-            cls = getattr(grouped_split, resampling_strategy, None) or \
+            cls = getattr(split, resampling_strategy, None) or \
                   getattr(sklearn.model_selection, resampling_strategy, None)
             if cls is not None and issubclass(cls, (sklearn.model_selection.BaseCrossValidator,
                                                     sklearn.model_selection._split.BaseShuffleSplit,
@@ -892,8 +890,8 @@ class AutoSklearnBackend(AutoMLBackend):
                                                     sklearn.model_selection.GroupKFold,
                                                     sklearn.model_selection.LeaveOneGroupOut,
                                                     sklearn.model_selection.LeavePGroupsOut,
-                                                    grouped_split.StratifiedGroupShuffleSplit,
-                                                    grouped_split.StratifiedGroupKFold)):
+                                                    split.StratifiedGroupShuffleSplit,
+                                                    split.StratifiedGroupKFold)):
                 logging.warn('Grouping information might not be taken into account by specified'
                              f' resampling strategy {resampling_strategy}.')
             return resampling_strategy
@@ -946,9 +944,9 @@ class AutoSklearnBackend(AutoMLBackend):
                 raise ValueError(resampling_strategy)
         elif self.task in ('binary_classification', 'multiclass_classification'):
             if resampling_strategy in ('holdout', 'holdout-iterative-fit'):
-                cv = grouped_split.StratifiedGroupShuffleSplit(n_splits=1, test_size=test_size, random_state=1)
+                cv = split.StratifiedGroupShuffleSplit(n_splits=1, test_size=test_size, random_state=1)
             elif resampling_strategy in ('cv', 'cv-iterative-fit', 'partial-cv', 'partial-cv-iterative-fit'):
-                cv = grouped_split.StratifiedGroupKFold(
+                cv = split.StratifiedGroupKFold(
                     n_splits=resampling_strategy_args['folds'],
                     shuffle=True,
                     random_state=1,
