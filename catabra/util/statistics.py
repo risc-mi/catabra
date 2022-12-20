@@ -190,6 +190,8 @@ def mann_whitney_u(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Seri
                     a = a[~na_mask]
             except:     # noqa
                 pass
+        if len(a) == 0:
+            return np.nan
         args.append(a)
 
     try:
@@ -219,6 +221,9 @@ def chi_square(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series],
     # with categorical data types, all categories are listed even if they don't actually appear; must be dropped
     x = x[x > 0]
     y = y[y > 0]
+
+    if len(x) == 0 or len(y) == 0:
+        return np.nan
 
     all_cats = list(set(x.index).union(y.index))
     x = x.reindex(all_cats, fill_value=0)
