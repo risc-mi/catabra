@@ -256,6 +256,7 @@ This section lists all built-in classification metrics that are implemented in t
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.balanced_accuracy_score.html#sklearn.metrics.balanced_accuracy_score)
 * **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
+* **Note**: Closely related to `informedness`, which is `balanced_accuracy * 2 - 1` in the binary case.
 
 ### F1
 
@@ -407,6 +408,39 @@ This section lists all built-in classification metrics that are implemented in t
     policy.
 * **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
+### Informedness
+
+* Implementation:
+  * binary: `informedness`
+  * multiclass: `informedness_micro`, `informedness_macro`, `informedness_samples`, `informedness_weighted`
+  * multilabel: `informedness_micro`, `informedness_macro`, `informedness_samples`, `informedness_weighted`
+* Also known as: Youden index, Youden's J statistic
+* Range: [-1, 1]
+* Optimum: 1
+* Accepts probabilities: **no**
+* Documentation:
+    [Wikipedia](https://en.wikipedia.org/wiki/Youden%27s_J_statistic)
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
+* **Note**: Informedness has a [natural generalization to the multiclass case](https://arxiv.org/abs/2010.16061),
+    which is currently not implemented.
+* **Note**: Closely related to `balanced_accuracy`, which is `(informedness + 1) / 2` in the binary case.
+
+### Markedness
+
+* Implementation:
+  * binary: `markedness`
+  * multiclass: `markedness_micro`, `markedness_macro`, `markedness_samples`, `markedness_weighted`
+  * multilabel: `markedness_micro`, `markedness_macro`, `markedness_samples`, `markedness_weighted`
+* Also known as: deltaP
+* Range: [-1, 1]
+* Optimum: 1
+* Accepts probabilities: **no**
+* Documentation:
+    [Wikipedia](https://en.wikipedia.org/wiki/Confusion_matrix)
+* **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
+* **Note**: Markedness has a [natural generalization to the multiclass case](https://arxiv.org/abs/2010.16061),
+    which is currently not implemented.
+
 ### True Positives
 
 * Accepts probabilities: **no**
@@ -439,15 +473,38 @@ This section lists all built-in classification metrics that are implemented in t
 * **Note**: Not actually a metric, but the decision threshold which minimizes the difference between sensitivity and
     specificity.
 
-
 ### Balance Score
 
 * Implementation:
   * binary: `balance_score`
 * Accepts probabilities: **yes**
-* **Note**: Equivalent to sensitivity at decision threshold `balance_threshold`, which by definition is (approximately)
+* **Note**: Equal to sensitivity at decision threshold `balance_threshold`, which by definition is (approximately)
     equal to specificity at that threshold. Moreover, it can be shown to be (approximately) equal to accuracy and
     balanced accuracy at that threshold, too.
+
+### Prevalence Threshold
+
+* Implementation:
+  * binary: `prevalence_threshold`
+* Accepts probabilities: **yes**
+* **Note**: Not actually a metric, but the decision threshold which minimizes the difference between the total number
+    of condition positive samples and the number of predicted positive samples.
+
+### Prevalence Score
+
+* Implementation:
+  * binary: `prevalence_score`
+* Accepts probabilities: **yes**
+* **Note**: Equal to sensitivity at decision threshold `prevalence_threshold`, which can be shown to be
+    (approximately) equal to positive predictive value and F1-score at that threshold.
+
+### (0,1)-Threshold
+
+* Implementation:
+  * binary: `zero_one_threshold`
+* Accepts probabilities: **yes**
+* **Note**: Not actually a metric, but the decision threshold which minimizes the Euclidean distance between `(0, 1)`
+    and `(1 - specificity, sensitivity)`.
 
 ## Averaging
 

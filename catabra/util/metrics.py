@@ -83,7 +83,8 @@ def get(name):
     :param name: The name of the requested metric function. It may be of the form "`name` @ `threshold`", where `name`
     is the name of a thresholded classification metric (e.g., "accuracy") and `threshold` is the desired threshold.
     Furthermore, some synonyms are recognized as well, most notably "precision" for "positive_predictive_value" and
-    "recall" for "sensitivity".
+    "recall" for "sensitivity". `threshold` can also be the name of a thresholding strategy; see function
+    `thresholded()` for details.
     :return: Metric function (callable).
     """
     if isinstance(name, str):
@@ -94,12 +95,19 @@ def get(name):
                 name = 'positive_predictive_value' + name[9:]
             elif name == 'recall' or name.startswith('recall_'):
                 name = 'sensitivity' + name[6:]
+            elif name == 'youden_index' or name.startswith('youden_index_'):
+                name = 'informedness' + name[12:]
             elif name == 'mean_average_precision':
                 name = 'average_precision_macro'
             return getattr(sys.modules[__name__], name)
         else:
             fn = get(s[0])
-            th = s[1] if s[1] in ('argmin', 'argmax') else float(s[1])
+            th = s[1].strip()
+            try:
+                th = float(th)
+            except ValueError:
+                # assume `th` is the name of a thresholding strategy => pass on to `thresholded()`
+                pass
             return thresholded(fn, threshold=th)
     return name
 
@@ -260,6 +268,180 @@ def balance_score(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -
 
 def balance_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
     return balance_score_threshold(y_true, y_score, sample_weight=sample_weight)[1]
+
+
+def prevalence_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> Tuple[float, float]:
+    """
+    Compute the prevalence score and -threshold of a binary classification problem.
+    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
+    contain NaN.
+    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
+    to the positive class. Range is arbitrary.
+    :param sample_weight: Sample weights, optional.
+    :return: Pair `(prevalence_score, prevalence_threshold)`, where `prevalence_threshold` is the decision threshold
+    that minimizes the difference between the number of positive samples in `y_true` (`m`) and the number of predicted
+    positives. In other words, the threshold is set to the `m`-th largest value in `y_score`.
+    If `sample_weight` is given, the threshold minimizes the difference between the total weight of all positive
+    samples and the total weight of all samples predicted positive.
+    `prevalence_score` is the corresponding sensitivity value, which can be shown to be approximately equal to positive
+    predictive value and F1.
+    """
+    th = prevalence_threshold(y_true, y_score, sample_weight=sample_weight)
+    return sensitivity(y_true, y_score >= th, sample_weight=sample_weight), th
+
+
+def prevalence_score(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
+    return prevalence_score_threshold(y_true, y_score, sample_weight=sample_weight)[0]
+
+
+def prevalence_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
+    if len(y_true) != len(y_score):
+        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+    elif sample_weight is not None and len(y_true) != len(sample_weight):
+        raise ValueError(
+            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+        )
+    elif len(y_true) == 0:
+        return 0.
+    if isinstance(y_true, pd.Series):
+        y_true = y_true.values
+    if isinstance(y_score, pd.Series):
+        y_score = y_score.values
+    s = pd.DataFrame(data=dict(p=(y_true > 0).astype(np.float32), w=1), index=y_score)
+    if sample_weight is not None:
+        s['p'] *= sample_weight
+        s['w'] *= sample_weight
+    s = s.groupby(level=0).sum()
+    s.sort_index(ascending=False, inplace=True)
+    i = np.argmin(np.abs(s['w'].cumsum().values - s['p'].sum()))
+    th = s.index[i]
+    if i + 1 < len(s):  # take midpoint of `i`-th and nearest *smaller* threshold
+        th += s.index[i + 1]
+        th *= 0.5
+    return th
+
+
+def zero_one_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None,
+                       specificity_weight: float = 1.) -> float:
+    """
+    Compute the threshold corresponding to the (0,1)-criterion [1] of a binary classification problem.
+    Although a popular strategy for selecting decision thresholds, [1] advocates maximizing informedness (aka Youden
+    index) instead, which is equivalent to maximizing balanced accuracy.
+
+    [1] https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1444894/
+
+    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
+    contain NaN.
+    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
+    to the positive class. Range is arbitrary.
+    :param sample_weight: Sample weights, optional.
+    :param specificity_weight: The relative weight of specificity wrt. sensitivity. 1 means that sensitivity and
+    specificity are weighted equally, a value < 1 means that sensitivity is weighted stronger than specificity, and
+    a value > 1 means that specificity is weighted stronger than sensitivity. See the formula below for details.
+    :return: Decision threshold that minimizes the Euclidean distance between the point `(0, 1)` and the point
+    `(1 - specificity, sensitivity)`, i.e.,
+
+        arg min_t (1 - sensitivity(y_true, y_score >= t)) ** 2 +
+                  specificity_weight * (1 - specificity(y_true, y_score >= t)) ** 2
+    """
+    if len(y_true) != len(y_score):
+        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+    elif sample_weight is not None and len(y_true) != len(sample_weight):
+        raise ValueError(
+            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+        )
+    elif len(y_true) == 0:
+        return 0.
+    if isinstance(y_true, pd.Series):
+        y_true = y_true.values
+    if isinstance(y_score, pd.Series):
+        y_score = y_score.values
+    s = pd.DataFrame(data=dict(p=(y_true > 0).astype(np.float32), n=(y_true < 1).astype(np.float32)), index=y_score)
+    if sample_weight is not None:
+        s['p'] *= sample_weight
+        s['n'] *= sample_weight
+    s = s.groupby(level=0).sum()
+    s.sort_index(ascending=False, inplace=True)
+    n_pos = s['p'].sum()
+    n_neg = s['n'].sum()
+    fn = n_pos - s['p'].cumsum().values
+    fp = s['n'].cumsum().values
+    obj = (fn * n_neg) ** 2 + specificity_weight * (fp * n_pos) ** 2
+    i = np.argmin(obj)
+    th = s.index[i]
+    if i + 1 < len(s):  # take midpoint of `i`-th and nearest *smaller* threshold
+        th += s.index[i + 1]
+        th *= 0.5
+    return th
+
+
+def argmax_score_threshold(func, y_true, y_score, sample_weight: Optional[np.ndarray] = None,
+                           discretize=100, **kwargs) -> Tuple[float, float]:
+    """
+    Compute the decision threshold that maximizes a given binary classification metric or callable.
+    Since in most built-in classification metrics larger values indicate better results, there is no analogous
+    `argmin_score_threshold()`.
+    :param func: The metric or function ot maximize. If a string, function `get()` is called on it.
+    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
+    contain NaN.
+    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
+    to the positive class. Range is arbitrary.
+    :param sample_weight: Sample weights, optional.
+    :param discretize: Discretization steps for limiting the number of calls to `func`. If None, no discretization
+    happens, i.e., all unique values in `y_score` are tried.
+    :param kwargs: Additional keyword arguments passed to `func`.
+    :return: Pair `(score, threshold)`, where `threshold` is the decision threshold that maximizes `func`, i.e.,
+
+        arg max_t func(y_true, y_score >= t)
+
+    `score` is the corresponding value of `func`.
+    """
+    if isinstance(func, str):
+        func = get(func)
+    if isinstance(y_score, pd.Series):
+        y_score = y_score.values
+    opt = -np.inf
+    th = 0.
+    if discretize is None:
+        thresholds = np.unique(y_score)
+    else:
+        thresholds = get_thresholds(y_score, n_max=discretize, sample_weight=sample_weight)
+    for t in thresholds:
+        res = func(y_true, y_score >= t, sample_weight=sample_weight, **kwargs)
+        if res > opt:
+            opt = res
+            th = t
+    return opt, th
+
+
+def argmax_score(func, y_true, y_score, **kwargs) -> float:
+    return argmax_score_threshold(func, y_true, y_score, **kwargs)[0]
+
+
+def argmax_threshold(func, y_true, y_score, **kwargs) -> float:
+    return argmax_score_threshold(func, y_true, y_score, **kwargs)[1]
+
+
+def get_thresholding_strategy(name: str):
+    """
+    Retrieve a thresholding strategy for binary classification, given by its name.
+    :param name: The name of the thresholding strategy, like "balance", "prevalence" or "zero_one".
+    :return: Thresholding strategy (callable) that can be applied to `y_true`, `y_score` and `sample_weight`, and that
+    returns a single scalar threshold.
+    """
+    if name == 'balance':
+        return balance_threshold
+    elif name == 'prevalence':
+        return prevalence_threshold
+    elif name == 'zero_one':
+        return zero_one_threshold
+    elif name.startswith('zero_one(') and name[-1] == ')':
+        return partial(zero_one_threshold, specificity_weight=float(name[9:-1]))
+    elif name.startswith('argmax '):
+        return partial(argmax_threshold, name[7:])
+    else:
+        raise ValueError(f'Unknown thresholding strategy "{name}".'
+                         ' Choose one of "balance", "prevalence", "zero_one" or "argmax <metric>"')
 
 
 def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, sample_weight: Optional[np.ndarray] = None,
@@ -425,38 +607,33 @@ def thresholded(func, threshold: Union[float, str] = 0.5, **kwargs):
     Convenience function for converting a classification metric that can only be applied to class predictions into a
     metric that can be applied to probabilities. This proceeds by specifying a fixed decision threshold.
     :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
-    :param threshold: The decision threshold. Can also be "argmax" and "argmin", in which case the threshold leading to
-    the maximum/minimum value of `func` when applied to given `y_true` and `y_hat` is chosen. Note that in the case of
-    multilabel classification, one common threshold for all labels is selected.
-    :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
+    :param threshold: The decision threshold. In binary classification this can also be the name of a thresholding
+    strategy that is accepted by function `get_thresholding_strategy()`.
+    :param kwargs: Additional keyword arguments that are passed to `func` upon application.
     :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)` in
     case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case of
     multiclass classification.
     """
 
-    if not isinstance(threshold, (int, float)) or threshold in ('argmin', 'argmax'):
-        raise ValueError(f'Threshold must be a float or "argmin" or "argmax", but is {threshold}')
+    if isinstance(threshold, str):
+        if threshold == 'argmax':
+            threshold = partial(argmax_threshold, func)
+        else:
+            threshold = get_thresholding_strategy(threshold)
+    elif not isinstance(threshold, (int, float)):
+        raise ValueError(f'Threshold must be a string or float, but found {threshold}')
 
     def fn(y_true, y_score, **kwargs2):
         kwargs2.update(kwargs)
         if y_score.ndim == 2 and y_score.shape[1] > 1 and (y_true.ndim == 1 or y_true.shape[1] == 1):
             # multiclass classification => `threshold` is not needed
             return func(y_true, multiclass_proba_to_pred(y_score), **kwargs2)
-        elif isinstance(threshold, str):
-            if threshold == 'argmin':
-                opt = np.inf
-                comp = '__lt__'
-            else:
-                opt = -np.inf
-                comp = '__gt__'
-            for t in get_thresholds(np.reshape(y_score, -1), n_max=100, sample_weight=kwargs2.get('sample_weight')):
-                res = func(y_true, y_score >= t, **kwargs2)
-                if getattr(res, comp)(opt):
-                    opt = res
-            return opt
-        else:
+        elif isinstance(threshold, (int, float)):
             # binary- or multilabel classification
             return func(y_true, y_score >= threshold, **kwargs2)
+        else:
+            t = threshold(y_true, y_score, sample_weight=kwargs2.get('sample_weight'))
+            return func(y_true, y_score >= t, **kwargs2)
 
     return fn
 
@@ -548,6 +725,36 @@ hamming_loss_micro = _micro_average(hamming_loss)
 hamming_loss_macro = _macro_average(hamming_loss)
 hamming_loss_samples = _samples_average(hamming_loss)
 hamming_loss_weighted = _weighted_average(hamming_loss)
+
+
+def informedness(y_true, y_pred, *, average='binary', sample_weight=None):
+    """
+    Informedness (aka Youden index or Youden's J statistic) is the sum of sensitivity and specificity, minus 1.
+    """
+    # Don't define informedness in terms of balanced accuracy, because balanced accuracy is defined for multiclass
+    # problems but informedness is not (at least, not analogous to balanced accuracy).
+    sens = sensitivity(y_true, y_pred, sample_weight=sample_weight, average=average)
+    spec = specificity(y_true, y_pred, sample_weight=sample_weight, average=average)
+    return sens + spec - 1
+
+
+def markedness(y_true, y_pred, *, average='binary', sample_weight=None):
+    """
+    Markedness is the sum of positive- and negative predictive value, minus 1.
+    """
+    ppv = positive_predictive_value(y_true, y_pred, sample_weight=sample_weight, average=average)
+    npv = negative_predictive_value(y_true, y_pred, sample_weight=sample_weight, average=average)
+    return ppv + npv - 1
+
+
+informedness_micro = _micro_average(informedness)
+informedness_macro = _macro_average(informedness)
+informedness_samples = _samples_average(informedness)
+informedness_weighted = _weighted_average(informedness)
+markedness_micro = _micro_average(markedness)
+markedness_macro = _macro_average(markedness)
+markedness_samples = _samples_average(markedness)
+markedness_weighted = _weighted_average(markedness)
 
 
 def precision_recall_fscore_support_cm(*, tp=None, fp=None, tn=None, fn=None, beta: float = 1.0,
@@ -688,6 +895,16 @@ sensitivity_cm = partial(recall_cm, zero_division=0)
 specificity_cm = partial(recall_cm, swap_pos_neg=True, zero_division=0)
 positive_predictive_value_cm = partial(precision_cm, zero_division=1)
 negative_predictive_value_cm = partial(precision_cm, swap_pos_neg=True, zero_division=1)
+
+
+def informedness_cm(*, tp=None, fp=None, tn=None, fn=None, average: Optional[str] = 'binary'):
+    return balanced_accuracy_cm(tp=tp, fp=fp, tn=tn, fn=fn, average=average, adjusted=True)
+
+
+def markedness_cm(*, tp=None, fp=None, tn=None, fn=None, average: Optional[str] = 'binary'):
+    ppv = positive_predictive_value_cm(tp=tp, fp=fp, tn=tn, fn=fn, average=average)
+    npv = negative_predictive_value_cm(tp=tp, fp=fp, tn=tn, fn=fn, average=average)
+    return ppv + npv - 1
 
 
 def _calc_single_cm_metric(func, tp, fp, tn, fn, average=None, weighted_zero_division=1, **kwargs):
