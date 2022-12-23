@@ -89,14 +89,12 @@ def test_binary_classification(sample_weight: bool = False, seed=None):
         expected_result = [
             ('_label', 'n_weighted', 3000, 10000),
             ('_label', 'roc_auc', 0.8, 1),
-            ('_label', 'average_precision', 0.65, 0.9),
-            ('_label', 'balance_score', 0.7, 0.9)
+            ('_label', 'average_precision', 0.65, 0.9)
         ]
     else:
         expected_result = [
             ('_label', 'roc_auc', 0.65, 0.8),
-            ('_label', 'average_precision', 0.45, 0.55),
-            ('_label', 'balance_score', 0.63, 0.73)
+            ('_label', 'average_precision', 0.45, 0.55)
         ]
 
     _test(task='binary_classification', difficulty=2, frac_unlabeled=0, holdout=False, sample_weight=sample_weight,

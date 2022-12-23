@@ -852,11 +852,6 @@ def calc_binary_classification_metrics(
             dct[m] = metrics.get(m)(y_true, y_hat, sample_weight=sample_weight)
         except:     # noqa
             pass
-    try:
-        dct['balance_score'], dct['balance_threshold'] = \
-            metrics.balance_score_threshold(y_true, y_hat, sample_weight=sample_weight)
-    except:     # noqa
-        pass
 
     if thresholds is None:
         thresholds = metrics.get_thresholds(y_hat, n_max=100, add_half_one=None, ensure=ensure_thresholds,
@@ -1198,11 +1193,6 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                 dct_i[m] = metrics.get(m)(y_true_i, y_hat_i, sample_weight=sample_weight_i)
             except:  # noqa
                 pass
-        try:
-            dct_i['balance_score'], dct_i['balance_threshold'] = \
-                metrics.balance_score_threshold(y_true_i, y_hat_i, sample_weight=sample_weight_i)
-        except:     # noqa
-            pass
         dct[lbl] = dct_i
 
     # micro average
