@@ -150,7 +150,10 @@ In addition, there optional arguments as well:
 * `--batch-size BATCH_SIZE`: Batch size used for applying the prediction model.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
 * `--threshold THRESHOLD`: Decision threshold for binary- and multilabel classification. Defaults to 0.5, unless
-    specified in `FROM`.
+    specified in `FROM`. In binary classification this can also be the name of a built-in thresholding strategy,
+    possibly followed by "on" and the split on which to calculate the threshold. Splits must be specified by the name
+    of the subdirectory containing the corresponding evaluation results. See /doc/metrics.md for a list of built-in
+    thresholding strategies.
 * `--bootstrapping-repetitions BS_REPETITIONS`: Number of bootstrapping repetitions. Set to 0 to disable bootstrapping.
     Overwrites config param `"bootstrapping_repetitions"`.
 * `--bootstrapping-metrics M_1 [M_2 M_3 ...]`: Metrics for which to report bootstrapped results. Can also be

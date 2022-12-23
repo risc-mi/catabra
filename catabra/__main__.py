@@ -215,10 +215,14 @@ def make_parser():
     )
     evaluator.add_argument(
         '-t', '--threshold',
-        type=float,
+        type=str,
         default=None,
         metavar='THRESHOLD',
         help='Decision threshold for binary- and multilabel classification. Defaults to 0.5, unless specified in FROM.'
+             ' In binary classification this can also be the name of a built-in thresholding strategy, possibly'
+             ' followed by "on" and the split on which to calculate the threshold. Splits must be specified by the'
+             ' name of the subdirectory containing the corresponding evaluation results. See /doc/metrics.md for a'
+             ' list of built-in thresholding strategies.'
     )
     evaluator.add_argument(
         '-br', '--bootstrapping-repetitions',

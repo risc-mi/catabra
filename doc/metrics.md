@@ -465,14 +465,6 @@ This section lists all built-in classification metrics that are implemented in t
 * **Note**: Not actually a metric, but total number of false negatives, i.e., positive samples wrongly predicted as
     negative. (1,0)-th entry of `confusion_matrix`.
 
-### Balance Threshold
-
-* Implementation:
-  * binary: `balance_threshold`
-* Accepts probabilities: **yes**
-* **Note**: Not actually a metric, but the decision threshold which minimizes the difference between sensitivity and
-    specificity.
-
 ### Balance Score
 
 * Implementation:
@@ -482,14 +474,6 @@ This section lists all built-in classification metrics that are implemented in t
     equal to specificity at that threshold. Moreover, it can be shown to be (approximately) equal to accuracy and
     balanced accuracy at that threshold, too.
 
-### Prevalence Threshold
-
-* Implementation:
-  * binary: `prevalence_threshold`
-* Accepts probabilities: **yes**
-* **Note**: Not actually a metric, but the decision threshold which minimizes the difference between the total number
-    of condition positive samples and the number of predicted positive samples.
-
 ### Prevalence Score
 
 * Implementation:
@@ -498,13 +482,33 @@ This section lists all built-in classification metrics that are implemented in t
 * **Note**: Equal to sensitivity at decision threshold `prevalence_threshold`, which can be shown to be
     (approximately) equal to positive predictive value and F1-score at that threshold.
 
+## Built-in Classification Thresholding Strategies
+
+### Balance Threshold
+
+* Implementation: `balance_threshold`
+* Usage in `--threshold` command-line argument: `"balance"`
+* Definition: The decision threshold which minimizes the difference between sensitivity and specificity.
+
+### Prevalence Threshold
+
+* Implementation: `prevalence_threshold`
+* Usage in `--threshold` command-line argument: `"prevalence"`
+* Definition: The decision threshold which minimizes the difference between the total number of condition positive
+    samples and the number of predicted positive samples.
+
 ### (0,1)-Threshold
 
-* Implementation:
-  * binary: `zero_one_threshold`
-* Accepts probabilities: **yes**
-* **Note**: Not actually a metric, but the decision threshold which minimizes the Euclidean distance between `(0, 1)`
-    and `(1 - specificity, sensitivity)`.
+* Implementation: `zero_one_threshold`
+* Usage in `--threshold` command-line argument: `"zero_one"`, `"zero_one(<specificity_weight>)"`
+* Definition: The decision threshold which minimizes the Euclidean distance between `(0, 1)` and
+    `(1 - specificity, sensitivity)`.
+
+### Argmax Threshold
+
+* Implementation: `argmax_threshold`
+* Usage in `--threshold` command-line argument: `"argmax <metric_name>"`
+* Definition: The decision threshold which maximizes a given metric.
 
 ## Averaging
 

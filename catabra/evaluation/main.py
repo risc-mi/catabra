@@ -15,7 +15,7 @@ from ..core import CaTabRaPaths
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
              glob: Optional[bool] = False, split: Optional[str] = None, sample_weight: Optional[str] = None,
              out: Union[str, Path, None] = None, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-             threshold: Optional[float] = None, bootstrapping_repetitions: Optional[int] = None,
+             threshold: Union[float, str, None] = None, bootstrapping_repetitions: Optional[int] = None,
              bootstrapping_metrics: Optional[list] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
@@ -38,7 +38,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for applying the prediction model.
     :param threshold: Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and
-    bootstrapped performance results are reported for this particular threshold.
+    bootstrapped performance results are reported for this particular threshold. In binary classification this can also
+    be the name of a built-in thresholding strategy, possibly followed by "on" and the split on which to calculate the
+    threshold. Splits must be specified by the name of the subdirectory containing the corresponding evaluation results.
+    See /doc/metrics.md for a list of built-in thresholding strategies.
     :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
     "bootstrapping_repetitions" config param.
     :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
@@ -174,13 +177,20 @@ class CaTabRaEvaluation(CaTabRaBase):
             if sample_weights is not None:
                 detailed['__sample_weight'] = sample_weights
 
+            if isinstance(self._invocation.threshold, float):
+                threshold = self._invocation.threshold
+            else:
+                threshold = 0.5
+                logging.warn('Thresholding strategies can only be specified in binary classification.'
+                             ' Using default decision threshold of 0.5.')
+
             for mask, directory in _iter_splits():
                 directory.mkdir(exist_ok=True, parents=True)
                 io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
                 evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
-                               threshold=self._invocation.threshold,
+                               threshold=threshold,
                                static_plots=self._config.get('static_plots', True),
                                interactive_plots=self._config.get('interactive_plots', False),
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
@@ -211,13 +221,33 @@ class CaTabRaEvaluation(CaTabRaBase):
             if sample_weights is not None:
                 detailed['__sample_weight'] = sample_weights
 
+            threshold = self._invocation.threshold
+            if isinstance(self._invocation.threshold, float) or self._invocation.threshold_on is None \
+                    or encoder.task_ != 'binary_classification':
+                pass
+            elif self._invocation.split is None:
+                logging.warn(f'Unable to calculate decision threshold on split "{self._invocation.threshold_on}"'
+                             ' (no split specified).')
+            else:
+                for mask, directory in _iter_splits():
+                    if self._invocation.threshold_on == directory.stem:
+                        threshold = threshold(y_test[mask].values[:, 0], y_hat[mask][:, -1],
+                                              sample_weight=None if sample_weights is None else sample_weights[mask])
+                        logging.log(
+                            f'Calculated decision threshold on split "{self._invocation.threshold_on}": {threshold}'
+                        )
+                        break
+                if not isinstance(threshold, float):
+                    logging.warn(f'Unable to calculate decision threshold on split "{self._invocation.threshold_on}"'
+                                 ' (split not found). Calculating it for each split individually.')
+
             for mask, directory in _iter_splits():
                 directory.mkdir(exist_ok=True, parents=True)
                 io.write_df(detailed[mask], directory / CaTabRaPaths.Predictions)
                 evaluate_split(y_test[mask], y_hat[mask], encoder, directory=directory,
                                main_metrics=main_metrics,
                                sample_weight=None if sample_weights is None else sample_weights[mask],
-                               threshold=self._invocation.threshold,
+                               threshold=threshold,
                                static_plots=self._config.get('static_plots', True),
                                interactive_plots=self._config.get('interactive_plots', False),
                                bootstrapping_repetitions=self._invocation.bootstrapping_repetitions,
@@ -297,8 +327,12 @@ class EvaluationInvocation(Invocation):
         return self._batch_size
 
     @property
-    def threshold(self) -> Optional[float]:
+    def threshold(self) -> Union[float, Callable]:
         return self._threshold
+
+    @property
+    def threshold_on(self) -> Optional[str]:
+        return self._threshold_on
 
     @property
     def bootstrapping_repetitions(self) -> Optional[int]:
@@ -324,7 +358,7 @@ class EvaluationInvocation(Invocation):
         explain=None,
         glob: Optional[bool] = False,
         batch_size: Optional[int] = None,
-        threshold: Optional[float] = None,
+        threshold: Union[float, str, None] = None,
         bootstrapping_repetitions: Optional[int] = None,
         bootstrapping_metrics: Optional[list] = None,
     ):
@@ -335,7 +369,9 @@ class EvaluationInvocation(Invocation):
         self._explain = explain
         self._glob = glob
         self._batch_size = batch_size
-        self._threshold = threshold
+        self._threshold_raw = threshold
+        self._threshold = 0.5       # default value, overwritten in `resolve()`
+        self._threshold_on = None   # default value, overwritten in `resolve()`
         self._bootstrapping_repetitions = bootstrapping_repetitions
         self._bootstrapping_metrics = bootstrapping_metrics
 
@@ -350,8 +386,8 @@ class EvaluationInvocation(Invocation):
                 self._explain = src.get('explain')
             if self._glob is None:
                 self._glob = src.get('glob')
-            if self._threshold is None:
-                self._threshold = src.get('threshold')
+            if self._threshold_raw is None:
+                self._threshold_raw = src.get('threshold')
             if self._bootstrapping_repetitions is None:
                 self._bootstrapping_repetitions = src.get('bootstrapping_repetitions')
             if self._bootstrapping_metrics is None:
@@ -361,8 +397,24 @@ class EvaluationInvocation(Invocation):
 
     def resolve(self):
         super().resolve()
-        if self._threshold is None:
-            self._threshold = 0.5
+        if isinstance(self._threshold_raw, str):
+            try:
+                self._threshold = float(self._threshold_raw)
+            except ValueError:
+                s = self._threshold_raw.split(' on ', 1)
+                self._threshold = metrics.get_thresholding_strategy(s[0].strip())
+                if len(s) == 1:
+                    if self._split is not None:
+                        logging.warn(
+                            'Calculating thresholds for each split individually.'
+                            ' Normally, a single threshold should be calculated on one target split and then used for'
+                            ' all other splits. This can be achieved by adding " on " and the name of the target split'
+                            ' to the thresholding strategy.'
+                        )
+                else:
+                    self._threshold_on = s[1].strip()
+        elif isinstance(self._threshold_raw, (int, float)):
+            self._threshold = self._threshold_raw
 
         if self._folder is None:
             raise ValueError('No CaTabRa directory specified.')
@@ -390,7 +442,7 @@ class EvaluationInvocation(Invocation):
             model_id=self._model_id,
             explain=self._explain,
             glob=self._glob,
-            threshold=self._threshold,
+            threshold=self._threshold_raw,
             bootstrapping_repetitions=self._bootstrapping_repetitions,
             bootstrapping_metrics=self._bootstrapping_metrics,
             batch_size=self._batch_size
@@ -432,7 +484,7 @@ class EvaluationInvocation(Invocation):
 
 def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=None, main_metrics: list = None,
                    y_true_decoded=None, y_hat_decoded=None, sample_weight: Optional[np.ndarray] = None,
-                   threshold: float = 0.5, static_plots: bool = True, interactive_plots: bool = False,
+                   threshold: Union[float, Callable] = 0.5, static_plots: bool = True, interactive_plots: bool = False,
                    bootstrapping_repetitions: int = 0, bootstrapping_metrics: Optional[list] = None,
                    split: Optional[str] = None, verbose: bool = False) -> Optional[dict]:
     """
@@ -570,6 +622,10 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
     else:
         labels = encoder.get_dtype(encoder.target_names_[0])['categories']
         if encoder.task_ == 'binary_classification':
+            if not isinstance(threshold, float):
+                threshold = threshold(y_true[na_mask].values[:, 0], y_hat[na_mask][:, -1],
+                                      sample_weight=sample_weight)
+
             overall, thresh, calib, roc_curve, pr_curve = \
                 calc_binary_classification_metrics(y_true, y_hat, sample_weight=sample_weight,
                                                    ensure_thresholds=[threshold])
