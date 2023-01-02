@@ -17,7 +17,26 @@ def _preprocess(x, pp: list):
 
 
 def _predict_proba(estimator, x, **kwargs):
-    prediction = estimator.predict_proba(x, **kwargs)
+    try:
+        prediction = estimator.predict_proba(x, **kwargs)
+    except:     # noqa
+        # some estimators implement `decision_function()`, but not `predict_proba()`
+        prediction = estimator.decision_function(x, **kwargs)
+
+        # copied from autosklearn.pipeline.implementations.util.softmax()
+        if prediction.ndim == 1:
+            # positive values indicate positive class, negative values indicate negative class
+            # => apply logit to get class probabilities
+            np.clip(prediction, -20, 20, out=prediction)
+            prediction = 1 / (1 + np.exp(-prediction))
+            prediction = np.stack([1 - prediction, prediction], axis=-1)
+        else:
+            # Compute the Softmax like it is described here:
+            # https://www.deeplearningbook.org/contents/numerical.html
+            prediction -= np.max(prediction, axis=1, keepdims=True)
+            prediction = np.exp(prediction)
+            prediction /= np.sum(prediction, axis=1, keepdims=True)
+
     # multilabel output might be a list => convert to array
     # copied from autosklearn.pipeline.implementations.util.convert_multioutput_multiclass_to_multilabel()
     if isinstance(prediction, list):
