@@ -1358,7 +1358,9 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
     :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
     :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
     object and calling its `get_encoder()` method.
-    :param threshold: Decision threshold for binary- and multilabel classification problems.
+    :param threshold: Decision threshold for binary- and multilabel classification problems. In binary classification
+    this can also be the name of a built-in thresholding strategy. See /doc/metrics.md for a list of built-in
+    thresholding strategies.
     :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform.
     :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
     `bootstrapping_repetitions` is > 0. Defaults to the list of main metrics specified in the default config. Can also
@@ -1402,6 +1404,9 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         met = dict(overall=overall, thresholded=thresh, **thresh_per_class)
     elif encoder.task_ == 'binary_classification':
         pos_label = encoder.get_dtype(encoder.target_names_[0])['categories'][1]
+        if isinstance(threshold, str):
+            threshold = metrics.get_thresholding_strategy(threshold)(y_true.iloc[:, 0], y_hat.iloc[:, -1],
+                                                                     sample_weight=sample_weight)
         overall, thresh, calib, roc_curve, pr_curve = \
             calc_binary_classification_metrics(y_true, y_hat, ensure_thresholds=[threshold],
                                                sample_weight=sample_weight)
