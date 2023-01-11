@@ -166,7 +166,7 @@ class CaTabRaEvaluation(CaTabRaBase):
             y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
             y_hat_decoded.index = y_test_decoded.index
             y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
-            detailed = y_test_decoded.join(y_hat_decoded)
+            detailed = pd.concat([y_test_decoded, y_hat_decoded], axis=1, sort=False)   # don't use `join()` here
             detailed = detailed.reindex(
                 [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
                 axis=1
@@ -205,7 +205,7 @@ class CaTabRaEvaluation(CaTabRaBase):
             y_hat_decoded = encoder.inverse_transform(y=y_hat, inplace=True)
             y_hat_decoded.index = detailed.index
             y_hat_decoded.columns = [f'{c}_proba' for c in y_hat_decoded.columns]
-            detailed = detailed.join(y_hat_decoded)
+            detailed = pd.concat([detailed, y_hat_decoded], axis=1, sort=False)     # don't use `join()` here
             del y_hat_decoded
 
             if encoder.task_ == 'multiclass_classification':
@@ -274,7 +274,7 @@ class CaTabRaEvaluation(CaTabRaBase):
                            bootstrapping_metrics=self._invocation.bootstrapping_metrics,
                            split=(None if directory == self._invocation.out else directory.stem), verbose=True)
         y_hat_decoded.columns = [f'{c}_pred' for c in y_hat_decoded.columns]
-        detailed = y_test_decoded.join(y_hat_decoded)
+        detailed = pd.concat([y_test_decoded, y_hat_decoded], axis=1, sort=False)       # don't use `join()` here
         detailed = detailed.reindex(
             [n for c in zip(y_test_decoded.columns, y_hat_decoded.columns) for n in c],
             axis=1
