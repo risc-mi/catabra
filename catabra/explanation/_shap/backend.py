@@ -72,7 +72,8 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                     self._explainers[_id] = (preprocessing_explainer, estimator_explainer)
                     self._params['explainers'][_id] = dict(
                         preprocessing=preprocessing_explainer.params_,
-                        estimator=estimator_explainer.params_
+                        estimator=estimator_explainer.params_,
+                        estimator_is_whole_pipeline=True
                     )
         else:
             self._params = params
