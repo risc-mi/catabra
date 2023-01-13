@@ -48,7 +48,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
     current prediction task are computed. Ignored if bootstrapping is disabled.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table to analyze.
+    explicitly specified are taken from this dict; this also includes the table on which to evaluate the CaTabRa object.
     """
     evaluator = CaTabRaEvaluation(invocation=from_invocation)
     evaluator(
