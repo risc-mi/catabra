@@ -27,15 +27,26 @@ from ...util.preprocessing import FeatureFilter
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')
 
-
+_addons_success = []    # list of pairs `(name, versions)`
+_addons_failure = []    # list of pairs `(name, exception)`
 # load add-ons
 for _d in (Path(__file__).parent / 'addons').iterdir():
     if _d.suffix.lower() == '.py':
         try:
-            importlib.import_module('.addons.' + _d.stem, package=__package__)
-        except ImportError:
+            _pkg = importlib.import_module('.addons.' + _d.stem, package=__package__)
+            _addons_success.append((_d.stem, getattr(_pkg, 'get_versions', lambda: {})()))
+        except ImportError as _e:
             # required packages are not available => skip
-            pass
+            _addons_failure.append((_d.stem, _e))
+
+
+def get_addons() -> Tuple[tuple, tuple]:
+    """
+    Get all successfully and unsuccessfully loaded add-on modules.
+    :return: Pair `(success, failure)`, where `success` is a tuple of pairs `(name, version_dict)` and `failure` is a
+    tuple of pairs `(name, exception)`.
+    """
+    return tuple(_addons_success), tuple(_addons_failure)
 
 
 class _EnsembleLoggingHandler(py_logging.Handler):
@@ -438,6 +449,14 @@ class AutoSklearnBackend(AutoMLBackend):
             if value is not None:
                 kwargs[askl_param or config_param] = value
 
+        if _addons_success:
+            logging.log(
+                'Successfully loaded the following auto-sklearn add-on module(s): ' +
+                ', '.join([n for n, _ in _addons_success])
+            )
+        else:
+            logging.log('No auto-sklearn add-on modules loaded.')
+
         # include/exclude pipeline components
         prefix = self.name() + '_'
         specific = {k[len(prefix):]: v for k, v in self.config.items() if k.startswith(prefix)}
@@ -672,8 +691,11 @@ class AutoSklearnBackend(AutoMLBackend):
     @classmethod
     def get_versions(cls) -> dict:
         from smac import __version__ as smac_version
-        return {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
-                'scikit-learn': sklearn.__version__}
+        out = {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
+               'scikit-learn': sklearn.__version__}
+        for _, v in _addons_success:
+            out.update(v)
+        return out
 
     def _prepare_for_predict(self, x: pd.DataFrame) -> pd.DataFrame:
         if self.feature_filter_ is not None:
@@ -988,18 +1010,39 @@ def _validate_include_exclude_params(include: Optional[dict], exclude: Optional[
     from autosklearn.pipeline.components.base import AutoSklearnChoice
 
     pip = Pipeline(dataset_properties=dataset_properties)
-    supported_steps = {step[0]: list(step[1].get_available_components(dataset_properties=dataset_properties))
-                       for step in pip.steps if isinstance(step[1], AutoSklearnChoice)}
-    for argument in (include, exclude):
+    supported_steps = {
+        step[0]: (list(step[1].get_components()),
+                  list(step[1].get_available_components(dataset_properties=dataset_properties)))
+        for step in pip.steps if isinstance(step[1], AutoSklearnChoice)
+    }
+    unavailable_components = []
+    missing_components = []
+    for argument, is_include in ((include, True), (exclude, False)):
         if argument is not None:
             for key, candidate_components in list(argument.items()):
-                available_components = supported_steps.get(key)
+                all_components, available_components = supported_steps.get(key, (None, None))
                 if available_components is None:
                     del argument[key]
                 else:
                     if not isinstance(candidate_components, (list, tuple, set)):
                         candidate_components = [candidate_components]
+                    if is_include:
+                        unavailable_components += [f'{key}/{c}' for c in candidate_components
+                                                   if c in all_components and c not in available_components]
+                        missing_components += [f'{key}/{c}' for c in candidate_components if c not in all_components]
                     argument[key] = [c for c in candidate_components if c in available_components]
+
+    if unavailable_components:
+        logging.warn(
+            'The following component(s) are not available for the current prediction task: ' +
+            ', '.join(unavailable_components)
+        )
+    if missing_components:
+        msg = 'The following component(s) could not be found: ' + ', '.join(missing_components)
+        if _addons_failure:
+            msg += '\nMaybe they are contained in add-on modules that could not be loaded:\n    ' +\
+                   '\n    '.join([f'{n}: {e.msg}' for n, e in _addons_failure])
+        logging.warn(msg)
 
     if include is not None:
         # check that no component list is empty
