@@ -88,7 +88,7 @@ class AutoMLBackend:
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
             sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None) -> 'AutoMLBackend':
+            dataset_name: Optional[str] = None, monitor=None) -> 'AutoMLBackend':
         """
         Fit models and/or an ensemble thereof to new data.
         :param x_train: Features DataFrame. Allowed column data types are numeric (float, int, bool) and categorical.
@@ -103,6 +103,8 @@ class AutoMLBackend:
         :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
         of jobs specified in the config dict.
         :param dataset_name: Optional name of the data set.
+        :param monitor: Instance of class `TrainingMonitorBackend` or None. Used for live monitoring of the training
+        process.
         :return: This AutoML object.
         """
         raise NotImplementedError()
