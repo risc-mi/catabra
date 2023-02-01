@@ -98,10 +98,52 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
     you want to disable grouping / splitting / alternative config, you can simply pass `--group` / `--split` /
     `--config` without argument.
 
+## Calibrating CaTabRa Classifiers
+
+Trained CaTabRa classifiers can be calibrated to ensure that the probability estimates they return correspond to the
+"true" confidence of the model. Citing scikit-learn:
+
+> Well calibrated classifiers are probabilistic classifiers for which the output of the `predict_proba()`
+method can be directly interpreted as a confidence level. For instance, a well calibrated (binary)
+classifier should classify the samples such that among the samples to which it gave a `predict_proba`-value
+close to 0.8, approximately 80% actually belong to the positive class.
+
+The corresponding sub-command is `calibrate` and can be invoked as follows:
+```
+$ python -m catabra calibrate ...
+```
+Further information about the command can be obtained via
+```
+$ python -m catabra calibrate -h
+```
+
+The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa classifier to
+calibrate. This is the output directory of a previous invocation of `analyze`.
+
+In addition, there are optional arguments as well:
+* `--on TABLE [TABLE_2 TABLE_3 ...]`: File(s) containing the table(s) on which the CaTabRa object shall be calibrated.
+    The same restrictions apply to `TABLE` as with command `analyze`, described above. In particular, `TABLE` is
+    expected to contain all necessary feature- and label columns. Labels may be `NaN`.
+* `--split SPLIT`: Column used for splitting the data into disjoint subsets. In conjunction with `SUBSET` this enables
+    restricting the data used for calibration to a subset of `TABLE`.
+* `--subset SUBSET`: Value in column `SPLIT` to consider for calibration. For instance, if the column specified by
+    `SPLIT` contains values `"train"`, `"val"` and `"test"`, and `SUBSET` is set to `"val"`, the classifier is
+    calibrated only on the `"val"`-entries.
+* `--method METHOD`: Calibration method. Must be one of `"sigmoid"`, `"isotonic"` or `"auto"` (default).
+* `--sample-weight SAMPLE_WEIGHT`: Column with sample weights, which are used for calibration.
+* `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in `SOURCE`, with a
+    name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify whether it should
+    be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.
+* `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
+    this file; this also includes `SOURCE` and `TABLE`.
+    
+    **Note**: If the invocation.json file specifies a splitting column and a calibration subset, but you want to
+    calibrate on all data in `TABLE`, you can simply pass `--split` and/or `--subset` without argument.
+
 ## Evaluating CaTabRa Objects on New Data
 
-After analyzing data, the resulting models can be evaluated on held-out test data.  The corresponding sub-command is
-`evaluate` and can be invoked as follows:
+After analyzing data, the resulting (possibly calibrated) models can be evaluated on held-out test data.
+The corresponding sub-command is `evaluate` and can be invoked as follows:
 ```
 $ python -m catabra evaluate ...
 ```
