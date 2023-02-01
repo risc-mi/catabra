@@ -255,7 +255,8 @@ class CaTabRaAnalysis(CaTabRaBase):
         name, kwargs = self._invocation.get_monitor_with_kwargs()
         monitor = TrainingMonitorBackend.get(name, folder=self._invocation.out.as_posix(), **kwargs)
         if monitor is None:
-            logging.warn(f'Training monitor backend "{name}" not found. Disabling live monitoring.')
+            if name not in (None, ''):
+                logging.warn(f'Training monitor backend "{name}" not found. Disabling live monitoring.')
 
             class _Aux:
                 def __enter__(self):
