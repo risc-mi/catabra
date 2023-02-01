@@ -471,8 +471,8 @@ def make_parser():
         '-o', '--out',
         type=str,
         metavar='OUT',
-        help='The name of the directory where to store the explanations.'
-             ' Defaults to "SOURCE/explain_ON_DATE_TIME", where DATE and TIME are the current date and time.'
+        help='The name of the directory where to save all generated artifacts.'
+             ' Defaults to "SOURCE/apply_ON_DATE_TIME", where DATE and TIME are the current date and time.'
              ' "." is a shortcut for the current working directory.'
     )
     _add_jobs(applier)

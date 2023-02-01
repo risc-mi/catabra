@@ -133,7 +133,7 @@ $ python -m catabra evaluate -h
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
 evaluate. This is the output directory of a previous invocation of `analyze`.
 
-In addition, there optional arguments as well:
+In addition, there are optional arguments as well:
 * `--on TABLE [TABLE_2 TABLE_3 ...]`: File(s) containing the table(s) on which the CaTabRa object shall be evaluated.
     The same restrictions apply to `TABLE` as with command `analyze`, described above. In particular, `TABLE` is
     expected to contain all necessary feature- and label columns. Labels may be `NaN`.
@@ -182,7 +182,7 @@ $ python -m catabra explain -h
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
 explain. This is the output directory of a previous invocation of `analyze`.
 
-In addition, there optional arguments as well:
+In addition, there are optional arguments as well:
 * `--on TABLE [TABLE_2 TABLE_3 ...]`: File(s) containing the table(s) on which the CaTabRa object shall be explained.
     The same restrictions apply to `TABLE` as with command `analyze`, described above. In particular, `TABLE` is
     expected to contain all necessary feature columns, but in contrast to `analyze` and `evaluate` does not need to
@@ -213,7 +213,40 @@ In addition, there optional arguments as well:
 
 ### Applying CaTabRa Objects to New Data
 
-tbd
+Trained models (and OOD detectors) can be applied to new, unlabeled data. The corresponding sub-command is `apply` and
+can be invoked as follows:
+```
+$ python -m catabra apply ...
+```
+Further information about the command can be obtained via
+```
+$ python -m catabra apply -h
+```
+
+The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
+apply. This is the output directory of a previous invocation of `analyze`.
+
+In addition, there are optional arguments as well:
+* `--on TABLE [TABLE_2 TABLE_3 ...]`: File(s) containing the table(s) the CaTabRa object shall be applied to.
+    The same restrictions apply to `TABLE` as with command `analyze`, described above. In particular, `TABLE` is
+    expected to contain all necessary feature columns, but in contrast to `analyze` and `evaluate` does not need to
+    contain any target columns.
+* `--model-id [MODEL_ID ...]`: Identifier(s) of the prediction model(s) to apply. By default, all models in the final
+    ensemble are explained. In contrast to `evaluate`, more than one ID can be specified.
+    Check out `SOURCE/model_summary.json` for all available model-IDs.
+* `--explain [EXPLAIN ...]`: Explain prediction model(s). If passed without arguments, all models specified by
+    `MODEL_ID` are explained; otherwise, `EXPLAIN` contains the model ID(s) to explain.
+* `--no-ood`: Disable out-of-distribution (OOD) detection.
+* `--out OUT`: Directory where to save all generated artifacts. Defaults to a directory located in `SOURCE`, with a
+    name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify whether it should
+    be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.
+* `--batch-size BATCH_SIZE`: Batch size used for applying the model(s).
+* `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
+* `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
+    this file; this also includes `SOURCE` and `TABLE`.
+    
+    **Note**: If the invocation.json file specifies a model-ID, but you want to apply all models
+    in the ensemble, you can simply pass `--model-id` without arguments.
 
 ## Configuration
 
