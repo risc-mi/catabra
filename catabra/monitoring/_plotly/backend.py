@@ -14,7 +14,7 @@ class PlotlyBackend(TrainingMonitorBackend):
 
     def __init__(self, update_interval: int = 5, **kwargs):
         super(PlotlyBackend, self).__init__(**kwargs)
-        self._update_interval = update_interval
+        self._update_interval = int(update_interval)
         if self._update_interval <= 0:
             self._meta = ''
         else:

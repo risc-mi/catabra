@@ -43,8 +43,8 @@ def make_parser():
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
                 sample_weight=args.sample_weight, ignore=args.ignore, calibrate=args.calibrate, time=args.time,
-                out=args.out, config=args.config, default_config=args.default_config, jobs=args.jobs,
-                from_invocation=getattr(args, 'from', None))
+                out=args.out, config=args.config, default_config=args.default_config, monitor=args.monitor,
+                jobs=args.jobs, from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -179,6 +179,17 @@ def make_parser():
         help='Default config to use. Possible values are "full" (default; full range of preprocessing steps and ML'
              ' algorithms for model training), "basic" (only very basic preprocessing and ML algorithms) and'
              ' "interpretable" (only inherently interpretable preprocessing and ML algorithms).'
+    )
+    analyzer.add_argument(
+        '--monitor',
+        type=str,
+        metavar='MONITOR',
+        default='',
+        const='plotly',
+        nargs='?',
+        help='Enable live monitoring of the training progress. The optional MONITOR argument specifies which backend'
+             ' to use (default is "plotly").'
+             ' Keyword arguments can be passed as sequences of assignments, as in "plotly update_interval=0".'
     )
     _add_jobs(analyzer)
     _add_from(analyzer)

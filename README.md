@@ -108,6 +108,9 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
 * `--default-config DEFAULT_CONFIG`: Default config to use. Possible values are `full` (default; full range of
     preprocessing steps and ML algorithms for model training), `basic` (only very basic preprocessing and ML algorithms)
     and `interpretable` (only inherently interpretable preprocessing and ML algorithms).
+* `--monitor MONITOR`: Enable live monitoring of the training progress. The optional `MONITOR` argument specifies which
+    backend to use (default is `"plotly"`). Keyword arguments can be passed as sequences of assignments, as in
+    `"plotly update_interval=0"`.
 * `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
     this file; this also includes `TABLE`.
     
