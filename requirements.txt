@@ -1,11 +1,11 @@
-python>=3.9
+setuptools
 auto-sklearn>=0.14.6
 pandas
-pytables
+tables
 xlrd
 xlsxwriter
 openpyxl
 matplotlib
 shap
 numpy
-sklearn
+scikit-learn
