@@ -3,7 +3,7 @@ import numpy as np
 
 from ..util import profile
 from .util import create_random_data
-from catabra.util.time_series import group_temporal
+from catabra.util.longitudinal import group_temporal
 
 
 def _check_result(grp: pd.Series, df: pd.DataFrame, orig_index: pd.Index, orig_columns: pd.Index):
