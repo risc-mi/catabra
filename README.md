@@ -28,11 +28,18 @@ CaTabRa is both a command-line tool and a library, which means it can be easily 
 
 ### Installation
 
-**TODO**: Proper installation guide with pip.
+Clone the repository and install the package with pip:
+```shell
+$ git clone https://github.com/risc-mi/catabra.git
+$ cd catabra
+$ pip install [-e] .
+```
 
-Install the relevant packages, as listed in `env.yml` and `requirements.txt`, in a new or existing environment. The
-basic requirements are Python 3.9, [pandas](https://pandas.pydata.org/),
-[auto-sklearn](https://automl.github.io/auto-sklearn/master/) and [shap](https://github.com/slundberg/shap).
+`-e` is optional and installs the package in
+[editable mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html).
+This is useful if you plan to make changes to CaTabRa's code.
+
+CaTabRa's basic system requirements are Linux and Python >=3.9.
 
 **IMPORTANT**: CaTabRa currently only runs on Linux, because
 [auto-sklearn only runs on Linux](https://automl.github.io/auto-sklearn/master/installation.html). If on Windows,
@@ -82,42 +89,42 @@ Invoking the two commands generates a bunch of results, most notably
 
 ## Examples
 
-### Basic Examples
+### Walk-Through Tutorials
 
-* **[Binary-Classification.ipynb](https://github.com/risc-mi/catabra/examples/Binary-Classification.ipynb)**
+* **[Workflow.ipynb](https://github.com/risc-mi/catabra/examples/Workflow.ipynb)**
   * Analyze data with a binary target
   * Train a high-quality classifier with automatic model selection and hyperparameter tuning
   * Investigate the final classifier and the training history
   * Calibrate the classifier on dedicated calibration data
   * Evaluate the classifier on held-out test data
   * Explain the classifier by computing SHAP feature importance scores
-* **[Multiclass-Classification.ipynb](https://github.com/risc-mi/catabra/examples/Multiclass-Classification.ipynb)**
-* **[Multilabel-Classification.ipynb](https://github.com/risc-mi/catabra/examples/Multilabel-Classification.ipynb)**
-* **[Regression.ipynb](https://github.com/risc-mi/catabra/examples/Regression.ipynb)**
+  * Apply the classifier to new samples
+* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/examples/Longitudinal.ipynb)**
+  * Process longitudinal data by resampling into "samples x features" format
 
-### Configuration
+### Short Examples
 
-* Performance metrics
+* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/examples/Prediction-Tasks.ipynb)**
+  * Binary classification
+  * Multiclass classification
+  * Multilabel classification
+  * Regression
+* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/examples/Performance-Metrics.ipynb)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
-* Time- and memory budget and parallel jobs
-  * Adjust the time- and memory budget for hyperparameter tuning
-  * Specify the number of parallel jobs
-* Bootstrapping
-  * Compute bootstrapped performance metrics
 * Out-of-Distribution (OOD) detection
   * Configure OOD detection
-* Plotting
+* **[Plotting.ipynb](https://github.com/risc-mi/catabra/examples/Plotting.ipynb)**
+  * Create plots in Python
   * Create interactive plots
-* auto-sklearn specific configuration
-  * Restrict model classes and preprocessing steps
-  * Specify resampling strategies for internal validation
-
-### Data Preparation
-
-* Longitudinal data
-  * Transform longitudinal (i.e., time-series-like) data into "samples x features" format
-  * Extract features with frameworks like [tsfresh](https://github.com/blue-yonder/tsfresh)
+* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Config.ipynb)**
+  * General configuration
+    * Ensemble size
+    * Time- and Memory budget
+    * Number of parallel jobs
+  * Auto-Sklearn-specific configuration
+    * Model classes and preprocessing steps
+    * Resampling strategies for internal validation
 
 ### Extending CaTabRa
 
@@ -130,8 +137,8 @@ Invoking the two commands generates a bunch of results, most notably
 
 ## Documentation
 
-Directory `/doc` documents a couple of specific aspects of CaTabRa, like its command-line interface, available
-performance metrics, built-in OOD-detectors and model explanation details.
+Directory [doc/](https://github.com/risc-mi/catabra/doc) documents a couple of specific aspects of CaTabRa, like its
+command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
 
 **TODO**: API documentation, e.g. sphinx
 
@@ -145,5 +152,5 @@ If you have any inquiries, please open a GitHub issue.
 
 ## Acknowledgments
 
-This project is financed by research subsidies granted bythe government of Upper Austria. RISC Software GmbH is Member
+This project is financed by research subsidies granted by the government of Upper Austria. RISC Software GmbH is Member
 of UAR (Upper Austrian Research) Innovation Network.
