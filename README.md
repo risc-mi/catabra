@@ -125,6 +125,7 @@ Invoking the two commands generates a bunch of results, most notably
   * Auto-Sklearn-specific configuration
     * Model classes and preprocessing steps
     * Resampling strategies for internal validation
+    * Grouped splitting
 
 ### Extending CaTabRa
 
