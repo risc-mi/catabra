@@ -25,6 +25,9 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         :param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
         :param kwargs: keyword arguments for the detector class
         """
+        if kwargs is None:
+            kwargs = {}
+
         if source == 'internal':
             module = importlib.import_module('catabra.ood.internal.' + name)
             module_classes = inspect.getmembers(module, inspect.isclass)
@@ -43,13 +46,13 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             path_split = name.split('.')
             module_name = '.'.join(path_split[:-1])
             class_name = path_split[-1]
-            module = importlib.import_module('.'.join(module_name))
+            module = importlib.import_module(module_name)
             module_classes = inspect.getmembers(module, inspect.isclass)
             ood_class = next(class_ for cn, class_ in module_classes if cn == class_name)
             ood = ood_class(**kwargs)
 
         else:
-            raise ValueError(source + 'is not a valid OOD source.')
+            raise ValueError(source + ' is not a valid OOD source.')
 
         return ood
 
