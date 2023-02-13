@@ -129,11 +129,11 @@ Invoking the two commands generates a bunch of results, most notably
 
 ### Extending CaTabRa
 
-* AutoML
+* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Extension.ipynb)**
   * Add new AutoML backend
-* Explanation
+* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/examples/Explanation-Extension.ipynb)**
   * Add new explanation backend
-* OOD-detector
+* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/examples/OOD-Extension.ipynb)**
   * Add new OOD detection backend
 
 ## Documentation
