@@ -53,17 +53,22 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
 
         return ood
 
-    def __init__(self, subset: float = 1, verbose=False):
+    def __init__(self, subset: float = 1, random_state=None, verbose=False):
         super().__init__()
         self._subset = subset
         self._X: pd.DataFrame = None
-        self._verbose = verbose
+        self._verbose = verbose,
+        self._random_state = np.random.randint(1000) if random_state is None else random_state
         if verbose:
             logging.log('Initialized out-of-distribution detector of type ' + self.__class__.__name__)
 
     @property
     def subset(self):
         return self._subset
+
+    @property
+    def random_state(self):
+        return self._random_state
 
     @property
     def verbose(self):
@@ -84,7 +89,8 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     def fit(self, X: pd.DataFrame, y: pd.Series=None):
         X_fit = X.copy(deep=True)
         if self._subset < 1:
-            X_fit = np.random.choice(X, np.round(X.shape[0] * self._subset))
+            indices = np.random.choice(X.shape[0], np.round(X.shape[0] * self._subset).astype(int))
+            X_fit = X_fit.iloc[indices,:]
         if self._verbose:
             logging.log('Fitting out-of-distribution detector...')
         self._fit_transformer(X)

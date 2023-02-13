@@ -22,6 +22,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
     the remaining ones.
+    Wrapper for Analyzer.__call__
     :param table: The table(s) to analyze. If multiple are given, their columns are merged into a single table.
     :param classify: Optional, column(s) to classify. If more than one, a multilabel classification problem is
     solved, which means that each of these columns can take on only two distinct values.

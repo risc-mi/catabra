@@ -1,4 +1,4 @@
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict, List
 from pathlib import Path
 import importlib
 import numpy as np
@@ -228,6 +228,15 @@ class EnsembleExplainer:
         DataFrames with feature importance scores. In either case, the row index equals `feature_names`, and the
         columns of DataFrames can be arbitrary and usually depend on the prediction task and the explanation backend.
         """
+        raise NotImplementedError()
+
+    def aggregate_explanations(self, explanations: Dict, mapping: Dict[str, List[str]]):
+        raise NotImplementedError()
+
+    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+        raise NotImplementedError()
+
+    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
         raise NotImplementedError()
 
     @classmethod

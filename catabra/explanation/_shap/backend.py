@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, List
 from multiprocessing import Pool
 import numpy as np
 import pandas as pd
@@ -125,6 +125,21 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
+
+    def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+        for target_col, source_cols in mapping.items():
+            explanations[target_col] = explanations[source_cols].sum(axis=1)
+            explanations = explanations.drop(source_cols, axis=1)
+        return explanations
+
+    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+        return self.aggregate_explanations(explanations.T, mapping).T
+
+    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
+        for target_col, source_cols in mapping.items():
+            features[target_col] = features[source_cols].mean(axis=1)
+            features.drop(source_cols, axis=1)
+        return features
 
     @classmethod
     def get_versions(cls) -> dict:
