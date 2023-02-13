@@ -229,6 +229,12 @@ class ApplicationInvocation(Invocation):
         else:
             self._folder = io.make_path(self._folder, absolute=True)
 
+        if self._check_ood is None:
+            self._check_ood = True
+
+        if self._print_results is None:
+            self._print_results = 'auto'
+
         if self._out is None:
             self._out = self._table[0]
             if isinstance(self._out, pd.DataFrame):
@@ -262,10 +268,10 @@ class ApplicationInvocation(Invocation):
         if self._explain is None:
             self._explain = set()
         elif isinstance(self._explain, list):
-
             self._explain = set(self._explain)
         elif not isinstance(self._explain, set):
             self._explain = {self._explain}
+
         if '__ensemble__' in self._explain:
             if self._model_id is None:
                 self._explain = None
