@@ -214,3 +214,8 @@ class XGBoostRegressor(_XGBoostBase, AutoSklearnRegressionAlgorithm):
 # add components to auto-sklearn
 add_classifier(XGBoostClassifier)
 add_regressor(XGBoostRegressor)
+
+
+def get_versions() -> dict:
+    # return versions of additional dependencies of this module
+    return {'xgboost': xgboost.__version__}

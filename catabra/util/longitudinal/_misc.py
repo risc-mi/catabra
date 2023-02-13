@@ -106,6 +106,8 @@ def group_temporal(df: pd.DataFrame, group_by=None, time_col=None, start_col=Non
     # `dist(I_2, I_3) = 6 < 9 = dist(I_1, I_2)`.
 
     dist: np.ndarray = start - np.roll(stop, 1)
+    if isinstance(distance, pd.Timedelta):
+        distance = distance.to_timedelta64()    # cannot be compared to `dist` otherwise
     if inclusive:
         same_group_as_prev = dist <= distance
     else:

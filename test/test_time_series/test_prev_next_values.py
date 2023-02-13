@@ -3,7 +3,7 @@ import numpy as np
 
 from ..util import profile
 from .util import create_random_data
-from catabra.util.time_series import prev_next_values
+from catabra.util.longitudinal import prev_next_values
 
 
 def test_no_group(seed=None):

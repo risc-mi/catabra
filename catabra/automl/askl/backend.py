@@ -27,27 +27,44 @@ from ...util.preprocessing import FeatureFilter
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')
 
-
+_addons_success = []    # list of pairs `(name, versions)`
+_addons_failure = []    # list of pairs `(name, exception)`
 # load add-ons
 for _d in (Path(__file__).parent / 'addons').iterdir():
     if _d.suffix.lower() == '.py':
         try:
-            importlib.import_module('.addons.' + _d.stem, package=__package__)
-        except ImportError:
+            _pkg = importlib.import_module('.addons.' + _d.stem, package=__package__)
+            _addons_success.append((_d.stem, getattr(_pkg, 'get_versions', lambda: {})()))
+        except ImportError as _e:
             # required packages are not available => skip
-            pass
+            _addons_failure.append((_d.stem, _e))
+
+
+def get_addons() -> Tuple[tuple, tuple]:
+    """
+    Get all successfully and unsuccessfully loaded add-on modules.
+    :return: Pair `(success, failure)`, where `success` is a tuple of pairs `(name, version_dict)` and `failure` is a
+    tuple of pairs `(name, exception)`.
+    """
+    return tuple(_addons_success), tuple(_addons_failure)
+
+
+# we have to use a global variable, because class _EnsembleLoggingHandler can only be passed string arguments
+_monitors = {}
 
 
 class _EnsembleLoggingHandler(py_logging.Handler):
     """Logging handler for printing _comprehensible_ messages whenever a new ensemble has been fit.
     Solution is a bit hacky and can easily break if some internals of auto-sklearn change."""
 
-    def __init__(self, metric: str = 'cost', optimum: str = '0.', sign: str = '-1.', start_time: str = '0.', **kwargs):
+    def __init__(self, metric: str = 'cost', optimum: str = '0.', sign: str = '-1.', start_time: str = '0.',
+                 monitor_name=None, **kwargs):
         super(_EnsembleLoggingHandler, self).__init__(**kwargs)
         self.metric = metric
         self.optimum = float(optimum)
         self.sign = float(sign)
         self.start_time = float(start_time)
+        self.monitor_name = monitor_name
         # Counting ensembles analogous to models in `_SMACLoggingCallback` does not work, as the counter is
         # never increased. This might be because this class is being re-instantiated again and again.
 
@@ -64,6 +81,15 @@ class _EnsembleLoggingHandler(py_logging.Handler):
                         '    total_elapsed_time: {:s}'
                         .format(self.metric, value, n_models, repr_timedelta(record.created - self.start_time))
                     )
+                    monitor = _monitors.get(self.monitor_name)
+                    if monitor is not None:
+                        monitor.update(
+                            event='ensemble',
+                            timestamp=record.created,
+                            elapsed_time=record.created - self.start_time,
+                            text='n_constituent_models: {:d}'.format(n_models),
+                            **{'ensemble_val_' + self.metric: value}
+                        )
                 except RecursionError:
                     raise
                 except:     # noqa
@@ -79,11 +105,13 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
     """Callback for logging model training and printing messages whenever a new model has been trained."""
 
     def __init__(self, main_metric: Optional[Tuple[str, float, float]],
-                 other_metrics: Iterable[Tuple[str, float, float]], estimator_name: str, start_time: float = 0.):
+                 other_metrics: Iterable[Tuple[str, float, float]], estimator_name: str, start_time: float = 0.,
+                 monitor_name=None):
         self.main_metric = main_metric
         self.other_metrics = other_metrics
         self.estimator_choice = estimator_name + ':__choice__'
         self.start_time = start_time
+        self.monitor_name = monitor_name
         self._n = 0     # interestingly, counting models seems to work even if multiple jobs are used
         self.runhistory = RunHistory()      # own run history, used if training is interrupted
 
@@ -103,6 +131,17 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
                        '    total_elapsed_time: {:s}'.format(run_info.config._values[self.estimator_choice],
                                                              repr_timedelta(result.endtime - self.start_time))
                 logging.log(msg)
+
+                monitor = _monitors.get(self.monitor_name)
+                if monitor is not None:
+                    monitor.update(
+                        event='model',
+                        timestamp=result.endtime,
+                        elapsed_time=result.endtime - self.start_time,
+                        text='type: {:s}'.format(run_info.config._values[self.estimator_choice]),
+                        **{'val_' + self.main_metric[0]: val},
+                        **{'val_' + k: v for k, v in other.items()}
+                    )
 
             self.runhistory.add(
                 run_info.config,
@@ -417,7 +456,7 @@ class AutoSklearnBackend(AutoMLBackend):
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
             sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None) -> 'AutoSklearnBackend':
+            dataset_name: Optional[str] = None, monitor=None) -> 'AutoSklearnBackend':
         if time is None:
             time = self.config.get('time_limit')
         if jobs is None:
@@ -437,6 +476,14 @@ class AutoSklearnBackend(AutoMLBackend):
             value = self.config.get(config_param)
             if value is not None:
                 kwargs[askl_param or config_param] = value
+
+        if _addons_success:
+            logging.log(
+                'Successfully loaded the following auto-sklearn add-on module(s): ' +
+                ', '.join([n for n, _ in _addons_success])
+            )
+        else:
+            logging.log('No auto-sklearn add-on modules loaded.')
 
         # include/exclude pipeline components
         prefix = self.name() + '_'
@@ -545,6 +592,12 @@ class AutoSklearnBackend(AutoMLBackend):
             from autosklearn.classification import AutoSklearnClassifier as Estimator
 
         self.fit_start_time_ = py_time.time()
+        if monitor is None:
+            monitor_name = ''
+        else:
+            monitor.set_params(**self.config)
+            monitor_name = str(np.random.uniform(10 ** 10))
+            _monitors[monitor_name] = monitor
 
         # logging 1: ensemble building
         if kwargs.get('n_jobs', 1) == 1:
@@ -553,7 +606,7 @@ class AutoSklearnBackend(AutoMLBackend):
             with open(io.make_path(logging_.__file__).parent / 'logging.yaml', mode='rt') as fh:
                 logging_config = yaml.safe_load(fh)
             askl_handler = {'level': 'INFO', 'class': 'logging._AutoSklearnHandler',
-                            'start_time': str(self.fit_start_time_)}
+                            'start_time': str(self.fit_start_time_), 'monitor_name': monitor_name}
             if metric is not None:
                 askl_handler.update(
                     metric=str(metric.name),
@@ -572,7 +625,8 @@ class AutoSklearnBackend(AutoMLBackend):
             metric if metric is None else (metric.name, metric._optimum, metric._sign),
             [(m.name, m._optimum, m._sign) for m in kwargs.get('scoring_functions', [])],
             self._get_estimator_name(),
-            start_time=self.fit_start_time_
+            start_time=self.fit_start_time_,
+            monitor_name=monitor_name
         )
         if Estimator.__name__ != 'AutoSklearn2Classifier':
             kwargs['get_trials_callback'] = smac_callback
@@ -672,8 +726,11 @@ class AutoSklearnBackend(AutoMLBackend):
     @classmethod
     def get_versions(cls) -> dict:
         from smac import __version__ as smac_version
-        return {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
-                'scikit-learn': sklearn.__version__}
+        out = {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
+               'scikit-learn': sklearn.__version__}
+        for _, v in _addons_success:
+            out.update(v)
+        return out
 
     def _prepare_for_predict(self, x: pd.DataFrame) -> pd.DataFrame:
         if self.feature_filter_ is not None:
@@ -988,18 +1045,39 @@ def _validate_include_exclude_params(include: Optional[dict], exclude: Optional[
     from autosklearn.pipeline.components.base import AutoSklearnChoice
 
     pip = Pipeline(dataset_properties=dataset_properties)
-    supported_steps = {step[0]: list(step[1].get_available_components(dataset_properties=dataset_properties))
-                       for step in pip.steps if isinstance(step[1], AutoSklearnChoice)}
-    for argument in (include, exclude):
+    supported_steps = {
+        step[0]: (list(step[1].get_components()),
+                  list(step[1].get_available_components(dataset_properties=dataset_properties)))
+        for step in pip.steps if isinstance(step[1], AutoSklearnChoice)
+    }
+    unavailable_components = []
+    missing_components = []
+    for argument, is_include in ((include, True), (exclude, False)):
         if argument is not None:
             for key, candidate_components in list(argument.items()):
-                available_components = supported_steps.get(key)
+                all_components, available_components = supported_steps.get(key, (None, None))
                 if available_components is None:
                     del argument[key]
                 else:
                     if not isinstance(candidate_components, (list, tuple, set)):
                         candidate_components = [candidate_components]
+                    if is_include:
+                        unavailable_components += [f'{key}/{c}' for c in candidate_components
+                                                   if c in all_components and c not in available_components]
+                        missing_components += [f'{key}/{c}' for c in candidate_components if c not in all_components]
                     argument[key] = [c for c in candidate_components if c in available_components]
+
+    if unavailable_components:
+        logging.warn(
+            'The following component(s) are not available for the current prediction task: ' +
+            ', '.join(unavailable_components)
+        )
+    if missing_components:
+        msg = 'The following component(s) could not be found: ' + ', '.join(missing_components)
+        if _addons_failure:
+            msg += '\nMaybe they are contained in add-on modules that could not be loaded:\n    ' +\
+                   '\n    '.join([f'{n}: {e.msg}' for n, e in _addons_failure])
+        logging.warn(msg)
 
     if include is not None:
         # check that no component list is empty

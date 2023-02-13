@@ -15,12 +15,12 @@ Configuration for the command line tools should be done in the following format:
     * `external`: detector implemented by an outside module
 
 * `ood_class` is the name/path of an OOD detector:
-        * if `ood_source` is `internal`: name of one of the modules in catabra.ood.internal (e.g. `soft_brownian_offset`)
-        * if `ood_source` is `pyod`: name of one of the modules in pyod.models (e.g. `kde`)
-        * if `ood_source` is `external`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
-        * if value is <None> no OOD detection is performed
+  * if `ood_source` is `internal`: name of one of the modules in catabra.ood.internal (e.g. `soft_brownian_offset`)
+  * if `ood_source` is `pyod`: name of one of the modules in pyod.models (e.g. `kde`)
+  * if `ood_source` is `external`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
+  * if value is `None` no OOD detection is performed
 
-* `ood_kwargs` is a dictionary of optional parameters for specific OOD detectors in the form {"parameter-name": value, ...}.
+* `ood_kwargs` is a dictionary of optional parameters for specific OOD detectors in the form `{"parameter-name": value, ...}`.
 e.g. for the autoencoder `{"target_dim_factor": 0.25, "reduction_factor": 0.9}`
 
 

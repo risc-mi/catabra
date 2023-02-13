@@ -35,7 +35,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for explaining the prediction model(s).
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table to analyze.
+    explicitly specified are taken from this dict; this also includes the table on which to explain the CaTabRa object.
     """
     expl = CaTabRaExplanation(invocation=from_invocation)
     expl(

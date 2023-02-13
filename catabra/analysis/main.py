@@ -1,4 +1,4 @@
-from typing import Union, Optional, Iterable, Type
+from typing import Union, Optional, Iterable, Type, Tuple
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ from ..core.base import Invocation, CaTabRaBase
 from ..core import config as cfg
 from ..util.encoding import Encoder
 from ..automl.base import AutoMLBackend
+from ..monitoring.base import TrainingMonitorBackend
 from ..core.paths import CaTabRaPaths
 
 
@@ -18,7 +19,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             split: Optional[str] = None, sample_weight: Optional[str] = None, ignore: Optional[Iterable[str]] = None,
             calibrate: Optional[str] = None, time: Optional[int] = None, out: Union[str, Path, None] = None,
             config: Union[str, Path, dict, None] = None, default_config: Optional[str] = None,
-            jobs: Optional[int] = None, from_invocation: Union[str, Path, dict, None] = None):
+            monitor: Optional[str] = None, jobs: Optional[int] = None,
+            from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
     the remaining ones.
@@ -49,6 +51,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     :param config: Optional, configuration dict or path to JSON file containing such a dict. Merged with the default
     configuration specified via `default_config`. Empty string means that the default configuration is used.
     :param default_config: Default configuration to use, one of "full", "", "basic", "interpretable" or None.
+    :param monitor: Training monitor to use.
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table to analyze.
@@ -68,6 +71,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         out=out,
         config=config,
         default_config=default_config,
+        monitor=monitor,
         jobs=jobs
     )
 
@@ -172,8 +176,10 @@ class CaTabRaAnalysis(CaTabRaBase):
                     # overwrite existing file
                     cu.save_versions(versions, (self._invocation.out / 'versions.txt').as_posix())
 
-                    backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights,
-                                time=self._invocation.time, jobs=self._invocation.jobs, dataset_name=dataset_name)
+                    with self._make_training_monitor() as monitor:
+                        backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights,
+                                    time=self._invocation.time, jobs=self._invocation.jobs, dataset_name=dataset_name,
+                                    monitor=monitor)
                     io.dump(backend, self._invocation.out / CaTabRaPaths.Model)
                     io.dump(io.to_json(backend.summary()), self._invocation.out / CaTabRaPaths.ModelSummary)
 
@@ -245,6 +251,27 @@ class CaTabRaAnalysis(CaTabRaBase):
                 df_train = df[train_mask].copy()
             del split_masks[train_key]
         return df_train, split_masks
+
+    def _make_training_monitor(self) -> TrainingMonitorBackend:
+        name, kwargs = self._invocation.get_monitor_with_kwargs()
+        monitor = TrainingMonitorBackend.get(name, folder=self._invocation.out.as_posix(), **kwargs)
+        if monitor is None:
+            if name not in (None, ''):
+                logging.warn(f'Training monitor backend "{name}" not found. Disabling live monitoring.')
+
+            class _Aux:
+                def __enter__(self):
+                    return None
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+
+            monitor = _Aux()
+        else:
+            msg = monitor.get_info()
+            if msg is not None:
+                logging.log(msg)
+        return monitor
 
     def _make_training_plots(self, hist):
         if self._config.get('static_plots', True):
@@ -492,6 +519,7 @@ class AnalysisInvocation(Invocation):
         calibrate: Optional[str] = None,
         config: Union[str, Path, dict, None] = None,
         default_config: Optional[str] = None,
+        monitor: Optional[str] = None,
         **_
     ):
 
@@ -505,6 +533,7 @@ class AnalysisInvocation(Invocation):
         self._calibrate = calibrate
         self._config_src = config
         self._default_config = default_config
+        self._monitor = monitor
         self._target = None
 
     def update(self, src: dict = None):
@@ -526,6 +555,8 @@ class AnalysisInvocation(Invocation):
                 self._config_src = src.get('config')
             if self._default_config is None:
                 self._default_config = src.get('default_config')
+            if self._monitor is None:
+                self._monitor = src.get('monitor')
             self._target = src.get('target')
 
     def resolve(self):
@@ -538,6 +569,8 @@ class AnalysisInvocation(Invocation):
             self._config_src = None
         if self._default_config in (None, ''):
             self._default_config = 'full'
+        if self._monitor == '':
+            self._monitor = None
         self._ignore = set() if self._ignore is None else set(self._ignore)
 
         if not self._target:
@@ -574,6 +607,7 @@ class AnalysisInvocation(Invocation):
             calibrate=self._calibrate,
             config=self._config_src,
             default_config=self._default_config,
+            monitor=self._monitor,
             time=self._time,
         ))
         return dic
@@ -581,3 +615,10 @@ class AnalysisInvocation(Invocation):
     @staticmethod
     def requires_table() -> bool:
         return True
+
+    def get_monitor_with_kwargs(self) -> Tuple[Optional[str], dict]:
+        if self._monitor in (None, ''):
+            return None, {}
+        else:
+            parts = self._monitor.split(' ')
+            return parts[0], dict([p.split('=', 1) for p in parts[1:]])

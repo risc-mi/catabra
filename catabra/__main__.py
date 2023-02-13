@@ -43,8 +43,8 @@ def make_parser():
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
                 sample_weight=args.sample_weight, ignore=args.ignore, calibrate=args.calibrate, time=args.time,
-                out=args.out, config=args.config, default_config=args.default_config, jobs=args.jobs,
-                from_invocation=getattr(args, 'from', None))
+                out=args.out, config=args.config, default_config=args.default_config, monitor=args.monitor,
+                jobs=args.jobs, from_invocation=getattr(args, 'from', None))
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -76,6 +76,15 @@ def make_parser():
         from .calibration import calibrate
         calibrate(*(args.on or []), folder=args.src, split=args.split, subset=args.subset, method=args.method,
                   sample_weight=args.sample_weight, out=args.out, from_invocation=getattr(args, 'from', None))
+
+    def _apply(args: argparse.Namespace):
+        from .application import apply
+        expl = args.explain
+        if expl is not None and len(expl) == 0:
+            expl = '__all__'
+        apply(*(args.on or []), folder=args.src, model_id=args.model_id, explain=expl, check_ood=not args.no_ood,
+              out=args.out, jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None),
+              print_results='auto')
 
     analyzer = subparsers.add_parser(
         'analyze',
@@ -170,6 +179,17 @@ def make_parser():
         help='Default config to use. Possible values are "full" (default; full range of preprocessing steps and ML'
              ' algorithms for model training), "basic" (only very basic preprocessing and ML algorithms) and'
              ' "interpretable" (only inherently interpretable preprocessing and ML algorithms).'
+    )
+    analyzer.add_argument(
+        '--monitor',
+        type=str,
+        metavar='MONITOR',
+        default='',
+        const='plotly',
+        nargs='?',
+        help='Enable live monitoring of the training progress. The optional MONITOR argument specifies which backend'
+             ' to use (default is "plotly").'
+             ' Keyword arguments can be passed as sequences of assignments, as in "plotly update_interval=0".'
     )
     _add_jobs(analyzer)
     _add_from(analyzer)
@@ -402,8 +422,62 @@ def make_parser():
         'apply',
         help='Apply an existing CaTabRa object to new data.'
     )
+    applier.add_argument(
+        'src',
+        type=str,
+        nargs='?',
+        metavar='SOURCE',
+        help='The CaTabRa object to apply. Must be the path to a folder which was the output directory of a'
+             ' previous invocation of `analyze`. "." is a shortcut for the current working directory.'
+    )
+    applier.add_argument(
+        '--on',
+        type=str,
+        nargs='+',
+        metavar='ON',
+        help='The table(s) on which to apply SOURCE. Must be CSV- or Excel files, or tables stored in HDF5 files.'
+             ' Note that in contrast to command `evaluate`, no target columns need to be present.'
+    )
+    applier.add_argument(
+        '-m', '--model-id',
+        type=str,
+        nargs='+',
+        default='__ensemble__',
+        metavar='MODEL_ID',
+        help='The ID(s) of the prediction model(s) to apply. If no MODEL_ID is given, all models in the ensemble are'
+             ' applied.'
+    )
+    applier.add_argument(
+        '-e', '--explain',
+        type=str,
+        nargs='*',
+        default=None,
+        metavar='EXPLAIN',
+        help='Explain prediction model(s). If passed without arguments, all models specified by MODEL_ID are explained;'
+             ' otherwise, EXPLAIN contains the model ID(s) to explain.'
+    )
+    applier.add_argument(
+        '--no-ood',
+        action='store_true',
+        help='Disable OOD detection.'
+    )
+    applier.add_argument(
+        '-b', '--batch-size',
+        type=str,
+        metavar='BATCH_SIZE',
+        help='The batch size to use for applying the CaTabRa object.'
+    )
+    applier.add_argument(
+        '-o', '--out',
+        type=str,
+        metavar='OUT',
+        help='The name of the directory where to save all generated artifacts.'
+             ' Defaults to "SOURCE/apply_ON_DATE_TIME", where DATE and TIME are the current date and time.'
+             ' "." is a shortcut for the current working directory.'
+    )
     _add_jobs(applier)
-    # TODO
+    _add_from(applier)
+    applier.set_defaults(func=_apply)
 
     return _parser
 
