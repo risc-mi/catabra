@@ -2,8 +2,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 
-from catabra.ood.base import OODDetector
-from catabra.ood.internal.autoencoder import Autoencoder
+from catabra.ood.base import SamplewiseOODDetector
 from catabra.ood.utils import make_standard_transformer
 
 import numpy as np
@@ -87,7 +86,7 @@ def gaussian_hyperspheric_offset(n_samples, mu=4, std=.7, n_dim=3, random_state=
     return vec
 
 
-class SoftBrownianOffset(OODDetector):
+class SoftBrownianOffset(SamplewiseOODDetector):
     """
     Out-of-Distribution detector using soft brownian offset.
     Transforms samples into a lower dimensional space and generates synthetic OOD samples in this subspace.
@@ -100,8 +99,8 @@ class SoftBrownianOffset(OODDetector):
             subset: float = 1,
             classifier=RandomForestClassifier,
             dim_reduction=PCA,
-            dist_min: float = 0.5,
-            dist_off: float = 0.1,
+            dist_min: float = 0.2,
+            dist_off: float = 0.01,
             softness: float = 0,
             samples: float = 1,
             random_state: int = None,
@@ -118,7 +117,7 @@ class SoftBrownianOffset(OODDetector):
         :param samples: Number of samples to return in proportion to original samples
         """
 
-        super().__init__(subset, verbose)
+        super().__init__(subset, random_state=random_state, verbose=verbose)
 
         dimred_kwargs = kwargs.get('dim_reduction', {})
         classifier_kwargs = kwargs.get('classifier', {})
@@ -131,7 +130,6 @@ class SoftBrownianOffset(OODDetector):
         self._dist_off = dist_off
         self._samples = samples
         self._softness = softness
-        self._random_state = random_state
 
     def _transform(self, X: pd.DataFrame):
         return self._transformer.transform(X).values
@@ -154,6 +152,7 @@ class SoftBrownianOffset(OODDetector):
         return self._classifier.predict_proba(X)
 
 
+# TODO make pytest
 def test():
     test = np.array([
         [0, 1, 2],

@@ -1,13 +1,18 @@
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
+
+from catabra.ood.base import EntrywiseOODDetector
+
+tqdm.pandas()
 
 from catabra.ood import OODDetector
 from catabra.util.logging import log
 
 
-class BinsDetector(OODDetector):
+class BinsDetector(EntrywiseOODDetector):
     """
     Simple OOD detector that distributes the training set into equally sized bins.
     A sample is considered OOD if it falls within one such bin
@@ -21,7 +26,7 @@ class BinsDetector(OODDetector):
         """
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._bins: Union[None, int, pd.Series] = bins
-        self._num_cols: Optional[np.ndarray[str]] = None
+        self._num_cols: Optional[np.ndarray] = None
         self._empty_bins: Optional[pd.DataFrame] = None
         self._min_max: Optional[pd.DataFrame] = None
 
@@ -35,7 +40,7 @@ class BinsDetector(OODDetector):
         return self._bins
 
     @property
-    def num_cols(self) -> Optional[np.ndarray[str]]:
+    def num_cols(self) -> Optional[np.ndarray]:
         return self._num_cols
 
     def _fit_transformer(self, X: pd.DataFrame):
@@ -51,11 +56,14 @@ class BinsDetector(OODDetector):
             span = self._min_max['max'] - self._min_max['min']
             self._bins = pd.Series(np.round(span / (2 * std)), index=X.columns)
 
+        progress = tqdm(total=len(self._num_cols))
+
         def _get_empty_bins(col: pd.Series):
             bins = int(self._bins[col.name] if isinstance(self._bins, pd.Series) else self._bins)
             cnts, edges = np.histogram(col.dropna(), bins)
             zero_bins = np.where(np.array(cnts) == 0)[0]
             empties = list(zip(edges[zero_bins], edges[zero_bins + 1]))
+            progress.update()
             if len(empties) == 0:
                 return []
             else:
@@ -66,19 +74,35 @@ class BinsDetector(OODDetector):
     def _predict_transformed(self, X: pd.DataFrame):
         return np.any(~self._predict_proba_transformed(X).isna(), axis=0)
 
-    def _predict_proba_transformed(self, X) -> pd.DataFrame:
-        log('Warning: Bin Detector cannot predict any probabilities. Only whether a samples falls within an empty bin.')
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Returns distance to bin edges if value falls within an empty bin
+        """
+        left, right = self._get_bins_transformed(X)
+        left_dist = np.nan_to_num(np.abs(left - X), nan=-1)
+        right_dist = np.nan_to_num(np.abs(right - X), nan=-1)
+        dist = pd.DataFrame(np.max(left_dist, right_dist),columns=X.columns)
+        return dist
+
+    def get_bins(self, X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        return self._get_bins_transformed(self._transform(X))
+
+    def _get_bins_transformed(self, X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        progress = tqdm(total=len(self._num_cols))
 
         def _is_in_bin(col: pd.Series):
-            bins = np.array([None] * col.shape[0])
+            right_edge = np.array([np.nan] * col.shape[0])
+            left_edge = np.array([np.nan] * col.shape[0])
 
             for bin in self._empty_bins[col.name]:
                 inside = (col > bin[0]) & (col < bin[1])
-                bins[inside] = str(bin)
-            bins[col > self._min_max.loc[col.name, 'max']] = '> max'
-            bins[col < self._min_max.loc[col.name, 'min']] = '< min'
+                left_edge[inside] = bin[0]
+                right_edge[inside] = bin[1]
+            left_edge[col > self._min_max.loc[col.name, 'max']] = self._min_max.loc[col.name, 'max']
+            right_edge[col < self._min_max.loc[col.name, 'min']] = self._min_max.loc[col.name, 'min']
 
-            return bins
+            progress.update()
+            return left_edge, right_edge
 
         return X.apply(_is_in_bin)
 

@@ -3,14 +3,15 @@ from typing import Union
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
-from ..base import OODDetector
+from ..base import FeaturewiseOODDetector
 from ..utils import make_standard_transformer
 from catabra.util import io
 from scipy.stats import ks_2samp
 
 
-class KSTest(OODDetector):
+class KSTest(FeaturewiseOODDetector):
     """
     Two sample Kolmogorov-Smirnov test.
     Refer to: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
@@ -22,7 +23,7 @@ class KSTest(OODDetector):
 
     def __init__(self, subset=1, p_val=0.05, random_state: int=None, verbose=True):
         """
-        Initialization of Autoencoder
+        Initialization of KS Test
         :param: p_val: p-value to decide statistical significance
         """
         super().__init__(subset=subset, verbose=verbose)
@@ -56,4 +57,11 @@ class KSTest(OODDetector):
         orig_data = io.read_df(self._data_artefact_file)
 
         results = pd.Series(np.arange(orig_data.shape[1]), index=orig_data.columns)
-        return 1 - results.apply(lambda i: ks_2samp(orig_data.iloc[:, i], X.iloc[:, i])[1])
+        progress = tqdm(total=len(X.shape[1]))
+
+        def __apply_ks_test(i: int):
+            ks = ks_2samp(orig_data.iloc[:, i], X.iloc[:, i])[1]
+            progress.update()
+            return ks
+
+        return 1 - results.apply(__apply_ks_test)
