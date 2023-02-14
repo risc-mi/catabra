@@ -6,11 +6,11 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 
-from catabra.ood.base import OODDetector
+from catabra.ood.base import SamplewiseOODDetector
 from catabra.ood.utils import make_standard_transformer
 
 
-class Autoencoder(OODDetector):
+class Autoencoder(SamplewiseOODDetector):
     """
     Autoencoder for out-of distribution detection.
     Uses a neural network to encode data into a lower dimensional space and reconstruct the original data from it.
@@ -76,11 +76,10 @@ class Autoencoder(OODDetector):
         :param: reduction_factor: how much each layer reduces the dimensionality
         :param: p_val: p-value to decide when a sample is out of distribution
         """
-        super().__init__(subset=subset, verbose=verbose)
+        super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._target_dim_factor = target_dim_factor
         self._reduction_factor = reduction_factor
         self._p_val = p_val
-        self._random_state = np.random.randint(1000) if random_state is None else random_state
 
         self._regressor = None
         self._transformer = make_standard_transformer()
@@ -138,13 +137,15 @@ class Autoencoder(OODDetector):
 
         p_val = np.zeros_like(errors)
         batch_size = max(1, int(50000000 / self._errors.shape[0]))
-        for c, name in enumerate(errors.columns):
-            i = 0
-            while i < len(errors):
-                j = min(i + batch_size, len(errors))
-                p_val[i:j, c] = \
-                    (self._errors[name].values.reshape(-1, 1) <= errors[name].values[i:j].reshape(1, -1)).mean(axis=0)
-                i = j
+
+        np.apply(errors, axis=0)
+        for col, name in enumerate(errors.columns):
+            batch_start = 0
+            while batch_start < len(errors):
+                batch_end = min(batch_start + batch_size, len(errors))
+                p_val[batch_start:batch_end, col] = \
+                    (self._errors[name].values.reshape(-1, 1) <= errors[name].values[batch_start:batch_end].reshape(1, -1)).mean(axis=0)
+                batch_start = batch_end
 
         return p_val
 

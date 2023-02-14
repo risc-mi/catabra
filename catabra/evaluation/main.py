@@ -44,9 +44,7 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     See /doc/metrics.md for a list of built-in thresholding strategies.
     :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
     "bootstrapping_repetitions" config param.
-    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
-    of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
-    current prediction task are computed. Ignored if bootstrapping is disabled.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the li    current prediction task are computed. Ignored if bootstrapping is disabled.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table on which to evaluate the CaTabRa object.
     """

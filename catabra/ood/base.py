@@ -2,6 +2,7 @@ import abc
 import importlib
 import inspect
 from abc import abstractmethod
+from enum import Enum
 
 import numpy as np
 import pandas as pd
@@ -92,6 +93,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     def fit(self, X: pd.DataFrame, y: pd.Series=None):
         X_fit = X.copy(deep=True)
         if self._subset < 1:
+            np.random.RandomState(self._random_state)
             indices = np.random.choice(X.shape[0], np.round(X.shape[0] * self._subset).astype(int))
             X_fit = X_fit.iloc[indices,:]
         if self._verbose:
@@ -126,6 +128,46 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         logging.log('Predicting out-of-distribution samples.')
         return self._predict_proba_transformed(X_trans)
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Types of OOD detectors
 
+# Subclasses defining return type of
+# TODO: add pytest for returning expected shape
+
+
+class EntrywiseOODDetector(OODDetector, abc.ABC):
+
+    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
+        pass
+
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
+        pass
+
+
+class SamplewiseOODDetector(OODDetector, abc.ABC):
+
+    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
+        pass
+
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
+        pass
+
+
+class FeaturewiseOODDetector(OODDetector, abc.ABC):
+
+    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
+        pass
+
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
+        pass
+
+
+class OverallOODDetector(OODDetector, abc.ABC):
+
+    def _predict_transformed(self, X: pd.DataFrame) -> int:
+        pass
+
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> float:
+        pass
 
 
