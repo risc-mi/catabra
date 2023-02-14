@@ -226,6 +226,9 @@ In addition, there are optional arguments as well:
     name following a fixed naming pattern. If `OUT` already exists, the user is prompted to specify whether it should
     be replaced; otherwise, it is automatically created. `.` serves as a shortcut for the current working directory.
 * `--batch-size BATCH_SIZE`: Batch size used for generating explanations.
+* `--aggregation-mapping`: Mapping from target column names to lists of source column names in `ON`, whose explanations
+    will be aggregated by the explainer's aggregation function. Must be the name of a JSON file containing a
+    corresponding dict.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
 * `--from FROM`: Path to an invocation.json file. All command-line arguments not explicitly specified are taken from
     this file; this also includes `SOURCE` and `TABLE`.
