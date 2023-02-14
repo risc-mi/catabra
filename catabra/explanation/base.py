@@ -230,13 +230,37 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def aggregate_explanations(self, explanations: Dict, mapping: Dict[str, List[str]]):
+    def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
+        """
+        Aggregate local explanations over sets of features, e.g., by returning average feature importance scores.
+        :param explanations: Local explanations to aggregate, in the same format as the individual DataFrames returned
+        by method `explain()`: rows correspond to samples, columns correspond to features.
+        :param mapping: Mapping specifying which features to combine: target column names are mapped to lists of
+        source column names in `explanations`.
+        :return: DataFrame with aggregated explanations.
+        """
         raise NotImplementedError()
 
-    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
+        """
+        Aggregate global explanations over sets of features, e.g., by returning average feature importance scores.
+        :param explanations: Global explanations to aggregate, in the same format as the individual DataFrames returned
+        by method `explain_global()`.
+        :param mapping: Mapping specifying which features to combine: target column names are mapped to lists of
+        source column names in `explanations`.
+        :return: DataFrame with aggregated explanations.
+        """
         raise NotImplementedError()
 
-    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
+    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
+        """
+        Combine features for obtaining aggregated values corresponding to aggregated local explanations returned by
+        method `aggregate_explanations()`.
+        :param features: DataFrame to aggregate, from which the corresponding local explanations were calculated.
+        :param mapping: Mapping specifying which features to combine: target column names are mapped to lists of
+        source column names in `features`.
+        :return: DataFrame with aggregated features.
+        """
         raise NotImplementedError()
 
     @classmethod

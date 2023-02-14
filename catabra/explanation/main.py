@@ -12,7 +12,8 @@ from ..core.paths import CaTabRaPaths
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
             split: Optional[str] = None, sample_weight: Optional[str] = None, out: Union[str, Path, None] = None,
             glob: Optional[bool] = False, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-            aggregation_mapping: Optional[Dict[str, List[str]]] = None, from_invocation: Union[str, Path, dict, None] = None):
+            aggregation_mapping: Optional[Dict[str, List[str]]] = None,
+            from_invocation: Union[str, Path, dict, None] = None):
     """
     Explain an existing CaTabRa object (prediction model) in terms of feature importance.
     :param table: The table(s) to explain the CaTabRa object on. If multiple are given, their columns are merged into
@@ -34,6 +35,11 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     (depends on explanation backend).
     :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
     :param batch_size: Optional, batch size used for explaining the prediction model(s).
+    :param aggregation_mapping: Optional, mapping from target column names to lists of source column names in `table`,
+    whose explanations will be aggregated by the explainer's aggregation function. Can be either a dict or a JSON file
+    containing such a dict.
+    Useful for generating joint explanations of certain features, e.g., corresponding to the same variable observed at
+    different times.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table on which to explain the CaTabRa object.
     """
@@ -202,7 +208,7 @@ class ExplanationInvocation(Invocation):
             if self._batch_size is None:
                 self._batch_size = src.get('batch_size')
             if self._aggregation_mapping is None:
-                self._batch_size = src.get('aggregation_mapping')
+                self._aggregation_mapping = src.get('aggregation_mapping')
 
     def resolve(self):
         super().resolve()
@@ -237,7 +243,8 @@ class ExplanationInvocation(Invocation):
             folder=self._folder,
             model_id=self._model_id,
             glob=self._glob,
-            batch_size=self._batch_size
+            batch_size=self._batch_size,
+            aggregation_mapping=self._aggregation_mapping
         ))
         return dct
 
@@ -261,8 +268,8 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     :param model_id: ID(s) of the model(s) to explain.
     :param batch_size: Batch size.
     :param jobs: Number of jobs.
-    :param aggregation_mapping: Dictionary: containing mapping from target column name to list of source columns
-    The source columns' explanations will be aggregated by the explainers aggregation function
+    :param aggregation_mapping: Mapping from target column name to list of source columns.
+    The source columns' explanations will be aggregated by the explainer's aggregation function.
     :param static_plots: Whether to create static plots.
     :param interactive_plots: Whether to create interactive plots.
     :param verbose: Whether to print intermediate results and progress bars.
@@ -287,7 +294,8 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
         explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
                                                       batch_size=batch_size, model_id=model_id, show_progress=verbose)
         if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations_global(expl, aggregation_mapping) for model, expl in explanations.items()}
+            explanations = {model: explainer.aggregate_explanations_global(expl, aggregation_mapping)
+                            for model, expl in explanations.items()}
 
         if static_plots:
             _save_plots(plot_bars(explanations, interactive=False, title=title), 'static_plots')
@@ -297,7 +305,8 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
         explanations: dict = explainer.explain(x, jobs=jobs, batch_size=batch_size,
                                                model_id=model_id, show_progress=verbose)
         if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations(expl, aggregation_mapping) for model, expl in explanations.items()}
+            explanations = {model: explainer.aggregate_explanations(expl, aggregation_mapping)
+                            for model, expl in explanations.items()}
             x = explainer.aggregate_features(x, aggregation_mapping)
 
         if static_plots:

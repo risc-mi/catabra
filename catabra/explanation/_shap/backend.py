@@ -128,18 +128,24 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
 
     def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+        explanations = explanations.copy()
         for target_col, source_cols in mapping.items():
             explanations[target_col] = explanations[source_cols].sum(axis=1)
-            explanations = explanations.drop(source_cols, axis=1)
+            explanations = explanations.drop(source_cols, axis=1, inplace=True)
         return explanations
 
     def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
         return self.aggregate_explanations(explanations.T, mapping).T
 
     def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
+        features = features.copy()
         for target_col, source_cols in mapping.items():
-            features[target_col] = features[source_cols].mean(axis=1)
-            features.drop(source_cols, axis=1)
+            try:
+                # only add columns if mean can be computed
+                features[target_col] = features[source_cols].mean(axis=1)
+            except:     # noqa
+                pass
+            features.drop(source_cols, axis=1, inplace=True)
         return features
 
     @classmethod
