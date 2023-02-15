@@ -134,31 +134,21 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
 # Subclasses defining return type of
 # TODO: add pytest for returning expected shape
 
-
-class EntrywiseOODDetector(OODDetector, abc.ABC):
-
-    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
-        pass
-
-    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
-        pass
-
-
 class SamplewiseOODDetector(OODDetector, abc.ABC):
 
-    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
+    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
 
-    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
 
 
 class FeaturewiseOODDetector(OODDetector, abc.ABC):
 
-    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series[int]:
+    def _predict_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
 
-    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series[float]:
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
 
 

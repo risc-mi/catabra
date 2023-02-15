@@ -3,16 +3,12 @@ from typing import Union, Optional, List, Tuple
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-from catabra.ood.base import EntrywiseOODDetector
-
 tqdm.pandas()
 
-from catabra.ood import OODDetector
-from catabra.util.logging import log
+from catabra.ood.base import SamplewiseOODDetector
 
 
-class BinsDetector(EntrywiseOODDetector):
+class BinsDetector(SamplewiseOODDetector):
     """
     Simple OOD detector that distributes the training set into equally sized bins.
     A sample is considered OOD if it falls within one such bin
@@ -29,7 +25,6 @@ class BinsDetector(EntrywiseOODDetector):
         self._num_cols: Optional[np.ndarray] = None
         self._empty_bins: Optional[pd.DataFrame] = None
         self._min_max: Optional[pd.DataFrame] = None
-
 
     @property
     def empty_bins(self) -> Union[None, int, pd.DataFrame]:
@@ -72,17 +67,25 @@ class BinsDetector(EntrywiseOODDetector):
         self._empty_bins = X.apply(_get_empty_bins)
 
     def _predict_transformed(self, X: pd.DataFrame):
-        return np.any(~self._predict_proba_transformed(X).isna(), axis=0)
+        return np.any(self._predict_proba_transformed(X) > -1, axis=0)
 
-    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.DataFrame:
+    def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series:
         """
-        Returns distance to bin edges if value falls within an empty bin
+        Returns distance to bin edges normalized by bin width if value falls within an empty bin
         """
         left, right = self._get_bins_transformed(X)
-        left_dist = np.nan_to_num(np.abs(left - X), nan=-1)
-        right_dist = np.nan_to_num(np.abs(right - X), nan=-1)
-        dist = pd.DataFrame(np.max(left_dist, right_dist),columns=X.columns)
-        return dist
+        X = X.reset_index().drop('index', axis=1)
+        left_dist = np.abs(left - X)
+        right_dist = np.abs(right - X)
+        bin_width = (right - left) / 2
+
+        dist = pd.DataFrame(np.zeros_like(X) * np.nan, columns=X.columns)
+        cond_left = np.where((left_dist < right_dist) | (~left_dist.isna() & right_dist.isna()))
+        dist.iloc[cond_left[0], cond_left[1]] = left_dist.iloc[cond_left[0], cond_left[1]]
+        cond_right = np.where((left_dist >= right_dist) | (left_dist.isna() & ~right_dist.isna()))
+        dist.iloc[cond_right[0], cond_right[1]] = right_dist.iloc[cond_right[0], cond_right[1]]
+
+        return (dist / bin_width).fillna(0).max(axis=1)
 
     def get_bins(self, X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         return self._get_bins_transformed(self._transform(X))
@@ -102,7 +105,8 @@ class BinsDetector(EntrywiseOODDetector):
             right_edge[col < self._min_max.loc[col.name, 'min']] = self._min_max.loc[col.name, 'min']
 
             progress.update()
-            return left_edge, right_edge
+            return np.hstack([left_edge, right_edge])
 
-        return X.apply(_is_in_bin)
-
+        stacked = X.apply(_is_in_bin)
+        left, right = stacked.iloc[:X.shape[0],:], stacked.iloc[X.shape[0]:,:]
+        return left.reset_index().drop('index', axis=1), right.reset_index().drop('index', axis=1)
