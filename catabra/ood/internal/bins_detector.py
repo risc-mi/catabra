@@ -67,7 +67,7 @@ class BinsDetector(SamplewiseOODDetector):
         self._empty_bins = X.apply(_get_empty_bins)
 
     def _predict_transformed(self, X: pd.DataFrame):
-        return np.any(self._predict_proba_transformed(X) > -1, axis=0)
+        return self._predict_proba_transformed(X) > 0
 
     def _predict_proba_transformed(self, X: pd.DataFrame) -> pd.Series:
         """
