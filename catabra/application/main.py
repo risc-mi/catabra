@@ -1,10 +1,11 @@
 from typing import Union, Optional, Type
 from pathlib import Path
+import numpy as np
 import pandas as pd
 
 from ..util import table as tu, io, logging, metrics
-from ..core import CaTabRaBase, Invocation
-from ..core import CaTabRaPaths
+from ..core import CaTabRaBase, Invocation, CaTabRaPaths
+from ..ood.base import SamplewiseOODDetector, OverallOODDetector
 
 
 def apply(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -80,8 +81,14 @@ class CaTabRaApplication(CaTabRaBase):
             model = loader.get_model_or_fitted_ensemble()
             ood = loader.get_ood()
             if self._invocation.check_ood and ood is not None:
-                ood_predictions = pd.DataFrame(ood.predict_proba(X), columns=['__ood_proba'])
-                ood_predictions['__ood_decision'] = pd.DataFrame(ood.predict(X))
+                ood_proba = ood.predict_proba(X)
+                if isinstance(ood_proba, (pd.Series, np.ndarray)):
+                    ood_predictions = pd.DataFrame(ood_proba, columns=['proba'])
+                else:
+                    assert isinstance(ood, OverallOODDetector)
+                    ood_predictions = pd.DataFrame(index=['overall'], data={'proba': [ood_proba]})
+                ood_predictions['decision'] = ood.predict(X)
+                io.write_df(ood_predictions, self._invocation.out / CaTabRaPaths.OODStats)
             else:
                 ood_predictions = None
 
@@ -97,19 +104,25 @@ class CaTabRaApplication(CaTabRaBase):
                 else:
                     model_predictions = self._apply_classification(encoder, model, X)
 
-            # combine `model_predictions` and `ood_predictions`
-            if model_predictions is None:
-                model_predictions = ood_predictions
-            elif ood_predictions is not None:
-                assert (model_predictions.index == ood_predictions.index).all()
-                model_predictions = pd.concat([model_predictions, ood_predictions], axis=1, sort=False)
+                io.write_df(model_predictions, self._invocation.out / CaTabRaPaths.Predictions)
+
+            # combine `model_predictions` and `ood_predictions` (for printing only)
+            caption = 'Predictions'
+            if isinstance(ood, SamplewiseOODDetector):
+                if model_predictions is None:
+                    caption = 'OOD results'
+                    model_predictions = ood_predictions
+                elif ood_predictions is not None:
+                    caption = 'Predictions and OOD results'
+                    assert (model_predictions.index == ood_predictions.index).all()
+                    ood_predictions.columns = ['__ood_' + c for c in ood_predictions.columns]
+                    model_predictions = pd.concat([model_predictions, ood_predictions], axis=1, sort=False)
 
             if model_predictions is not None:
-                io.write_df(model_predictions, self._invocation.out / CaTabRaPaths.Predictions)
                 if self._invocation.print_results is True \
                         or (self._invocation.print_results == 'auto' and model_predictions.shape[0] <= 30
                             and model_predictions.shape[1] <= 8):
-                    logging.log('Predictions:\n' + repr(model_predictions))
+                    logging.log(caption + ':\n' + repr(model_predictions))
 
             end = pd.Timestamp.now()
             logging.log(f'### Application finished at {end}')

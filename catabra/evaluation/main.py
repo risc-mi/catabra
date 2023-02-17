@@ -3,13 +3,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu, io, logging
-from ..core import CaTabRaBase, Invocation
-from ..util import plotting
-from ..util import metrics
-from ..util import statistics
+from ..util import table as tu, io, logging, plotting, metrics, statistics
+from ..core import CaTabRaBase, Invocation, CaTabRaPaths
 from ..util.bootstrapping import Bootstrapping
-from ..core import CaTabRaPaths
+from ..ood.base import OverallOODDetector
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -44,7 +41,9 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     See /doc/metrics.md for a list of built-in thresholding strategies.
     :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
     "bootstrapping_repetitions" config param.
-    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the li    current prediction task are computed. Ignored if bootstrapping is disabled.
+    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
+    of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
+    current prediction task are computed. Ignored if bootstrapping is disabled.
     :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
     explicitly specified are taken from this dict; this also includes the table on which to evaluate the CaTabRa object.
     """
@@ -107,13 +106,8 @@ class CaTabRaEvaluation(CaTabRaBase):
 
             model = loader.get_model_or_fitted_ensemble()
             ood = loader.get_ood()
-            apply_odd = ood is not None
-            if apply_odd:
-                ood_predictions = pd.DataFrame(ood.predict_proba(x_test), columns=['proba'])
-                ood_predictions['decision'] = pd.DataFrame(ood.predict(x_test))
 
             # descriptive statistics for each train/test split
-
             if encoder.task_ is not None:
                 target = list(y_test.columns)
                 for mask, directory in _iter_splits():
@@ -121,8 +115,17 @@ class CaTabRaEvaluation(CaTabRaBase):
                                                            target=target,
                                                            classify=encoder.task_ != 'regression',
                                                            fn=directory / CaTabRaPaths.Statistics)
-                    if apply_odd:
-                        io.write_df(ood_predictions.loc[mask, :], directory / CaTabRaPaths.OODStats)
+                    if ood is not None:
+                        # OOD detection must be applied to each split separately, because some detectors (e.g., KS)
+                        # evaluate distribution of whole dataset
+                        ood_proba = ood.predict_proba(x_test[mask])
+                        if isinstance(ood_proba, (pd.Series, np.ndarray)):
+                            ood_predictions = pd.DataFrame(ood_proba, columns=['proba'])
+                        else:
+                            assert isinstance(ood, OverallOODDetector)
+                            ood_predictions = pd.DataFrame(index=['overall'], data={'proba': [ood_proba]})
+                        ood_predictions['decision'] = ood.predict(x_test[mask])
+                        io.write_df(ood_predictions, directory / CaTabRaPaths.OODStats)
 
             if encoder.task_ is None or model is None:
                 self._invocation.explain = []
