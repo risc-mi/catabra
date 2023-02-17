@@ -70,7 +70,7 @@ def make_parser():
             glob = None
         explain(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
                 model_id=args.model_id, out=args.out, glob=glob, jobs=args.jobs, batch_size=args.batch_size,
-                from_invocation=getattr(args, 'from', None))
+                aggregation_mapping=args.aggregation_mapping, from_invocation=getattr(args, 'from', None))
 
     def _calibrate(args: argparse.Namespace):
         from .calibration import calibrate
@@ -347,6 +347,14 @@ def make_parser():
         type=str,
         metavar='BATCH_SIZE',
         help='The batch size to use for explaining the CaTabRa object.'
+    )
+    explainer.add_argument(
+        '--aggregation-mapping',
+        type=str,
+        metavar='AGGREGATION_MAPPING',
+        help="Mapping from target column names to lists of source column names in ON, whose explanations will be"
+             " aggregated by the explainer's aggregation function. Must be the name of a JSON file containing a"
+             " corresponding dict."
     )
     explainer.add_argument(
         '-o', '--out',
