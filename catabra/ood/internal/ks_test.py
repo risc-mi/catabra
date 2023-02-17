@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 import numpy as np
 import pandas as pd
@@ -29,9 +29,9 @@ class KSTest(FeaturewiseOODDetector):
         super().__init__(subset=subset, verbose=verbose)
         self._p_val = p_val
         self._random_state = np.random.randint(1000) if random_state is None else random_state
-        self._transformer = make_standard_transformer()
+        # self._transformer = make_standard_transformer()
         self._subset_indices = None
-
+        self._num_cols: Optional[np.ndarray] = None
 
     @property
     def p_val(self):
@@ -41,11 +41,19 @@ class KSTest(FeaturewiseOODDetector):
     def random_state(self):
         return self._random_state
 
+    @property
+    def num_cols(self) -> Optional[np.ndarray]:
+        return self._num_cols
+
     def _fit_transformer(self, X: pd.DataFrame):
-        self._transformer.fit(X)
+        # self._transformer.fit(X)
+        cnts = X.apply(lambda x: x.nunique())
+        X = X.drop(list(cnts[cnts <= 2].index), axis=1)
+        self._num_cols = X.select_dtypes(np.number).columns.values
 
     def _transform(self, X: pd.DataFrame):
-        return self._transformer.transform(X)
+        # return self._transformer.transform(X)
+        return X[self._num_cols]
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
         io.write_df(X, self._data_artefact_file)
@@ -57,7 +65,7 @@ class KSTest(FeaturewiseOODDetector):
         orig_data = io.read_df(self._data_artefact_file)
 
         results = pd.Series(np.arange(orig_data.shape[1]), index=orig_data.columns)
-        progress = tqdm(total=len(X.shape[1]))
+        progress = tqdm(total=X.shape[1])
 
         def __apply_ks_test(i: int):
             ks = ks_2samp(orig_data.iloc[:, i], X.iloc[:, i])[1]
