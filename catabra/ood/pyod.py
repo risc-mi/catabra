@@ -12,10 +12,10 @@ except ImportError:
     )
 
 from .utils import make_standard_transformer
-from .base import OODDetector
+from .base import SamplewiseOODDetector
 
 
-class PyODDetector(OODDetector):
+class PyODDetector(SamplewiseOODDetector):
     """
     class to transform pyod ood class into a OODDetector
     Requires sbo to be installed.
