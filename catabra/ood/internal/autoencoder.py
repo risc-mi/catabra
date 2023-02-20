@@ -69,7 +69,7 @@ class Autoencoder(SamplewiseOODDetector):
         num_layers = len(self._encoder_layers)
         return self._regressor.extract(num_layers)
 
-    def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, p_val=0.05,
+    def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, thresh=0.5,
                  random_state: int=None, verbose=True, mlp_kwargs=None):
         """
         Initialization of Autoencoder
@@ -80,7 +80,7 @@ class Autoencoder(SamplewiseOODDetector):
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._target_dim_factor = target_dim_factor
         self._reduction_factor = reduction_factor
-        self._p_val = p_val
+        self._thresh = thresh
 
         self._regressor = None
         self._transformer = make_standard_transformer()
@@ -92,8 +92,8 @@ class Autoencoder(SamplewiseOODDetector):
         return self._mlp_kwargs
 
     @property
-    def p_val(self):
-        return self._p_val
+    def thresh(self):
+        return self._thresh
 
     @property
     def random_state(self):
@@ -127,24 +127,22 @@ class Autoencoder(SamplewiseOODDetector):
         self._regressor = self.SeparableMLP(hidden_layer_sizes=layers, random_state=self._random_state,
                                             verbose=self._verbose, **self._mlp_kwargs)
         self._regressor.fit(X, X)
-        _, X_val, _, _ = train_test_split(X, X, random_state=self._random_state,
-                                          test_size=self._regressor.validation_fraction)
+        _, X_val = train_test_split(X, random_state=self._random_state,
+                                    test_size=self._regressor.validation_fraction)
         # TODO: validate that X_val is same X_val as during training
-        self._errors = np.abs(X_val - self._regressor.predict(X_val))
+        errors = np.abs(X_val - self._regressor.predict(X_val))
+        self._errors = np.max(errors, axis=0)
 
     def _predict_transformed(self, X):
-        return (self._predict_proba_transformed(X) >= self._p_val).astype(int)
+        return (self._predict_proba_transformed(X) >= self._thresh).astype(int)
 
     def _predict_proba_transformed(self, X):
-        # TODO: WiP
         X_reconstructed = self._regressor.predict(X)
         errors = np.abs(X - X_reconstructed)
-
-        max_train_errors = np.max(self._errors, axis=1)
-        max_test_errors = np.max(errors, axis=1)
-
-        _score_distance = np.vectorize(lambda val: np.mean(max_train_errors - val))
-        return _score_distance(max_test_errors)
+        probas = np.max(errors - self._errors, axis=1)
+        probas[probas < 0] = 0
+        probas[probas > 1] = 1
+        return probas
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
@@ -156,8 +154,16 @@ def test():
     X, y = load_breast_cancer(return_X_y=True)
     X = pd.DataFrame(X)
     auto.fit(X)
-    print(auto.predict_proba(X))
-    print(auto.predict_proba(X + np.random.normal(0,1,X.shape[0] * X.shape[1]).reshape(X.shape)))
-    print(auto.predict_proba(X + np.random.normal(0,100,X.shape[0] * X.shape[1]).reshape(X.shape)))
+    print(np.mean(auto.predict_proba(X)))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.0001,X.shape[0] * X.shape[1]).reshape(X.shape))))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.001,X.shape[0] * X.shape[1]).reshape(X.shape))))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.01,X.shape[0] * X.shape[1]).reshape(X.shape))))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.1,X.shape[0] * X.shape[1]).reshape(X.shape))))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,1,X.shape[0] * X.shape[1]).reshape(X.shape))))
+    print(np.mean(auto.predict_proba(X + np.random.normal(0,100,X.shape[0] * X.shape[1]).reshape(X.shape))))
+
+    train, test = train_test_split(X)
+    auto.fit(train)
+    print(np.mean(auto.predict_proba(test)))
 test()
 
