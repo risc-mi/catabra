@@ -136,6 +136,7 @@ class Autoencoder(SamplewiseOODDetector):
         return (self._predict_proba_transformed(X) >= self._p_val).astype(int)
 
     def _predict_proba_transformed(self, X):
+        # TODO: WiP
         X_reconstructed = self._regressor.predict(X)
         errors = np.abs(X - X_reconstructed)
 
