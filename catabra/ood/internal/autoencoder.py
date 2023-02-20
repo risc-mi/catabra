@@ -21,7 +21,8 @@ class Autoencoder(SamplewiseOODDetector):
         'n_iter_no_change': 50,
         'learning_rate': 'adaptive',
         'learning_rate_init': 0.01,
-        'max_iter': 300
+        'max_iter': 300,
+        'validation_fraction': 0.4
     }
 
     class SeparableMLP(MLPRegressor):
@@ -131,30 +132,31 @@ class Autoencoder(SamplewiseOODDetector):
         # TODO: validate that X_val is same X_val as during training
         self._errors = np.abs(X_val - self._regressor.predict(X_val))
 
-    def _predict_pvals(self, X):
-        X_reconstructed = self._regressor.predict(X)
-        errors = np.abs(X - X_reconstructed)
-
-        p_val = np.zeros_like(errors)
-        batch_size = max(1, int(50000000 / self._errors.shape[0]))
-
-        np.apply(errors, axis=0)
-        for col, name in enumerate(errors.columns):
-            batch_start = 0
-            while batch_start < len(errors):
-                batch_end = min(batch_start + batch_size, len(errors))
-                p_val[batch_start:batch_end, col] = \
-                    (self._errors[name].values.reshape(-1, 1) <= errors[name].values[batch_start:batch_end].reshape(1, -1)).mean(axis=0)
-                batch_start = batch_end
-
-        return p_val
-
     def _predict_transformed(self, X):
         return (self._predict_proba_transformed(X) >= self._p_val).astype(int)
 
     def _predict_proba_transformed(self, X):
-        p_vals = self._predict_pvals(X)
-        return np.max(p_vals, axis=1)
+        X_reconstructed = self._regressor.predict(X)
+        errors = np.abs(X - X_reconstructed)
+
+        max_train_errors = np.max(self._errors, axis=1)
+        max_test_errors = np.max(errors, axis=1)
+
+        _score_distance = np.vectorize(lambda val: np.mean(max_train_errors - val))
+        return _score_distance(max_test_errors)
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
+
+
+def test():
+    auto = Autoencoder()
+    from sklearn.datasets import load_breast_cancer
+    X, y = load_breast_cancer(return_X_y=True)
+    X = pd.DataFrame(X)
+    auto.fit(X)
+    print(auto.predict_proba(X))
+    print(auto.predict_proba(X + np.random.normal(0,1,X.shape[0] * X.shape[1]).reshape(X.shape)))
+    print(auto.predict_proba(X + np.random.normal(0,100,X.shape[0] * X.shape[1]).reshape(X.shape)))
+test()
+

@@ -19,7 +19,6 @@ class KSTest(FeaturewiseOODDetector):
     "How likely is it that we would see two sets of samples like this if they were drawn from the same (but unknown)
     probability distribution?"
     """
-    _data_artefact_file = 'ks_data_artefact.h5'
 
     def __init__(self, subset=1, p_val=0.05, random_state: int=None, verbose=True):
         """
@@ -32,6 +31,7 @@ class KSTest(FeaturewiseOODDetector):
         # self._transformer = make_standard_transformer()
         self._subset_indices = None
         self._num_cols: Optional[np.ndarray] = None
+        self._train_data: pd.DataFrame = None
 
     @property
     def p_val(self):
@@ -56,19 +56,18 @@ class KSTest(FeaturewiseOODDetector):
         return X[self._num_cols]
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
-        io.write_df(X, self._data_artefact_file)
+        self._train_data = X
 
     def _predict_transformed(self, X):
-        return (self._p_val <= 1 - self._predict_proba_transformed(X)).astype(int)
+        return ((1 - self._predict_proba_transformed(X)) <= self._p_val).astype(int)
 
     def _predict_proba_transformed(self, X):
-        orig_data = io.read_df(self._data_artefact_file)
 
-        results = pd.Series(np.arange(orig_data.shape[1]), index=orig_data.columns)
+        results = pd.Series(np.arange(self._train_data.shape[1]), index=self._train_data.columns)
         progress = tqdm(total=X.shape[1])
 
         def __apply_ks_test(i: int):
-            ks = ks_2samp(orig_data.iloc[:, i], X.iloc[:, i])[1]
+            ks = ks_2samp(self._train_data.iloc[:, i], X.iloc[:, i])[1]
             progress.update()
             return ks
 
