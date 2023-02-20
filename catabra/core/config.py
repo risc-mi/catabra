@@ -50,7 +50,7 @@ DEFAULT_CONFIG = {
     # if 'source' is 'pyod': name of one of the modules in pyod.models (e.g. kde)
     # if 'source' is 'external': full import path consisting of modules and class (e.g. custom.module.CustomOOD)
     # if value is <None> no OOD detection is performed
-    "ood_class": "autoencoder",
+    "ood_class": "bins_detector",
     # Import from CaTabRa OODDetector subclasses ('internal'), PyOD ('pyod') or custom source ('external')
     "ood_source": "internal",
     # Keyword arguments for different OOD detectors in the form 'name': value.
