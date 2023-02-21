@@ -1,6 +1,6 @@
 setuptools
 auto-sklearn>=0.14.6
-pandas
+pandas>=1.4.1
 tables
 xlrd
 xlsxwriter

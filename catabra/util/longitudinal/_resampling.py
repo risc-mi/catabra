@@ -1205,6 +1205,9 @@ def _resample_interval_pandas(windows: pd.DataFrame, df: pd.DataFrame, entity_co
 
 def _get_default_value(dtype):
     if dtype.name == 'category':
+        # Using a singleton Categorical to initialize a DataFrame with `n > 1` rows does not work in pandas <= 0.24.2,
+        # but in pandas >= 1.4.1.
+        # Using a singleton Categorical to initialize a Series with `n > 1` rows does not work in pandas <= 1.4.1.
         return pd.Categorical.from_codes([-1], dtype=dtype)
     elif dtype.kind in 'mMf':
         return np.array(None, dtype=dtype)
