@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier

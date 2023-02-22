@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from sklearn.pipeline import make_pipeline
 from sklearn.impute import SimpleImputer
 

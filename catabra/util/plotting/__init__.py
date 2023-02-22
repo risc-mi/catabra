@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from typing import Union
 
 from . import _matplotlib as mpl_backend

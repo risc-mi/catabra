@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from typing import Union, Optional, Iterable, Type, Tuple
 from pathlib import Path
 import numpy as np
@@ -164,7 +167,8 @@ class CaTabRaAnalysis(CaTabRaBase):
             x_train, y_train = encoder.fit_transform(df_train, y=y_train)
             encoder.dump(self._invocation.out / CaTabRaPaths.Encoder)
 
-            if y_train is not None and (self._config.get('time_limit') if self._invocation.time is None else self._invocation.time) != 0:
+            if y_train is not None and (
+            self._config.get('time_limit') if self._invocation.time is None else self._invocation.time) != 0:
                 automl = self._config.get('automl')
                 if automl is not None:
                     backend = AutoMLBackend.get(automl, task=encoder.task_, config=self._config,
@@ -449,14 +453,16 @@ class CaTabRaAnalysis(CaTabRaBase):
             x = hist['timestamp'] - hist['timestamp'].iloc[0]
         else:
             x = np.arange(len(hist))
-        ms = [c for c in hist.columns if c.startswith('val_') or c.startswith('train_') or c.startswith('ensemble_val_')]
+        ms = [c for c in hist.columns if
+              c.startswith('val_') or c.startswith('train_') or c.startswith('ensemble_val_')]
         opt = ('model_id', 'type', 'ensemble_weight')
         if any(c in hist.columns for c in opt):
             text = [''] * len(hist)
             for c in opt:
                 if c in hist.columns:
-                    text = [((t + ', ') if t else t) + c + '=' + ('{:.2f}'.format(v) if isinstance(v, float) else str(v))
-                            for t, v in zip(text, hist[c])]
+                    text = [
+                        ((t + ', ') if t else t) + c + '=' + ('{:.2f}'.format(v) if isinstance(v, float) else str(v))
+                        for t, v in zip(text, hist[c])]
         else:
             text = None
         return dict(training_history=backend.training_history(x, [hist[m] for m in ms], legend=ms, text=text))
@@ -505,22 +511,22 @@ class AnalysisInvocation(Invocation):
         return self._default_config
 
     def __init__(
-        self,
-        *table: Union[str, Path, pd.DataFrame],
-        sample_weight: Optional[str] = None,
-        out: Union[str, Path, None] = None,
-        jobs: Optional[int] = None,
-        classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
-        regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
-        group: Optional[str] = None,
-        split: Optional[str] = None,
-        time: Optional[str] = None,
-        ignore: Optional[Iterable[str]] = None,
-        calibrate: Optional[str] = None,
-        config: Union[str, Path, dict, None] = None,
-        default_config: Optional[str] = None,
-        monitor: Optional[str] = None,
-        **_
+            self,
+            *table: Union[str, Path, pd.DataFrame],
+            sample_weight: Optional[str] = None,
+            out: Union[str, Path, None] = None,
+            jobs: Optional[int] = None,
+            classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
+            regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
+            group: Optional[str] = None,
+            split: Optional[str] = None,
+            time: Optional[str] = None,
+            ignore: Optional[Iterable[str]] = None,
+            calibrate: Optional[str] = None,
+            config: Union[str, Path, dict, None] = None,
+            default_config: Optional[str] = None,
+            monitor: Optional[str] = None,
+            **_
     ):
 
         super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)

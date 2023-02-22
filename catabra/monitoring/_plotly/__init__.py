@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from ..base import TrainingMonitorBackend
 from ...util import logging, plotting
 

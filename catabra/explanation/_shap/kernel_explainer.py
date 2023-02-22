@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 # re-implementation of KernelExplainer to correctly handle DataFrames as input
 # see also https://github.com/slundberg/shap/issues/2530
 

@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from typing import Optional, Tuple
 import pandas as pd
 import numpy as np

@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from .base import TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
 from . import sklearn_explainer
 from .main import explain, CaTabRaExplanation, explain_split, plot_beeswarms, plot_bars, average_local_explanations

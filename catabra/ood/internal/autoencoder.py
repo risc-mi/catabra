@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from copy import deepcopy
 from typing import List
 
@@ -165,5 +168,4 @@ def test():
     train, test = train_test_split(X)
     auto.fit(train)
     print(np.mean(auto.predict_proba(test)))
-test()
 

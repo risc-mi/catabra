@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 import json
 from typing import Union, Optional, Tuple, Type, Dict, List
 from pathlib import Path

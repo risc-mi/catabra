@@ -1,4 +1,7 @@
 
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 class CaTabRaPaths:
     Config = 'config.json'
     TrainData = 'train_data.h5'

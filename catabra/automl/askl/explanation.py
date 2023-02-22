@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 import numpy as np
 
 from ...explanation.sklearn_explainer import TransformationExplainer, IdentityTransformationExplainer, \

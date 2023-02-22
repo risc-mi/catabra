@@ -1,3 +1,6 @@
+#  Copyright (c) 2022. RISC Software GmbH.
+#  All rights reserved.
+
 from typing import Optional, Dict, List
 from multiprocessing import Pool
 import numpy as np
