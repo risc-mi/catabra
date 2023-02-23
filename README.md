@@ -112,8 +112,6 @@ Invoking the two commands generates a bunch of results, most notably
 * **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/examples/Performance-Metrics.ipynb)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
-* Out-of-Distribution (OOD) detection
-  * Configure OOD detection
 * **[Plotting.ipynb](https://github.com/risc-mi/catabra/examples/Plotting.ipynb)**
   * Create plots in Python
   * Create interactive plots
@@ -141,7 +139,7 @@ Invoking the two commands generates a bunch of results, most notably
 Directory [doc/](https://github.com/risc-mi/catabra/doc) documents a couple of specific aspects of CaTabRa, like its
 command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
 
-**TODO**: API documentation, e.g. sphinx
+Detailed API documentation is currently in preparation.
 
 ## References
 
