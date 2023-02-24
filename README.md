@@ -91,7 +91,7 @@ Invoking the two commands generates a bunch of results, most notably
 
 ### Walk-Through Tutorials
 
-* **[Workflow.ipynb](https://github.com/risc-mi/catabra/examples/Workflow.ipynb)**
+* **[Workflow.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Workflow.ipynb)**
   * Analyze data with a binary target
   * Train a high-quality classifier with automatic model selection and hyperparameter tuning
   * Investigate the final classifier and the training history
@@ -99,23 +99,23 @@ Invoking the two commands generates a bunch of results, most notably
   * Evaluate the classifier on held-out test data
   * Explain the classifier by computing SHAP feature importance scores
   * Apply the classifier to new samples
-* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/examples/Longitudinal.ipynb)**
+* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Longitudinal.ipynb)**
   * Process longitudinal data by resampling into "samples x features" format
 
 ### Short Examples
 
-* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/examples/Prediction-Tasks.ipynb)**
+* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Prediction-Tasks.ipynb)**
   * Binary classification
   * Multiclass classification
   * Multilabel classification
   * Regression
-* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/examples/Performance-Metrics.ipynb)**
+* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Performance-Metrics.ipynb)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
-* **[Plotting.ipynb](https://github.com/risc-mi/catabra/examples/Plotting.ipynb)**
+* **[Plotting.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Plotting.ipynb)**
   * Create plots in Python
   * Create interactive plots
-* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Config.ipynb)**
+* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Config.ipynb)**
   * General configuration
     * Ensemble size
     * Time- and Memory budget
@@ -127,16 +127,16 @@ Invoking the two commands generates a bunch of results, most notably
 
 ### Extending CaTabRa
 
-* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Extension.ipynb)**
+* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Extension.ipynb)**
   * Add new AutoML backend
-* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/examples/Explanation-Extension.ipynb)**
+* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Explanation-Extension.ipynb)**
   * Add new explanation backend
-* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/examples/OOD-Extension.ipynb)**
+* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/OOD-Extension.ipynb)**
   * Add new OOD detection backend
 
 ## Documentation
 
-Directory [doc/](https://github.com/risc-mi/catabra/doc) documents a couple of specific aspects of CaTabRa, like its
+Directory [doc/](https://github.com/risc-mi/catabra/tree/main/doc) documents a couple of specific aspects of CaTabRa, like its
 command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
 
 Detailed API documentation is currently in preparation.
