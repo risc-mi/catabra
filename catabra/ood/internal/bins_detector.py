@@ -77,7 +77,7 @@ class BinsDetector(SamplewiseOODDetector):
         Returns distance to bin edges normalized by bin width if value falls within an empty bin
         """
         left, right = self._get_bins_transformed(X)
-        X = X.reset_index().drop('index', axis=1)
+        X = X.reset_index(drop=True)
         left_dist = np.abs(left - X)
         right_dist = np.abs(right - X)
         bin_width = (right - left) / 2
