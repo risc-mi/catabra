@@ -50,17 +50,18 @@ flag.
 ### Usage Mode 1: Command-Line
 
 ```shell
-$ python -m catabra analyze breast_cancer.csv --classify diagnosis --split train --out breast_cancer_result
+$ python -m catabra analyze example_data/breast_cancer.csv --classify diagnosis --split train --out breast_cancer_result
 ```
 This command analyzes `breast_cancer.csv` and trains a prediction model for classifying the samples according to column
 `"diagnosis"`. Column `"train"` is used for splitting the data into a train- and a test set, which means that the final
 model is automatically evaluated on the test set after training. All results are saved in directory `breast_cancer_out`.
 
 ```shell
-$ python -m catabra explain breast_cancer_result --on breast_cancer.csv --out breast_cancer_explanation
+$ python -m catabra explain breast_cancer_result --on example_data/breast_cancer.csv --out breast_cancer_result/expl
 ```
 This command explains the classifier trained in the previous command by computing SHAP feature importance scores for
-every sample. The results are saved in directory `breast_cancer_explanation`.
+every sample. The results are saved in directory `breast_cancer_result/expl`. Depending on the type of the trained
+models, this command may take several minutes to complete.
 
 ### Usage Mode 2: Python
 
@@ -69,8 +70,8 @@ The two commands above translate to the following Python code:
 from catabra.analysis import analyze
 from catabra.explanation import explain
 
-analyze("breast_cancer.csv", classify="diagnosis", split="train", out="breast_cancer_result")
-explain("breast_cancer.csv", "breast_cancer_result", out="breast_cancer_explanation")
+analyze("example_data/breast_cancer.csv", classify="diagnosis", split="train", out="breast_cancer_result")
+explain("example_data/breast_cancer.csv", "breast_cancer_result", out="breast_cancer_result/expl")
 ```
 
 ### Results
@@ -91,7 +92,7 @@ Invoking the two commands generates a bunch of results, most notably
 
 ### Walk-Through Tutorials
 
-* **[Workflow.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Workflow.ipynb)**
+* **[Workflow.ipynb](https://github.com/risc-mi/catabra/examples/Workflow.ipynb)**
   * Analyze data with a binary target
   * Train a high-quality classifier with automatic model selection and hyperparameter tuning
   * Investigate the final classifier and the training history
@@ -99,23 +100,23 @@ Invoking the two commands generates a bunch of results, most notably
   * Evaluate the classifier on held-out test data
   * Explain the classifier by computing SHAP feature importance scores
   * Apply the classifier to new samples
-* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Longitudinal.ipynb)**
+* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/examples/Longitudinal.ipynb)**
   * Process longitudinal data by resampling into "samples x features" format
 
 ### Short Examples
 
-* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Prediction-Tasks.ipynb)**
+* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/examples/Prediction-Tasks.ipynb)**
   * Binary classification
   * Multiclass classification
   * Multilabel classification
   * Regression
-* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Performance-Metrics.ipynb)**
+* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/examples/Performance-Metrics.ipynb)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
-* **[Plotting.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Plotting.ipynb)**
+* **[Plotting.ipynb](https://github.com/risc-mi/catabra/examples/Plotting.ipynb)**
   * Create plots in Python
   * Create interactive plots
-* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Config.ipynb)**
+* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Config.ipynb)**
   * General configuration
     * Ensemble size
     * Time- and Memory budget
@@ -127,16 +128,16 @@ Invoking the two commands generates a bunch of results, most notably
 
 ### Extending CaTabRa
 
-* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Extension.ipynb)**
+* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/examples/AutoML-Extension.ipynb)**
   * Add new AutoML backend
-* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Explanation-Extension.ipynb)**
+* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/examples/Explanation-Extension.ipynb)**
   * Add new explanation backend
-* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/OOD-Extension.ipynb)**
+* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/examples/OOD-Extension.ipynb)**
   * Add new OOD detection backend
 
 ## Documentation
 
-Directory [doc/](https://github.com/risc-mi/catabra/tree/main/doc) documents a couple of specific aspects of CaTabRa, like its
+Directory [doc/](https://github.com/risc-mi/catabra/doc) documents a couple of specific aspects of CaTabRa, like its
 command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
 
 Detailed API documentation is currently in preparation.
