@@ -33,10 +33,6 @@ class AutoMLBackend:
         cls = AutoMLBackend.__registered.get(name)
         return cls if cls is None else cls(**kwargs)
 
-    @classmethod
-    def name(cls) -> str:
-        raise NotImplementedError()
-
     def __init__(self, task: str = None, config: dict = None, tmp_folder: Union[Path, str, None] = None):
         if task not in ('regression', 'binary_classification', 'multiclass_classification',
                         'multilabel_classification'):
@@ -47,6 +43,10 @@ class AutoMLBackend:
         self._tmp_folder: Optional[str] = tmp_folder.as_posix() if isinstance(tmp_folder, Path) else tmp_folder
         self.model_ = None
         self.calibrator_ = None
+
+    @property
+    def name(self) -> str:
+        raise NotImplementedError()
 
     @property
     def tmp_folder(self) -> Optional[Path]:
@@ -176,8 +176,7 @@ class AutoMLBackend:
             y = getattr(self._calibrator, self._calibrator_method)(y)
         return y
 
-    @classmethod
-    def get_versions(cls) -> dict:
+    def get_versions(self) -> dict:
         """
         Get the versions of all key packages and libraries this AutoML backend depends upon.
         :return: Dict whose keys are package names and whose values are version strings.

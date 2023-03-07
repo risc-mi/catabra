@@ -290,14 +290,14 @@ def strip_autosklearn(obj):
 
 class AutoSklearnBackend(AutoMLBackend):
 
-    @classmethod
-    def name(cls) -> str:
-        return 'auto-sklearn'
-
     def __init__(self, **kwargs):
         super(AutoSklearnBackend, self).__init__(**kwargs)
         self.converted_bool_columns_ = None     # tuple of columns of bool dtype that must be converted to float
         self._feature_filter = None
+
+    @property
+    def name(self) -> str:
+        return 'auto-sklearn'
 
     @property
     def model_ids_(self) -> list:
@@ -321,7 +321,7 @@ class AutoSklearnBackend(AutoMLBackend):
             models = [{'model_id': _id, name: m.__class__.__name__}
                       for (_, _id, _), m in self.model_.automl_.models_.items()]
         return dict(
-            automl=self.name(),
+            automl=self.name,
             task=self.task,
             models=models
         )
@@ -421,7 +421,7 @@ class AutoSklearnBackend(AutoMLBackend):
         else:
             voting_keys = self._get_model_keys(ensemble_only=True)
         return FittedEnsemble(
-            name=self.name(),
+            name=self.name,
             task=self.task,
             models={k[1]: self._get_pipeline(k) for k in keys},
             meta_input=[_id for _, _id, _ in voting_keys],
@@ -463,7 +463,7 @@ class AutoSklearnBackend(AutoMLBackend):
             logging.log('No auto-sklearn add-on modules loaded.')
 
         # include/exclude pipeline components
-        prefix = self.name() + '_'
+        prefix = self.name + '_'
         specific = {k[len(prefix):]: v for k, v in self.config.items() if k.startswith(prefix)}
         include = specific.get('include')
         exclude = specific.get('exclude')
@@ -700,8 +700,7 @@ class AutoSklearnBackend(AutoMLBackend):
             jobs = self.config.get('jobs')
         return self._predict_all(self._prepare_for_predict(x), -1 if jobs is None else jobs, batch_size, True)
 
-    @classmethod
-    def get_versions(cls) -> dict:
+    def get_versions(self) -> dict:
         from smac import __version__ as smac_version
         out = {'auto-sklearn': askl_version, 'smac': smac_version, 'pandas': pd.__version__,
                'scikit-learn': sklearn.__version__}

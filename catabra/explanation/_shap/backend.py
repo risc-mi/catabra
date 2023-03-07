@@ -107,12 +107,12 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
                         )
                     self._explainers[_id] = (preprocessing_explainer, estimator_explainer)
 
-    @classmethod
-    def name(cls) -> str:
+    @property
+    def name(self) -> str:
         return 'shap'
 
-    @classmethod
-    def global_behavior(cls) -> dict:
+    @property
+    def global_behavior(self) -> dict:
         return SHAPExplainer.global_behavior()
 
     @property
@@ -151,8 +151,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             features.drop(source_cols, axis=1, inplace=True)
         return features
 
-    @classmethod
-    def get_versions(cls) -> dict:
+    def get_versions(self) -> dict:
         return {'shap': shap.__version__, 'pandas': pd.__version__}
 
     def _explain_single(self, model_id, x: pd.DataFrame, jobs: int, batch_size: int, glob: bool,
