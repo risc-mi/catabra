@@ -22,7 +22,8 @@ from autosklearn import __version__ as askl_version
 
 from ...util import io, logging, split
 from ...util.common import repr_timedelta, repr_list
-from ..base import FittedEnsemble, AutoMLBackend
+from ..base import AutoMLBackend
+from ..fitted_ensemble import FittedEnsemble, _model_predict
 from .scorer import get_scorer
 from . import explanation
 from ...util.preprocessing import FeatureFilter
@@ -180,33 +181,6 @@ def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, f
             other[metric[0]] = metric[1] - (metric[2] * cost)
 
     return val, train, test, other
-
-
-def _model_predict(model, x, batch_size: Optional[int] = None, proba: bool = False, copy: bool = False) -> np.ndarray:
-    # copied and adapted from autosklearn.automl._model_predict()
-
-    if copy:
-        x = x.copy()
-    if isinstance(model, sklearn.ensemble.VotingRegressor):
-        # `VotingRegressor` is not meant for multi-output regression and hence averages on wrong axis
-        # `VotingRegressor.transform()` returns array of shape `(n_samples, n_estimators)` in case of single target,
-        # and `(n_targets, n_samples, n_estimators)` in case of multiple targets
-        prediction = np.average(model.transform(x), axis=-1, weights=model._weights_not_none)
-        if prediction.ndim == 2:
-            prediction = prediction.T
-    else:
-        predict_func = model.predict_proba if proba else model.predict
-        if batch_size is not None and hasattr(model, 'batch_size'):
-            prediction = predict_func(x, batch_size=batch_size)
-        else:
-            prediction = predict_func(x)
-        if proba:
-            np.clip(prediction, 0., 1., out=prediction)
-
-    assert prediction.shape[0] == x.shape[0], \
-        f'Prediction shape {model} is {prediction.shape} while X_ has shape {x.shape}'
-
-    return prediction
 
 
 def strip_autosklearn(obj):
@@ -751,7 +725,7 @@ class AutoSklearnBackend(AutoMLBackend):
         # in fact, there is no need to call `feature_validator.transform()`, so we do not include it in FittedEnsemble
         x = self.model_.automl_.InputValidator.feature_validator.transform(x.copy())
         model = self._get_fitted_model_by_id(model_id)
-        return _model_predict(model, x, batch_size=batch_size, proba=proba, copy=False)
+        return _model_predict(dict(estimator=model), x, batch_size=batch_size, proba=proba, copy=False)
 
     def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], proba: bool) -> Dict[Any, np.ndarray]:
         # get predictions of all constituent models and entire ensemble
@@ -768,7 +742,7 @@ class AutoSklearnBackend(AutoMLBackend):
 
         all_predictions = joblib.Parallel(n_jobs=jobs)(
             joblib.delayed(_model_predict)(
-                models[key],
+                dict(estimator=models[key]),
                 x,
                 batch_size=batch_size,
                 proba=proba,

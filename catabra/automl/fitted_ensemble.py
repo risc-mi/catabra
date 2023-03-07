@@ -78,10 +78,10 @@ def _predict_voting_regressor(estimator: sklearn.ensemble.VotingRegressor, x, **
 def get_prediction_function(estimator, proba: bool = False):
     if isinstance(estimator, FittedModel):
         return estimator.predict_proba if proba else estimator.predict
-    elif proba:
-        return partial(_predict_proba, estimator)               # `partial` works well with multiprocessing
     elif isinstance(estimator, sklearn.ensemble.VotingRegressor):
         return partial(_predict_voting_regressor, estimator)    # `partial` works well with multiprocessing
+    elif proba:
+        return partial(_predict_proba, estimator)               # `partial` works well with multiprocessing
     else:
         return estimator.predict
 
