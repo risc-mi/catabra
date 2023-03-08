@@ -151,24 +151,6 @@ class EnsembleExplainer:
         factory = EnsembleExplainer.__registered.get(name)
         return factory if factory is None else factory(**kwargs)
 
-    @classmethod
-    def name(cls) -> str:
-        raise NotImplementedError()
-
-    @classmethod
-    def global_behavior(cls) -> dict:
-        """
-        Description of the behavior of method `explain_global()`, especially w.r.t. parameter `x`. Dict with keys
-        * "accepts_x": True if `x` can be provided.
-        * "requires_x": True if `x` must be provided. If False but "accepts_x" is True, the global behavior differs
-            depending on whether `x` is provided. "requires_x" can only be True if "accepts_x" is True as well.
-        * "mean_of_local": True if global explanations are the mean of the individual local explanations, if `x` is
-            provided. If True, it might be better to call method `explain()` instead of `explain_global()`, since the
-            computational effort is identical.
-        :return: Dict, as described above.
-        """
-        raise NotImplementedError()
-
     def __init__(self, ensemble: 'FittedEnsemble' = None, config: Optional[dict] = None,
                  feature_names: Optional[list] = None, target_names: Optional[list] = None,
                  x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
@@ -190,6 +172,24 @@ class EnsembleExplainer:
         if not (params is None or (feature_names is None and target_names is None and x is None and y is None)):
             raise ValueError('If params is given, feature_names, target_names, x and y must be None.')
         self.config: dict = config or {}
+
+    @property
+    def name(self) -> str:
+        raise NotImplementedError()
+
+    @property
+    def global_behavior(self) -> dict:
+        """
+        Description of the behavior of method `explain_global()`, especially w.r.t. parameter `x`. Dict with keys
+        * "accepts_x": True if `x` can be provided.
+        * "requires_x": True if `x` must be provided. If False but "accepts_x" is True, the global behavior differs
+            depending on whether `x` is provided. "requires_x" can only be True if "accepts_x" is True as well.
+        * "mean_of_local": True if global explanations are the mean of the individual local explanations, if `x` is
+            provided. If True, it might be better to call method `explain()` instead of `explain_global()`, since the
+            computational effort is identical.
+        :return: Dict, as described above.
+        """
+        raise NotImplementedError()
 
     @property
     def params_(self) -> dict:
@@ -221,7 +221,7 @@ class EnsembleExplainer:
         """
         Explain the ensemble, or some of its constituent models (pipelines), globally.
         :param x: Samples, optional, a DataFrame with the same columns as the ensemble was trained on.
-        Call method `global_behavior()` to see whether this argument is accepted or required (depends on the backend).
+        Check property `global_behavior` to see whether this argument is accepted or required (depends on the backend).
         :param sample_weight: Sample weight. Ignored if `x` is None.
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
@@ -266,8 +266,7 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    @classmethod
-    def get_versions(cls) -> dict:
+    def get_versions(self) -> dict:
         """
         Get the versions of all key packages and libraries this explanation backend depends upon.
         :return: Dict whose keys are package names and whose values are version strings.

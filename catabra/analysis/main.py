@@ -311,8 +311,8 @@ class CaTabRaAnalysis(CaTabRaBase):
             if explainer is None:
                 logging.warn(f'Unknown explanation backend: {self._config["explainer"]}')
             else:
-                (self._invocation.out / explainer.name()).mkdir(exist_ok=True, parents=True)
-                io.dump(explainer.params_, self._invocation.out / explainer.name() / 'params.joblib')
+                (self._invocation.out / explainer.name).mkdir(exist_ok=True, parents=True)
+                io.dump(explainer.params_, self._invocation.out / explainer.name / 'params.joblib')
                 versions.update(explainer.get_versions())
         except Exception as e:  # noqa
             logging.warn(f'Error when creating explainer; skipping\n' + str(e))

@@ -82,7 +82,7 @@ class CaTabRaExplanation(CaTabRaBase):
         if explainer is None:
             logging.log('### Aborting: no trained prediction model or no explainer params found')
             return
-        global_behavior = explainer.global_behavior()
+        global_behavior = explainer.global_behavior
 
         glob = self._invocation.glob
         if glob is None:
@@ -292,7 +292,7 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
         def _save_plots(_obj, _name: str):
             plotting.save(_obj, directory / _name)
 
-    title = explainer.name() + ' Feature Importance'
+    title = explainer.name + ' Feature Importance'
     if glob:
         explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
                                                       batch_size=batch_size, model_id=model_id, show_progress=verbose)
