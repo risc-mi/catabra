@@ -514,19 +514,21 @@ def _get_explainer(estimator, data, permutation, proba):
         pass
     try:
         # covariance matrix is not needed for interventional feature perturbation, which is the default
-        kwargs = dict(masker=(data.mean(axis=0), None))
+        # `masker` must be an array even if `data` is a DataFrame
+        kwargs = dict(masker=(np.asanyarray(data.mean(axis=0)), None))
         explainer = shap.LinearExplainer(estimator, **kwargs)
         return explainer, dict(explainer_class='LinearExplainer', init_kwargs=kwargs)
     except:  # noqa
         pass
 
     data_sample = _sample(data, permutation)
-    try:
-        kwargs = dict(masker=data_sample)
-        explainer = shap.AdditiveExplainer(estimator, **kwargs)
-        return explainer, dict(explainer_class='AdditiveExplainer', init_kwargs=kwargs)
-    except:  # noqa
-        pass
+    # `AdditiveExplainer` lacks a `shap_values()` method and can therefore not be used.
+    # try:
+    #     kwargs = dict(masker=data_sample)
+    #     explainer = shap.AdditiveExplainer(estimator, **kwargs)
+    #     return explainer, dict(explainer_class='AdditiveExplainer', init_kwargs=kwargs)
+    # except:  # noqa
+    #     pass
     try:
         kwargs = dict(data=data_sample)
         explainer = shap.GradientExplainer(estimator, **kwargs)
