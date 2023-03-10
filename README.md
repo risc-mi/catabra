@@ -28,8 +28,10 @@ CaTabRa is both a command-line tool and a library, which means it can be easily 
 
 ### Installation
 
-Clone the repository and install the package with [poetry](https://python-poetry.org/docs/):
-Activate your Python environment and run:
+Clone the repository and install the package with [Poetry](https://python-poetry.org/docs/).
+Set up a new Python environment with Python >=3.9 (e.g. using
+[conda](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands)),
+activate it, and then run
 
 ```shell
 $ git clone https://github.com/risc-mi/catabra.git
@@ -38,8 +40,6 @@ $ poetry install
 ```
 
 The project is installed in editable mode by default. This is useful if you plan to make changes to CaTabRa's code.
-
-CaTabRa's basic system requirements are Linux and Python >=3.9.
 
 **IMPORTANT**: CaTabRa currently only runs on Linux, because
 [auto-sklearn only runs on Linux](https://automl.github.io/auto-sklearn/master/installation.html). If on Windows,
