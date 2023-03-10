@@ -58,8 +58,8 @@ def make_parser():
         if bs_metrics == ['__all__']:
             bs_metrics = '__all__'
         evaluate(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
-                 model_id=args.model_id, explain=expl, glob=getattr(args, 'global'), out=args.out, jobs=args.jobs,
-                 batch_size=args.batch_size, threshold=args.threshold, bootstrapping_metrics=bs_metrics,
+                 model_id=parse_model_id(args.model_id), explain=expl, glob=getattr(args, 'global'), out=args.out,
+                 jobs=args.jobs, batch_size=args.batch_size, threshold=args.threshold, bootstrapping_metrics=bs_metrics,
                  bootstrapping_repetitions=args.bootstrapping_repetitions, from_invocation=getattr(args, 'from', None))
 
     def _explain(args: argparse.Namespace):
@@ -72,8 +72,9 @@ def make_parser():
         elif not loc:
             glob = None
         explain(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
-                model_id=args.model_id, out=args.out, glob=glob, jobs=args.jobs, batch_size=args.batch_size,
-                aggregation_mapping=args.aggregation_mapping, from_invocation=getattr(args, 'from', None))
+                model_id=parse_model_id(args.model_id), out=args.out, glob=glob, jobs=args.jobs,
+                batch_size=args.batch_size, aggregation_mapping=args.aggregation_mapping,
+                from_invocation=getattr(args, 'from', None))
 
     def _calibrate(args: argparse.Namespace):
         from .calibration import calibrate
@@ -85,9 +86,9 @@ def make_parser():
         expl = args.explain
         if expl is not None and len(expl) == 0:
             expl = '__all__'
-        apply(*(args.on or []), folder=args.src, model_id=args.model_id, explain=expl, check_ood=not args.no_ood,
-              out=args.out, jobs=args.jobs, batch_size=args.batch_size, from_invocation=getattr(args, 'from', None),
-              print_results='auto')
+        apply(*(args.on or []), folder=args.src, model_id=parse_model_id(args.model_id), explain=expl,
+              check_ood=not args.no_ood, out=args.out, jobs=args.jobs, batch_size=args.batch_size,
+              from_invocation=getattr(args, 'from', None), print_results='auto')
 
     analyzer = subparsers.add_parser(
         'analyze',
@@ -494,6 +495,36 @@ def make_parser():
 
 
 parser = make_parser()
+
+
+def parse_model_id(model_id):
+    """
+    This function tries to convert model-IDs given as strings into integers (if possible).
+    Strings starting and ending with either " or ' are returned as strings, but without these quotation marks.
+
+    Examples
+    --------
+        * non-string atoms (int, float, bool, None, etc.) are returned unchanged
+        * "12" --> 12
+        * "some non-numeric string" --> "some non-numeric string"
+        * "'12'" --> "12"
+        * "''" --> ""
+
+    :param model_id: The model-ID to parse, an atom of any type or a list or set thereof.
+    :return: Parsed model-ID(s).
+    """
+    if isinstance(model_id, (list, set)):
+        return model_id.__class__(parse_model_id(m) for m in model_id)
+    elif isinstance(model_id, str):
+        if len(model_id) >= 2 and model_id[0] in ("'", '"') and model_id[0] == model_id[-1]:
+            return model_id[1:-1]
+        else:
+            try:
+                return int(model_id)
+            except ValueError:
+                return model_id
+    else:
+        return model_id
 
 
 def main(*args: str):
