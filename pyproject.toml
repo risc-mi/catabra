@@ -5,6 +5,13 @@ description = "CaTabRa is a Python package for analyzing tabular data in a large
 authors = ["RISC Software GmbH"]
 license = "Apache 2.0 with Commons Clause"
 readme = "README.md"
+repository = "https://github.com/risc-mi/catabra"
+packages = [
+    {include = "catabra"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -21,6 +28,18 @@ numpy = "^1.24.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
+pytest-subtests = "^0.10.0"
+pytest-cov = "^4.0.0"
+pytest-xdist = "^3.2.0"
+dask = "^2023.2.1"
+
+[tool.poetry_bumpversion.file."catabra/__version__.py"]
+
+[tool.pytest_ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+test_paths = ['test']
 
 [build-system]
 requires = ["poetry-core"]

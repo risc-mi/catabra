@@ -28,16 +28,16 @@ CaTabRa is both a command-line tool and a library, which means it can be easily 
 
 ### Installation
 
-Clone the repository and install the package with pip:
+Clone the repository and install the package with [poetry](https://python-poetry.org/docs/):
+Activate your Python environment and run:
+
 ```shell
 $ git clone https://github.com/risc-mi/catabra.git
 $ cd catabra
-$ pip install [-e] .
+$ poetry install
 ```
 
-`-e` is optional and installs the package in
-[editable mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html).
-This is useful if you plan to make changes to CaTabRa's code.
+The project is installed in editable mode by default. This is useful if you plan to make changes to CaTabRa's code.
 
 CaTabRa's basic system requirements are Linux and Python >=3.9.
 
