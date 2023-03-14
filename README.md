@@ -125,6 +125,10 @@ Invoking the two commands generates a bunch of results, most notably
     * Model classes and preprocessing steps
     * Resampling strategies for internal validation
     * Grouped splitting
+* **[Fixed-Pipeline.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Fixed-Pipeline.ipynb)**
+  * Specify fixed ML pipeline (no automatic hyperparameter optimization)
+  * Manually configure hyperparameters
+  * Suitable for creating baseline models
 
 ### Extending CaTabRa
 
