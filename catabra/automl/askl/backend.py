@@ -20,7 +20,7 @@ from smac.tae import StatusType
 from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
 
-from ...util import io, logging, split
+from ...util import io, logging, split, metrics
 from ...util.common import repr_timedelta, repr_list
 from ..base import AutoMLBackend
 from ..fitted_ensemble import FittedEnsemble, _model_predict
@@ -551,11 +551,11 @@ class AutoSklearnBackend(AutoMLBackend):
             kwargs['resampling_strategy_arguments'] = resampling_args
 
         # metric and scoring functions
-        metrics = self.config.get(self.task + '_metrics', [])
-        if len(metrics) > 0:
-            kwargs['metric'] = get_scorer(metrics[0])
-            if len(metrics) > 1:
-                kwargs['scoring_functions'] = [get_scorer(m) for m in metrics[1:]]
+        task_metrics = self.config.get(self.task + '_metrics', [])
+        if len(task_metrics) > 0:
+            kwargs['metric'] = get_scorer(task_metrics[0])
+            if len(task_metrics) > 1:
+                kwargs['scoring_functions'] = [get_scorer(m) for m in task_metrics[1:]]
         metric = kwargs.get('metric')
 
         if self.task == 'regression':
@@ -662,9 +662,9 @@ class AutoSklearnBackend(AutoMLBackend):
         if calibrated:
             y = self.predict_proba(x, jobs=jobs, batch_size=batch_size, model_id=model_id, calibrated=True)
             if self.task == 'multiclass_classification':
-                y = np.argmax(y, axis=1)
+                y = metrics.multiclass_proba_to_pred(y)
             else:
-                y = (y > 0.5).astype(np.int32)
+                y = (y >= 0.5).astype(np.int32)
         elif model_id is None:
             y = self.model_.predict(self._prepare_for_predict(x), n_jobs=-1 if jobs is None else jobs,
                                     batch_size=batch_size)
