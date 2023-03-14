@@ -105,6 +105,56 @@ class _weighted_average(_OperatorBase):     # noqa
                            for i, w in enumerate(weights)]) / weights.sum()
 
 
+class _NegativeFunction(_OperatorBase):
+
+    def __call__(self, *args, **kwargs):
+        return -self._func(*args, **kwargs)
+
+    @property
+    def __name__(self) -> str:
+        return '-' + self.get_function_name(self._func)
+
+    @classmethod
+    def make(cls, func):
+        if isinstance(func, _NegativeFunction):
+            return func.base_function
+        else:
+            return cls(func)
+
+
+def to_score(func):
+    """
+    Convenience function for converting a metric into a (possibly different) metric that returns scores (i.e., higher
+    values correspond to better results). That means, if the given metric returns scores already, it is returned
+    unchanged. Otherwise, it is negated.
+    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc. Note that in case of classification
+    metrics, both thresholded and non-thresholded metrics are accepted.
+    :return: Either `func` itself or `-func`.
+    """
+
+    func_th = maybe_thresholded(func, threshold=0.5)
+    y = np.array([0, 0, 1], dtype=np.float32)
+    y_hat = y * 0.8 + 0.1       # some metrics (e.g., log_loss) don't accept exact 0. and 1.
+    try:
+        perfect = func_th(y, y_hat)
+    except:     # noqa
+        y = y[..., np.newaxis]
+        y_hat = y_hat[..., np.newaxis]
+        try:
+            perfect = func_th(y, y_hat)
+        except:     # noqa
+            y[1] = 1.
+            y[2] = 2.
+            y_hat = np.eye(3, dtype=np.float32) * 0.8 + 0.1
+            perfect = func_th(y, y_hat)
+
+    worse = func_th(y, y_hat[::-1])
+    if perfect < worse:
+        return _NegativeFunction.make(func)
+    else:
+        return func
+
+
 def get(name):
     """
     Retrieve a metric function given by its name.
