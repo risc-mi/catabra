@@ -13,9 +13,9 @@ from ..core.paths import CaTabRaPaths
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
-            split: Optional[str] = None, sample_weight: Optional[str] = None, out: Union[str, Path, None] = None,
-            glob: Optional[bool] = False, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-            aggregation_mapping: Optional[Dict[str, List[str]]] = None,
+            explainer: Optional[str] = None, split: Optional[str] = None, sample_weight: Optional[str] = None,
+            out: Union[str, Path, None] = None, glob: Optional[bool] = None, jobs: Optional[int] = None,
+            batch_size: Optional[int] = None, aggregation_mapping: Optional[Dict[str, List[str]]] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Explain an existing CaTabRa object (prediction model) in terms of feature importance.
@@ -26,6 +26,9 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     :param model_id: Optional, ID(s) of the prediction model(s) to evaluate. If None or "__ensemble__", all models in
     the ensemble are explained, if possible. Note that due to technical restrictions not all models might be
     explainable.
+    :param explainer: Optional, name of the explainer to use. Defaults to the first explainer specified in config param
+    "explainer". Note that only explainers that were fitted to training data during "analyze" can be used, as well as
+    explainers that do not need to be fit to training data.
     :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
     subset is explained individually. In contrast to function `analyze()`, the name/values of the column do not need to
     carry any semantic information about training and test sets.
@@ -51,6 +54,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
         *table,
         folder=folder,
         model_id=model_id,
+        explainer=explainer,
         glob=glob,
         split=split,
         sample_weight=sample_weight,
@@ -78,8 +82,16 @@ class CaTabRaExplanation(CaTabRaBase):
             logging.log('### Aborting')
             return
 
-        explainer = loader.get_explainer()
+        explainer = loader.get_explainer(explainer=self._invocation.explainer)
         if explainer is None:
+            if self._invocation.explainer is not None:
+                from .base import EnsembleExplainer
+                lst = EnsembleExplainer.list_explainers()
+                if self._invocation.explainer not in lst:
+                    from ..util.common import repr_list
+                    logging.log(f'### Aborting: unknown explanation backend {self._invocation.explainer};'
+                                ' choose among ' + repr_list(lst))
+                    return
             logging.log('### Aborting: no trained prediction model or no explainer params found')
             return
         behavior = explainer.behavior
@@ -175,6 +187,10 @@ class ExplanationInvocation(Invocation):
         return self._model_id
 
     @property
+    def explainer(self) -> Optional[str]:
+        return self._explainer
+
+    @property
     def glob(self) -> Optional[bool]:
         return self._glob
 
@@ -195,13 +211,15 @@ class ExplanationInvocation(Invocation):
             jobs: Optional[int] = None,
             folder: Union[str, Path] = None,
             model_id=None,
-            glob: Optional[bool] = False,
+            explainer=None,
+            glob: Optional[bool] = None,
             batch_size: Optional[int] = None,
             aggregation_mapping: Union[str, Path, Dict, None] = None
     ):
         super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)
         self._folder = folder
         self._model_id = model_id
+        self._explainer = explainer
         self._glob = glob
         self._batch_size = batch_size
         self._aggregation_mapping = aggregation_mapping
@@ -213,6 +231,8 @@ class ExplanationInvocation(Invocation):
                 self._folder = src.get('folder')
             if self._model_id is None:
                 self._model_id = src.get('model_id')
+            if self._explainer is None:
+                self._explainer = src.get('explainer')
             if self._glob is None:
                 self._glob = src.get('glob')
             if self._batch_size is None:
@@ -252,6 +272,7 @@ class ExplanationInvocation(Invocation):
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in self._table],
             folder=self._folder,
             model_id=self._model_id,
+            explainer=self._explainer,
             glob=self._glob,
             batch_size=self._batch_size,
             aggregation_mapping=self._aggregation_mapping
