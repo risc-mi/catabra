@@ -151,6 +151,10 @@ class EnsembleExplainer:
         factory = EnsembleExplainer.__registered.get(name)
         return factory if factory is None else factory(**kwargs)
 
+    @staticmethod
+    def list_explainers() -> List[str]:
+        return list(EnsembleExplainer.__registered.keys())
+
     def __init__(self, ensemble: 'FittedEnsemble' = None, config: Optional[dict] = None,
                  feature_names: Optional[list] = None, target_names: Optional[list] = None,
                  x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
