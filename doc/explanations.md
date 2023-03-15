@@ -55,6 +55,42 @@ Advances in Neural Information Processing Systems 30: 4765–4774, 2017.
 
 [2] [shap Github repository](https://github.com/slundberg/shap)
 
+### Permutation Importance
+
+Permutation importance [1] is a simple model-agnostic approach to calculate global feature importance scores, without
+taking potential feature interactions into account.
+Since it does not need to be fit to training data, there is no need to adjust config parameter `"explainer"`. Simply
+pass `--explainer permutation` when invoking command `explain`, or set the keyword argument `explainer="permutation"`
+of function `catabra.explanation.explain()`.
+
+Permutation importance is calculated by randomly permuting a feature and comparing the performance of a prediction
+model to its performance on the original data, wrt. some given metric. The performance drop can be regarded as an
+indicator of the importance of the feature. This process is repeated for all features individually, i.e., only one
+single feature is permuted at a time. More information, also regarding possible caveats, can be found in the
+[scikit-learn documentation](https://scikit-learn.org/stable/modules/permutation_importance.html).
+
+Permutation importance can only produce *global* feature importance scores and needs *labeled data*. Furthermore, it
+does not distinguish between positive and negative contributions, as typically (though not necessarily always) the
+calculated importance scores will be non-negative.
+
+Since permutation importance is inherently model-agnostic, it is always applied to full pipelines at once. Thus,
+importance scores are never back-propagated through preprocessing steps, as described in Section "Explaining Pipelines
+with Model-Specific Methods".
+
+#### Interpretation of Results
+
+The importance of a feature *f* reflects the performance drop of the model to explain when *f* is "switched off", which
+is accomplished by randomly permuting *f*. Hence, the importance not only depends on the model and the data it is
+explained on, but also on the metric used for measuring the performance.
+
+In contrast to more sophisticated model explanation techniques, permutation importance does not take feature
+interactions into account. Thus, if two features carrying useful information are strongly correlated, permutation
+importance might deem both unimportant (depending on the model).
+
+#### References
+
+[1] Leo Breiman. [*Random Forests*](https://doi.org/10.1023/A:1010933404324). Machine Learning 45(1): 5-32, 2001.
+
 ## Explaining Pipelines with Model-Specific Methods
 
 A pipeline consists of a (possibly empty) list of preprocessing steps and a final estimator. Explaining a pipeline can

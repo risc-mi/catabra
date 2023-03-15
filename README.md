@@ -98,7 +98,7 @@ Invoking the two commands generates a bunch of results, most notably
   * Investigate the final classifier and the training history
   * Calibrate the classifier on dedicated calibration data
   * Evaluate the classifier on held-out test data
-  * Explain the classifier by computing SHAP feature importance scores
+  * Explain the classifier by computing SHAP- and permutation importance scores
   * Apply the classifier to new samples
 * **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Longitudinal.ipynb)**
   * Process longitudinal data by resampling into "samples x features" format
