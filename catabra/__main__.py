@@ -350,8 +350,8 @@ def make_parser():
         metavar='EXPLAINER',
         help='Name of the explainer to use. Defaults to the first explainer specified in config param "explainer". '
              'Note that only explainers that were fitted to training data during "analyze" can be used, as well as'
-             ' explainers that do not need to be fit to training data. Pass `-e` without arguments to get a list of'
-             ' all available explainers.'
+             ' explainers that do not need to be fit to training data (e.g., "permutation"). Pass `-e` without'
+             ' arguments to get a list of all available explainers.'
     )
     explainer.add_argument(
         '-g', '--global',

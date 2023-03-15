@@ -218,8 +218,8 @@ In addition, there are optional arguments as well:
     Check out `SOURCE/model_summary.json` for all available model-IDs.
 * `--explainer EXPLAINER`: Name of the explainer to use. Defaults to the first explainer specified in config param
     `"explainer"`. Note that only explainers that were fitted to training data during `analyze` can be used, as well as
-    explainers that do not need to be fit to training data. Pass `-e` without arguments to get a list of all available
-    explainers.
+    explainers that do not need to be fit to training data (e.g., `"permutation"`). Pass `-e` without arguments to get
+    a list of all available explainers.
 * `--global`: Create global explanations. If specified, `TABLE` might not be required (depends on the explanation
     backend). Mutually exclusive with `--local`. If neither `--global` nor `--local` are specified, global or local
     explanations are generated depending on the explanation backend.

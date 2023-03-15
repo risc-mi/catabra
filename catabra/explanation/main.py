@@ -28,7 +28,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     explainable.
     :param explainer: Optional, name of the explainer to use. Defaults to the first explainer specified in config param
     "explainer". Note that only explainers that were fitted to training data during "analyze" can be used, as well as
-    explainers that do not need to be fit to training data.
+    explainers that do not need to be fit to training data (e.g., "permutation").
     :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
     subset is explained individually. In contrast to function `analyze()`, the name/values of the column do not need to
     carry any semantic information about training and test sets.
@@ -532,15 +532,15 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
         groups = {str(df.name): [df.name]}
         df = df.to_frame()
     else:
-        if df.shape[1] == 2 and '<0' in df.columns and '>0' in df.columns:
-            groups = {'': list(df.columns)}
-        elif df.shape[1] == 4 and '<0' in df.columns and '>0' in df.columns \
-                and '<0 std' in df.columns and '>0 std' in df.columns:
-            groups = {'': ['<0', '>0']}
+        # ignore all columns ending with " std" for which another column without that suffix exists
+        all_columns = [c for c in df.columns
+                       if not (isinstance(c, str) and c.endswith(' std') and c[:-4] in df.columns)]
+        if len(all_columns) == 2 and '<0' in all_columns and '>0' in all_columns:
+            groups = {'': all_columns}
         else:
             cols = {c[:-3] if isinstance(c, str) and (c.endswith('_>0') or c.endswith('_<0')) else c
-                    for c in df.columns}
-            groups = {str(c): [c0 for c0 in (c, f'{c}_>0', f'{c}_<0') if c0 in df.columns] for c in cols}
+                    for c in all_columns}
+            groups = {str(c): [c0 for c0 in (c, f'{c}_>0', f'{c}_<0') if c0 in all_columns] for c in cols}
         idx = pd.Series(0., index=df.index)
         for columns in groups.values():
             idx = np.maximum(idx, np.maximum(0, df[columns].max(axis=1)) - np.minimum(0, df[columns].min(axis=1)))
@@ -548,7 +548,7 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
 
     if max_features < len(idx) and add_sum_of_remaining:
         df0 = df.reindex(idx[:max_features - 1])
-        df0.loc[f'Sum of {len(idx) + 1 -max_features} remaining features'] = \
+        df0.loc[f'Sum of {len(idx) + 1 - max_features} remaining features'] = \
             df.loc[idx[max_features - 1:]].sum(axis=0)
     else:
         df0 = df.reindex(idx[:max_features])
