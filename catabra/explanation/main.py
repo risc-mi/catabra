@@ -82,11 +82,12 @@ class CaTabRaExplanation(CaTabRaBase):
         if explainer is None:
             logging.log('### Aborting: no trained prediction model or no explainer params found')
             return
-        global_behavior = explainer.global_behavior
+        behavior = explainer.behavior
 
         glob = self._invocation.glob
         if glob is None:
-            glob = not (global_behavior.get('mean_of_local', False) or len(self._invocation.table) > 0)
+            glob = not (behavior.get('supports_local') and (behavior.get('global_is_mean_of_local', False) or
+                                                            len(self._invocation.table) > 0))
 
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Explanation started at {self._invocation.start}')
@@ -97,9 +98,10 @@ class CaTabRaExplanation(CaTabRaBase):
             # merge tables
             df, _ = tu.merge_tables(self._invocation.table)
             if df is None:
-                if not glob or global_behavior.get('requires_x', False):
+                if not glob or behavior.get('global_requires_x', False):
                     raise ValueError('No table(s) to explain models on specified.')
                 x_test = None
+                y_test = None
             else:
                 if df.columns.nlevels != 1:
                     raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
@@ -112,6 +114,10 @@ class CaTabRaExplanation(CaTabRaBase):
                     io.write_df(df, self._invocation.out / CaTabRaPaths.ExplanationData)
 
                 x_test = encoder.transform(x=df)
+                try:
+                    y_test = encoder.transform(y=df)
+                except ValueError:
+                    y_test = None
 
             _iter_splits = self._get_split_iterator(df)
             sample_weights = self._invocation.get_sample_weights(df)
@@ -128,7 +134,8 @@ class CaTabRaExplanation(CaTabRaBase):
             for mask, directory in _iter_splits():
                 if mask is not None:
                     logging.log('*** Split ' + directory.stem)
-                explain_split(explainer, x=x_test if mask is None else x_test[mask],
+                explain_split(explainer, x=x_test if x_test is None or mask is None else x_test[mask],
+                              y=y_test if y_test is None or mask is None else y_test[mask],
                               sample_weight=sample_weights if sample_weights is None or mask is None else
                               sample_weights[mask],
                               directory=directory, glob=glob, model_id=model_id, batch_size=self._invocation.batch_size,
@@ -256,7 +263,7 @@ class ExplanationInvocation(Invocation):
         return False
 
 
-def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None,
+def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
                   sample_weight: Optional[np.ndarray] = None, directory=None, glob: bool = False,
                   model_id=None, batch_size: Optional[int] = None, jobs: int = 1,
                   aggregation_mapping: Optional[Dict] = None, static_plots: bool = True,
@@ -265,6 +272,7 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     Explain a single data split.
     :param explainer: Explainer object.
     :param x: Encoded data to apply `explainer` to, optional unless `glob` is False. Only features, no labels.
+    :param y: Encoded data to apply `explainer` to, optional. Only labels, no features.
     :param sample_weight: Sample weights, optional. Ignored if `x` is None or `glob` is False.
     :param directory: Directory where to save the explanations. If None, results are returned in a dict.
     :param glob: Whether to create global explanations.
@@ -294,7 +302,7 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
 
     title = explainer.name + ' Feature Importance'
     if glob:
-        explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
+        explanations: dict = explainer.explain_global(x=x, y=y, sample_weight=sample_weight, jobs=jobs,
                                                       batch_size=batch_size, model_id=model_id, show_progress=verbose)
         if aggregation_mapping is not None:
             explanations = {model: explainer.aggregate_explanations_global(expl, aggregation_mapping)
@@ -305,7 +313,7 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
         if interactive_plots:
             _save_plots(plot_bars(explanations, interactive=True, title=title), 'interactive_plots')
     else:
-        explanations: dict = explainer.explain(x, jobs=jobs, batch_size=batch_size,
+        explanations: dict = explainer.explain(x, y=y, jobs=jobs, batch_size=batch_size,
                                                model_id=model_id, show_progress=verbose)
         if aggregation_mapping is not None:
             explanations = {model: explainer.aggregate_explanations(expl, aggregation_mapping)

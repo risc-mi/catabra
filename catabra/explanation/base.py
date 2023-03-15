@@ -182,15 +182,20 @@ class EnsembleExplainer:
         raise NotImplementedError()
 
     @property
-    def global_behavior(self) -> dict:
+    def behavior(self) -> dict:
         """
-        Description of the behavior of method `explain_global()`, especially w.r.t. parameter `x`. Dict with keys
-        * "accepts_x": True if `x` can be provided.
-        * "requires_x": True if `x` must be provided. If False but "accepts_x" is True, the global behavior differs
-            depending on whether `x` is provided. "requires_x" can only be True if "accepts_x" is True as well.
-        * "mean_of_local": True if global explanations are the mean of the individual local explanations, if `x` is
-            provided. If True, it might be better to call method `explain()` instead of `explain_global()`, since the
-            computational effort is identical.
+        Description of the behavior of methods `explain()` and `explain_global()`, especially w.r.t. parameters `x`
+        and `y`. Dict with keys
+        * "supports_local": True if the backend supports local explanations, i.e., method `explain()` can be called.
+            If False, calling `explain()` raises an exception.
+        * "requires_y": True if `y` must be passed to `explain()` and `explain_global()`.
+        * "global_accepts_x": True if `x` can be passed to method `explain_global()`.
+        * "global_requires_x": True if `x` must be passed to method `explain_global()`. If False but "global_accepts_x"
+            is True, the global behavior differs depending on whether `x` is provided. "global_requires_x" can only be
+            True if "global_accepts_x" is True as well.
+        * "global_is_mean_of_local": True if global explanations are the mean of the individual local explanations, if
+            `x` is provided. If True, it might be better to call method `explain()` instead of `explain_global()`,
+            since the computational effort is identical. Can only be True if "supports_local" is True as well.
         :return: Dict, as described above.
         """
         raise NotImplementedError()
@@ -202,11 +207,14 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def explain(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
-                show_progress: bool = False) -> dict:
+    def explain(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None, jobs: int = 1,
+                batch_size: Optional[int] = None, model_id=None, show_progress: bool = False) -> dict:
         """
         Explain the ensemble, or some of its constituent models (pipelines), on a set of samples.
-        :param x: The samples, a DataFrame with the same columns as the ensemble was trained on.
+        :param x: The samples, a DataFrame with the same feature columns as the ensemble was trained on.
+        :param y: The labels, optional. If given, a DataFrame with the same number of rows and row index as `x` and the
+        same target columns as the ensemble was trained on. Check property `behavior` to see whether this argument is
+        required (depends on the backend).
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
         :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.
@@ -219,13 +227,16 @@ class EnsembleExplainer:
         """
         raise NotImplementedError()
 
-    def explain_global(self, x: Optional[pd.DataFrame] = None, sample_weight: Optional[np.ndarray] = None,
-                       jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
-                       show_progress: bool = False) -> dict:
+    def explain_global(self, x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
+                       sample_weight: Optional[np.ndarray] = None, jobs: int = 1, batch_size: Optional[int] = None,
+                       model_id=None, show_progress: bool = False) -> dict:
         """
         Explain the ensemble, or some of its constituent models (pipelines), globally.
         :param x: Samples, optional, a DataFrame with the same columns as the ensemble was trained on.
-        Check property `global_behavior` to see whether this argument is accepted or required (depends on the backend).
+        Check property `behavior` to see whether this argument is accepted or required (depends on the backend).
+        :param y: The labels, optional. If given, a DataFrame with the same number of rows and row index as `x` and the
+        same target columns as the ensemble was trained on. Check property `behavior` to see whether this argument is
+        required (depends on the backend).
         :param sample_weight: Sample weight. Ignored if `x` is None.
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.

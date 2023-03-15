@@ -112,20 +112,20 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         return 'shap'
 
     @property
-    def global_behavior(self) -> dict:
-        return SHAPExplainer.global_behavior()
+    def behavior(self) -> dict:
+        return SHAPExplainer.behavior()
 
     @property
     def params_(self) -> dict:
         return self._params
 
-    def explain(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
-                show_progress: bool = False) -> dict:
+    def explain(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None, jobs: int = 1,
+                batch_size: Optional[int] = None, model_id=None, show_progress: bool = False) -> dict:
         return self._explain_multi(model_id, x, None, jobs, batch_size, False, not show_progress)
 
-    def explain_global(self, x: Optional[pd.DataFrame] = None, sample_weight: Optional[np.ndarray] = None,
-                       jobs: int = 1, batch_size: Optional[int] = None, model_id=None,
-                       show_progress: bool = False) -> dict:
+    def explain_global(self, x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
+                       sample_weight: Optional[np.ndarray] = None, jobs: int = 1, batch_size: Optional[int] = None,
+                       model_id=None, show_progress: bool = False) -> dict:
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
@@ -284,8 +284,9 @@ class SHAPExplainer:
             self._explainer = _make_explainer(estimator, self._params, self._task != 'regression')
 
     @classmethod
-    def global_behavior(cls) -> dict:
-        return dict(accepts_x=True, requires_x=True, mean_of_local=True)
+    def behavior(cls) -> dict:
+        return dict(supports_local=True, requires_y=False, global_accepts_x=True,
+                    global_requires_x=True, global_is_mean_of_local=True)
 
     @property
     def params_(self) -> dict:
