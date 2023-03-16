@@ -72,12 +72,14 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         if y is None:
             raise ValueError(f'{self.__class__.__name__} requires labels for global explanations.')
-        if model_id in (None, '__ensemble__') or '__ensemble__' in model_id:
+        if model_id is None:
             keys = None
         elif not isinstance(model_id, (list, set)):
             keys = [model_id]
         else:
             keys = model_id
+        if keys is not None and '__ensemble__' in keys:
+            keys = None
 
         mask = np.isfinite(y).all(axis=1)
         if not mask.all():
