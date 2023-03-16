@@ -324,21 +324,16 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     title = explainer.name + ' Feature Importance'
     if glob:
         explanations: dict = explainer.explain_global(x=x, y=y, sample_weight=sample_weight, jobs=jobs,
-                                                      batch_size=batch_size, model_id=model_id, show_progress=verbose)
-        if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations_global(expl, aggregation_mapping)
-                            for model, expl in explanations.items()}
-
+                                                      batch_size=batch_size, model_id=model_id,
+                                                      mapping=aggregation_mapping, show_progress=verbose)
         if static_plots:
             _save_plots(plot_bars(explanations, interactive=False, title=title), 'static_plots')
         if interactive_plots:
             _save_plots(plot_bars(explanations, interactive=True, title=title), 'interactive_plots')
     else:
         explanations: dict = explainer.explain(x, y=y, jobs=jobs, batch_size=batch_size,
-                                               model_id=model_id, show_progress=verbose)
+                                               model_id=model_id, mapping=aggregation_mapping, show_progress=verbose)
         if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations(expl, aggregation_mapping)
-                            for model, expl in explanations.items()}
             x = explainer.aggregate_features(x, aggregation_mapping)
 
         if static_plots:

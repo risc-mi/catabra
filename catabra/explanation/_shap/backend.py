@@ -120,36 +120,36 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
         return self._params
 
     def explain(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None, jobs: int = 1,
-                batch_size: Optional[int] = None, model_id=None, show_progress: bool = False) -> dict:
-        return self._explain_multi(model_id, x, None, jobs, batch_size, False, not show_progress)
+                batch_size: Optional[int] = None, model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                show_progress: bool = False) -> dict:
+        return self._explain_multi(model_id, x, None, jobs, batch_size, False, mapping, not show_progress)
 
     def explain_global(self, x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
                        sample_weight: Optional[np.ndarray] = None, jobs: int = 1, batch_size: Optional[int] = None,
-                       model_id=None, show_progress: bool = False) -> dict:
+                       model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                       show_progress: bool = False) -> dict:
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
-        return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, not show_progress)
+        return self._explain_multi(model_id, x, sample_weight, jobs, batch_size, True, mapping, not show_progress)
 
-    def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
-        explanations = explanations.copy()
-        for target_col, source_cols in mapping.items():
-            explanations[target_col] = explanations[source_cols].sum(axis=1)
-            explanations = explanations.drop(source_cols, axis=1, inplace=True)
+    @staticmethod
+    def aggregate_explanations(explanations: pd.DataFrame, mapping: Optional[Dict[str, List[str]]]):
+        # TODO: Check whether this could be passed directly to SHAP, to switch all features in a group off
+        #   simultaneously.
+        #   Some SHAP explainers support this through `Partition` maskers, others (e.g., TreeExplainers) don't.
+        if mapping is not None:
+            explanations = explanations.copy()
+            for target_col, source_cols in mapping.items():
+                explanations[target_col] = explanations[source_cols].sum(axis=1)
+                explanations.drop(source_cols, axis=1, inplace=True)
         return explanations
 
-    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
-        return self.aggregate_explanations(explanations.T, mapping).T
-
-    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
-        features = features.copy()
-        for target_col, source_cols in mapping.items():
-            try:
-                # only add columns if mean can be computed
-                features[target_col] = features[source_cols].mean(axis=1)
-            except:     # noqa
-                pass
-            features.drop(source_cols, axis=1, inplace=True)
-        return features
+    @staticmethod
+    def aggregate_explanations_global(explanations: pd.DataFrame, mapping: Optional[Dict[str, List[str]]]):
+        if mapping is None:
+            return explanations
+        else:
+            return SHAPEnsembleExplainer.aggregate_explanations(explanations.T, mapping).T
 
     def get_versions(self) -> dict:
         return {'shap': shap.__version__, 'pandas': pd.__version__}
@@ -185,7 +185,7 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             return np.concatenate(explanations, axis=-2)    # sample axis is last-but-one
 
     def _explain_multi(self, model_id: Optional[list], x: pd.DataFrame, sample_weight: Optional[np.ndarray], jobs: int,
-                       batch_size: Optional[int], glob: bool, silent: bool) -> dict:
+                       batch_size: Optional[int], glob: bool, mapping: Optional[dict], silent: bool) -> dict:
         if batch_size is None:
             batch_size = min(32, len(x))
         if model_id is None:
@@ -242,23 +242,32 @@ class SHAPEnsembleExplainer(EnsembleExplainer):
             # the polarity of scores
             out = {k: _local_to_global(v, sample_weight) for k, v in out.items()}
 
-        return {k: self._finalize_output(v, x.index, glob) for k, v in out.items()}
+        return {k: self._finalize_output(v, x.index, glob, mapping) for k, v in out.items()}
 
-    def _finalize_output(self, s: np.ndarray, index, glob: bool):
+    def _finalize_output(self, s: np.ndarray, index, glob: bool, mapping: Optional[dict]):
         if glob:
             if s.ndim == 2:
                 # (2, n_features)
                 # don't call columns "pos" and "neg", as these might be confused with positive and negative class
-                return pd.DataFrame(data=s.T, index=self._feature_names, columns=['>0', '<0'])
+                return SHAPEnsembleExplainer.aggregate_explanations_global(
+                    pd.DataFrame(data=s.T, index=self._feature_names, columns=['>0', '<0']),
+                    mapping
+                )
             else:
                 # (2, n_targets, n_features)
-                return pd.DataFrame(data=s.transpose((2, 1, 0)).reshape(s.shape[-1], -1), index=self._feature_names,
-                                    columns=[n + suffix for n in self._target_names for suffix in ('_>0', '_<0')])
+                return SHAPEnsembleExplainer.aggregate_explanations_global(
+                    pd.DataFrame(data=s.transpose((2, 1, 0)).reshape(s.shape[-1], -1), index=self._feature_names,
+                                 columns=[n + suffix for n in self._target_names for suffix in ('_>0', '_<0')]),
+                    mapping
+                )
         else:
             if s.ndim == 2:
-                return pd.DataFrame(data=s, index=index, columns=self._feature_names)
+                return SHAPEnsembleExplainer.aggregate_explanations(
+                    pd.DataFrame(data=s, index=index, columns=self._feature_names),
+                    mapping
+                )
             else:
-                return {n: self._finalize_output(s[i], index, glob) for i, n in enumerate(self._target_names)}
+                return {n: self._finalize_output(s[i], index, glob, mapping) for i, n in enumerate(self._target_names)}
 
 
 class SHAPExplainer:

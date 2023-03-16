@@ -208,7 +208,8 @@ class EnsembleExplainer:
         raise NotImplementedError()
 
     def explain(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None, jobs: int = 1,
-                batch_size: Optional[int] = None, model_id=None, show_progress: bool = False) -> dict:
+                batch_size: Optional[int] = None, model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                show_progress: bool = False) -> dict:
         """
         Explain the ensemble, or some of its constituent models (pipelines), on a set of samples.
         :param x: The samples, a DataFrame with the same feature columns as the ensemble was trained on.
@@ -218,6 +219,8 @@ class EnsembleExplainer:
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
         :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.
+        :param mapping: Optional, mapping specifying which features to combine: target column names are mapped to lists
+        of source column names in `x`.
         :param show_progress: Whether to display a progress bar.
         :return: Dict with 1-2 levels of nesting. The keys in the outer dict are model-IDs (possibly including
         "__ensemble__"), and the keys in the inner dicts (if any) are arbitrary and usually depend on the prediction
@@ -229,7 +232,8 @@ class EnsembleExplainer:
 
     def explain_global(self, x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
                        sample_weight: Optional[np.ndarray] = None, jobs: int = 1, batch_size: Optional[int] = None,
-                       model_id=None, show_progress: bool = False) -> dict:
+                       model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                       show_progress: bool = False) -> dict:
         """
         Explain the ensemble, or some of its constituent models (pipelines), globally.
         :param x: Samples, optional, a DataFrame with the same columns as the ensemble was trained on.
@@ -241,32 +245,12 @@ class EnsembleExplainer:
         :param jobs: The number of jobs to use.
         :param batch_size: The batch size to use.
         :param model_id: The ID(s) of the model(s) to explain, or None to explain all models in the ensemble.
+        :param mapping: Optional, mapping specifying which features to combine: target column names are mapped to lists
+        of source column names in `x`.
         :param show_progress: Whether to display a progress bar.
         :return: Dict whose keys are model-IDs (possibly including "__ensemble__"), and whose values are Series or
         DataFrames with feature importance scores. In either case, the row index equals `feature_names`, and the
         columns of DataFrames can be arbitrary and usually depend on the prediction task and the explanation backend.
-        """
-        raise NotImplementedError()
-
-    def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
-        """
-        Aggregate local explanations over sets of features, e.g., by returning average feature importance scores.
-        :param explanations: Local explanations to aggregate, in the same format as the individual DataFrames returned
-        by method `explain()`: rows correspond to samples, columns correspond to features.
-        :param mapping: Mapping specifying which features to combine: target column names are mapped to lists of
-        source column names in `explanations`.
-        :return: DataFrame with aggregated explanations.
-        """
-        raise NotImplementedError()
-
-    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
-        """
-        Aggregate global explanations over sets of features, e.g., by returning average feature importance scores.
-        :param explanations: Global explanations to aggregate, in the same format as the individual DataFrames returned
-        by method `explain_global()`.
-        :param mapping: Mapping specifying which features to combine: target column names are mapped to lists of
-        source column names in `explanations`.
-        :return: DataFrame with aggregated explanations.
         """
         raise NotImplementedError()
 
@@ -279,7 +263,16 @@ class EnsembleExplainer:
         source column names in `features`.
         :return: DataFrame with aggregated features.
         """
-        raise NotImplementedError()
+        # This is only a default implementation, which may be overridden by subclasses.
+        features = features.copy()
+        for target_col, source_cols in mapping.items():
+            try:
+                # only add columns if mean can be computed
+                features[target_col] = features[source_cols].mean(axis=1)
+            except:  # noqa
+                pass
+            features.drop(source_cols, axis=1, inplace=True)
+        return features
 
     def get_versions(self) -> dict:
         """

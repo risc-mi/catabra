@@ -62,12 +62,14 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
         return {}
 
     def explain(self, x: pd.DataFrame, y: Optional[pd.DataFrame] = None, jobs: int = 1,
-                batch_size: Optional[int] = None, model_id=None, show_progress: bool = False) -> dict:
+                batch_size: Optional[int] = None, model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                show_progress: bool = False) -> dict:
         raise RuntimeError(f'{self.__class__.__name__} does not support local explanations.')
 
     def explain_global(self, x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
                        sample_weight: Optional[np.ndarray] = None, jobs: int = 1, batch_size: Optional[int] = None,
-                       model_id=None, show_progress: bool = False) -> dict:
+                       model_id=None, mapping: Optional[Dict[str, List[str]]] = None,
+                       show_progress: bool = False) -> dict:
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
         if y is None:
@@ -123,30 +125,18 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
             sigma = pd.DataFrame(data=dict(zip(x.columns, [(baseline[k][0] - e[k]).std(axis=0) for e in explanations])))
             df = pd.concat([mu, sigma], axis=0, ignore_index=True).T
             df.columns = self._metric_names + [m + ' std' for m in self._metric_names]
-            out[k] = df
+            out[k] = PermutationEnsembleExplainer.aggregate_explanations_global(df, mapping)
 
         return out
 
-    def aggregate_explanations(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
-        raise RuntimeError(f'{self.__class__.__name__} does not support local explanations.')
-
-    def aggregate_explanations_global(self, explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
-        explanations = explanations.copy()
-        for target_col, source_cols in mapping.items():
-            explanations.loc[target_col] = explanations.loc[source_cols].sum(axis=0)
-            explanations = explanations.drop(source_cols, axis=0, inplace=True)
+    @staticmethod
+    def aggregate_explanations_global(explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
+        if mapping is not None:
+            explanations = explanations.copy()
+            for target_col, source_cols in mapping.items():
+                explanations.loc[target_col] = explanations.loc[source_cols].sum(axis=0)
+                explanations.drop(source_cols, axis=0, inplace=True)
         return explanations
-
-    def aggregate_features(self, features: pd.DataFrame, mapping: Dict[str, List[str]]):
-        features = features.copy()
-        for target_col, source_cols in mapping.items():
-            try:
-                # only add columns if mean can be computed
-                features[target_col] = features[source_cols].mean(axis=1)
-            except:     # noqa
-                pass
-            features.drop(source_cols, axis=1, inplace=True)
-        return features
 
     def get_versions(self) -> dict:
         return {'sklearn': sklearn.__version__, 'pandas': pd.__version__}
