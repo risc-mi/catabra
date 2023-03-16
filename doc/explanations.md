@@ -85,7 +85,9 @@ explained on, but also on the metric used for measuring the performance.
 
 In contrast to more sophisticated model explanation techniques, permutation importance does not take feature
 interactions into account. Thus, if two features carrying useful information are strongly correlated, permutation
-importance might deem both unimportant (depending on the model).
+importance might deem both unimportant (depending on the model). As a remedy, one can specify an *aggregation mapping*
+for permuting groups of features instead of individual features. The calculated permutation importance scores
+then reflect the joint importance of each feature group.
 
 #### References
 

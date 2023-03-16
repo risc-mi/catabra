@@ -94,11 +94,14 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
         baseline = \
             _calc_permutation_scores(self._ensemble, keys, x, y, sample_weight, [], random_seed, 1, self._scorers)
 
+        if mapping is None:
+            mapping = {c: [c] for c in x.columns}
+
         if jobs == 1:
             explanations = [
-                _calc_permutation_scores(self._ensemble, keys, x, y, sample_weight, [c], random_seed,
+                _calc_permutation_scores(self._ensemble, keys, x, y, sample_weight, cs, random_seed,
                                          self._n_repetitions, self._scorers)
-                for c in progress_bar(x.columns, disable=not show_progress, desc='Features')
+                for cs in progress_bar(mapping.values(), disable=not show_progress, desc='Features')
             ]
         else:
             explanations = Parallel(n_jobs=jobs)(
@@ -108,12 +111,12 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
                     x,
                     y,
                     sample_weight,
-                    [c],
+                    cs,
                     random_seed,
                     self._n_repetitions,
                     self._scorers
                 )
-                for c in progress_bar(x.columns, disable=not show_progress, desc='Features')
+                for cs in progress_bar(mapping.values(), disable=not show_progress, desc='Features')
             )
 
         if keys is None:
@@ -121,22 +124,17 @@ class PermutationEnsembleExplainer(EnsembleExplainer):
 
         out = {}
         for k in keys:
-            mu = pd.DataFrame(data=dict(zip(x.columns, [(baseline[k][0] - e[k]).mean(axis=0) for e in explanations])))
-            sigma = pd.DataFrame(data=dict(zip(x.columns, [(baseline[k][0] - e[k]).std(axis=0) for e in explanations])))
+            mu = pd.DataFrame(
+                data=dict(zip(mapping.keys(), [(baseline[k][0] - e[k]).mean(axis=0) for e in explanations]))
+            )
+            sigma = pd.DataFrame(
+                data=dict(zip(mapping.keys(), [(baseline[k][0] - e[k]).std(axis=0) for e in explanations]))
+            )
             df = pd.concat([mu, sigma], axis=0, ignore_index=True).T
             df.columns = self._metric_names + [m + ' std' for m in self._metric_names]
-            out[k] = PermutationEnsembleExplainer.aggregate_explanations_global(df, mapping)
+            out[k] = df
 
         return out
-
-    @staticmethod
-    def aggregate_explanations_global(explanations: pd.DataFrame, mapping: Dict[str, List[str]]):
-        if mapping is not None:
-            explanations = explanations.copy()
-            for target_col, source_cols in mapping.items():
-                explanations.loc[target_col] = explanations.loc[source_cols].sum(axis=0)
-                explanations.drop(source_cols, axis=0, inplace=True)
-        return explanations
 
     def get_versions(self) -> dict:
         return {'sklearn': sklearn.__version__, 'pandas': pd.__version__}
