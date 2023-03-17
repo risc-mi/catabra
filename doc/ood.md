@@ -4,24 +4,27 @@
 
 Configuration for the command line tools should be done in the following format: 
 
-
+```text
     "ood_class": "autoencoder",
     "ood_source": "internal",
     "ood_kwargs": {}
+```
 
-* `ood_source` defines the origin of the detector. The following values are accepted:
-    * `internal`: detector implemented directly in CaTabRa.
-    * `pyod`: detector from PyOD library
-    * `external`: detector implemented by an outside module
+* `"ood_source"` defines the origin of the detector. The following values are accepted:
+    * `"internal"`: detector implemented directly in CaTabRa.
+    * `"pyod"`: detector from PyOD library
+    * `"external"`: detector implemented by an outside module
 
-* `ood_class` is the name/path of an OOD detector:
-  * if `ood_source` is `internal`: name of one of the modules in catabra.ood.internal (e.g. `soft_brownian_offset`)
-  * if `ood_source` is `pyod`: name of one of the modules in pyod.models (e.g. `kde`)
-  * if `ood_source` is `external`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
+* `"ood_class"` is the name/path of an OOD detector:
+  * if `"ood_source"` is `"internal"`: name of one of the modules in
+    [`catabra.ood.internal`](https://github.com/risc-mi/catabra/tree/main/catabra/ood/internal)
+    (e.g. `"soft_brownian_offset"`)
+  * if `"ood_source"` is `"pyod"`: name of one of the modules in `pyod.models` (e.g. `"kde"`)
+  * if `"ood_source"` is `"external"`: full import path consisting of modules and class (e.g. `custom.module.CustomOOD`)
   * if value is `None` no OOD detection is performed
 
-* `ood_kwargs` is a dictionary of optional parameters for specific OOD detectors in the form `{"parameter-name": value, ...}`.
-e.g. for the autoencoder `{"target_dim_factor": 0.25, "reduction_factor": 0.9}`
+* `"ood_kwargs"` is a dictionary of optional parameters for specific OOD detectors in the form
+  `{"parameter-name": value, ...}`, e.g. for the autoencoder `{"target_dim_factor": 0.25, "reduction_factor": 0.9}`.
 
 
 ## Classes
@@ -39,8 +42,8 @@ and empty bin, otherwise 0. This is calculated for each column and only the maxi
 
 #### SoftBrownianOffset
 
-Based on: *F. Möller et. al: ‘Out-of-distribution Detection and Generation using Soft Brownian Offset Sampling and Autoencoders’,
-arXiv:2105.02965 [cs], May 2021, Accessed: Apr. 06, 2022. [Online]. Available: http://arxiv.org/abs/2105.02965*
+Based on: F. Möller et. al: *Out-of-distribution Detection and Generation using Soft Brownian Offset Sampling and Autoencoders*.
+[arXiv:2105.02965](http://arxiv.org/abs/2105.02965), May 2021, Accessed: Apr. 06, 2022.
 
 Generates synthetic out-of-distribution samples by selecting a sample from the original dataset and transforming it
 iteratively until the point’s minimum distance transgresses a set boundary. These samples are combined with the original+
@@ -55,7 +58,7 @@ An autoencoder is a neural network that consists of an encoder a decoder part. T
 data to a lower-dimensional space. The decoder learns to reconstruct the original points from the compressed data.
 In the context of out-of-distribution detection it is assumed that in-distribution data results in a lower reconstruction
 error then out-of-distribution data. A sample can be defined as OOD if the reconstruction error is above a certain threshold.
-Refer to: https://www.tensorflow.org/tutorials/generative/autoencoder for an example application
+Refer to [this example application](https://www.tensorflow.org/tutorials/generative/autoencoder).
 
 The detector returns for each *sample* whether it is out-of-distribution.
 Values returned by predict_proba are the difference between the maximum reconstruction error of the validation set and

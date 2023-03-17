@@ -34,9 +34,9 @@ Set up a new Python environment with Python >=3.9 (e.g. using
 activate it, and then run
 
 ```shell
-$ git clone https://github.com/risc-mi/catabra.git
-$ cd catabra
-$ poetry install
+git clone https://github.com/risc-mi/catabra.git
+cd catabra
+poetry install
 ```
 
 The project is installed in editable mode by default. This is useful if you plan to make changes to CaTabRa's code.
@@ -50,15 +50,17 @@ flag.
 ### Usage Mode 1: Command-Line
 
 ```shell
-$ python -m catabra analyze example_data/breast_cancer.csv --classify diagnosis --split train --out breast_cancer_result
+python -m catabra analyze example_data/breast_cancer.csv --classify diagnosis --split train --out breast_cancer_result
 ```
+
 This command analyzes `breast_cancer.csv` and trains a prediction model for classifying the samples according to column
 `"diagnosis"`. Column `"train"` is used for splitting the data into a train- and a test set, which means that the final
 model is automatically evaluated on the test set after training. All results are saved in directory `breast_cancer_out`.
 
 ```shell
-$ python -m catabra explain breast_cancer_result --on example_data/breast_cancer.csv --out breast_cancer_result/expl
+python -m catabra explain breast_cancer_result --on example_data/breast_cancer.csv --out breast_cancer_result/expl
 ```
+
 This command explains the classifier trained in the previous command by computing SHAP feature importance scores for
 every sample. The results are saved in directory `breast_cancer_result/expl`. Depending on the type of the trained
 models, this command may take several minutes to complete.
@@ -66,6 +68,7 @@ models, this command may take several minutes to complete.
 ### Usage Mode 2: Python
 
 The two commands above translate to the following Python code:
+
 ```python
 from catabra.analysis import analyze
 from catabra.explanation import explain

@@ -2,7 +2,8 @@
 
 ## Built-in Regression Metrics
 
-This section lists all built-in regression metrics that are implemented in the `util.metrics` module.
+This section lists all built-in regression metrics that are implemented in the
+[`catabra.util.metrics`](https://github.com/risc-mi/catabra/tree/main/catabra/util/metrics.py) module.
 
 ### R²
 
@@ -547,8 +548,9 @@ in metrics.xlsx are still the averaged versions, though.
 
 By default, CaTabRa automatically calculates suitable performance metrics when evaluating trained prediction models,
 and saves them to disk in files called metrics.xlsx and (optionally) bootstrapping.xlsx. These metrics can easily be
-computed manually as well; all that is required are sample-wise predictions (as saved in `"predictions.xlsx"`) and the
-corresponding data encoder that can be easily obtained from a `CaTabRaLoader` object:
+computed manually as well; all that is required are sample-wise predictions (as saved in `predictions.xlsx`) and the
+corresponding data encoder that can be easily obtained from a
+[`catabra.util.io.CaTabRaLoader`](https://github.com/risc-mi/catabra/tree/main/catabra/util/io.py) object:
 
 ```python
 from catabra.util import io

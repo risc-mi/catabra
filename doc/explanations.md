@@ -53,7 +53,7 @@ There are two important points to consider when interpreting feature importance 
 [*A Unified Approach to Interpreting Model Predictions*](http://papers.nips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions.pdf).
 Advances in Neural Information Processing Systems 30: 4765–4774, 2017.
 
-[2] [shap Github repository](https://github.com/slundberg/shap)
+[2] [shap GitHub repository](https://github.com/slundberg/shap)
 
 ## Explaining Pipelines with Model-Specific Methods
 

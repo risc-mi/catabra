@@ -9,12 +9,15 @@ for creating interactive plots.
 
 **Note**: plotly is *not* installed by default. Before using it, it must be installed manually using either `pip` or
 `conda`:
+
+```shell
+pip install plotly==5.7.0
 ```
-$ pip install plotly==5.7.0
-```
+
 or
-```
-$ conda install plotly=5.7.0 -c plotly
+
+```shell
+conda install plotly=5.7.0 -c plotly
 ```
 
 ### Training History
@@ -186,10 +189,12 @@ plotting.save(plot, "plot_dir")
 ### Performance Plots (Evaluations)
 
 All that is required to reproduce performance plots, like confusion matrices, ROC- and PR-curves, or scatter plots, are
-sample-wise predictions (as saved in `"predictions.xlsx"`), aggregate performance metrics (as saved in
-`"metrics.xlsx"`), and the corresponding data encoder that can be easily obtained from a `CaTabRaLoader` object.
-If you only have sample-wise predictions but no performance metrics, refer to `doc/metrics.md` for information on how
-to create the latter.
+sample-wise predictions (as saved in `predictions.xlsx`), aggregate performance metrics (as saved in
+`metrics.xlsx`), and the corresponding data encoder that can be easily obtained from a
+[`catabra.util.io.CaTabRaLoader`](https://github.com/risc-mi/catabra/tree/main/catabra/util/io.py) object.
+If you only have sample-wise predictions but no performance metrics, refer to
+[/doc/metrics.md](https://github.com/risc-mi/catabra/tree/main/doc/metrics.md) for information on how to create the
+latter.
 
 ```python
 from catabra.util import io
@@ -245,7 +250,8 @@ plotting.save(bar_plots, "plot_dir")
 ```
 
 If you have local explanations, but still want to visualize their average global impact in a bar plot, you can use
-function `average_local_explanations()`:
+function
+[`catabra.explanation.average_local_explanations()`](https://github.com/risc-mi/catabra/tree/main/catabra/explanation/main.py):
 
 ```python
 from catabra import explanation
