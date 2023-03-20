@@ -66,6 +66,7 @@ DEFAULT_CONFIG = {
     "auto-sklearn_exclude": None,
     "auto-sklearn_resampling_strategy": None,    # can also be the name of a subclass of `BaseCrossValidator`, `_RepeatedSplits` or `BaseShuffleSplit` in `sklearn.model_selection`
     "auto-sklearn_resampling_strategy_arguments": None,
+    "auto-sklearn_seed": 42,
 }
 
 

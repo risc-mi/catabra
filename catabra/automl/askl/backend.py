@@ -618,9 +618,6 @@ class AutoSklearnBackend(AutoMLBackend):
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
-        if kwargs.get('n_jobs', 1) != 1:
-            kwargs['seed'] = 42
-
         for k, v in specific.items():
             if k not in ('include', 'exclude', 'resampling_strategy', 'resampling_strategy_arguments'):
                 if k in kwargs:
