@@ -558,15 +558,25 @@ class AutoSklearnBackend(AutoMLBackend):
                 kwargs['scoring_functions'] = [get_scorer(m) for m in metrics[1:]]
         metric = kwargs.get('metric')
 
+        # TODO: If grouping is specified, use auto-sklearn 2.0 and choose resampling- and budget allocation strategy
+        #   based on number of groups rather than samples. Also show a warning with instructions how to avoid using
+        #   auto-sklearn 2.0.
         if self.task == 'regression':
             from autosklearn.regression import AutoSklearnRegressor as Estimator
+            logging.log('Using auto-sklearn 1.0 (regression not supported by 2.0).')
         elif groups is None and resampling_strategy is None and include is None and exclude is None:
-            # TODO: Use AutoSklearn2Classifier even if grouping is specified.
-            del kwargs['include']
-            del kwargs['exclude']
-            from autosklearn.experimental.askl2 import AutoSklearn2Classifier as Estimator
+            try:
+                from autosklearn.experimental.askl2 import AutoSklearn2Classifier as Estimator
+                del kwargs['include']
+                del kwargs['exclude']
+                logging.log('Using auto-sklearn 2.0.')
+            except ModuleNotFoundError:
+                from autosklearn.classification import AutoSklearnClassifier as Estimator
+                logging.log('Using auto-sklearn 1.0 (2.0 not found).')
         else:
             from autosklearn.classification import AutoSklearnClassifier as Estimator
+            logging.log('Using auto-sklearn 1.0. Avoid sample grouping and set each of resampling_strategy, include'
+                        ' and exclude to None to use 2.0.')
 
         self.fit_start_time_ = py_time.time()
         if monitor is None:
@@ -605,8 +615,6 @@ class AutoSklearnBackend(AutoMLBackend):
             start_time=self.fit_start_time_,
             monitor_name=monitor_name
         )
-        if Estimator.__name__ != 'AutoSklearn2Classifier':
-            kwargs['get_trials_callback'] = smac_callback
         # Unfortunately, ensembles are logged before the individual models (for some strange reason). There seems to
         # be nothing we can do about it ...
 
@@ -622,6 +630,9 @@ class AutoSklearnBackend(AutoMLBackend):
                     kwargs[k] = v
 
         self.model_ = Estimator(**kwargs)
+        if getattr(self.model_, 'get_trials_callback', False) is None:
+            # cannot be passed to constructor of AutoSklearn2Classifier
+            self.model_.get_trials_callback = smac_callback
         interrupted = False
         try:
             self.model_.fit(x_train, y_train, dataset_name=dataset_name)
@@ -870,8 +881,16 @@ class AutoSklearnBackend(AutoMLBackend):
     def _get_resampling_strategy(self, resampling_strategy, resampling_strategy_args: Optional[dict] = None, y=None):
         # Copied from autosklearn.evaluation.train_evaluator.TrainEvaluator.get_splitter()
 
-        # TODO: Find out what "-iterative-fit" and "partial-" are, and how they differ from standard
-        #   "holdout" and "cv".
+        # Meaning of "-iterative-fit" and "partial-" (see autosklearn.evaluation.train_evaluator.eval_holdout() etc.):
+        #   * "-iterative-fit" seems to indicate that internally, instead of completely fitting models for each split
+        #       one after another, models are fit some iterations for each split, then for a couple of more iterations,
+        #       and so on, until all are fully converged. Advantage: If there is a timeout, partially fitted models
+        #       exist for every split, meaning that the current hyperparameter configuration can be evaluated. If the
+        #       selected model class does not support iterative fitting, the evaluator tacitly falls back to the
+        #       corresponding non-iterative strategy.
+        #    * "partial-": ???
+        # In general, the iterative- and partial variants only seem to affect the operational behavior of the
+        # resampling strategies (especially wrt. timeouts), not their semantics.
 
         # If "holdout" or "holdout-iterative-fit" are used:
         #   * Each constituent of the final ensemble is a single pipeline, consisting of a data preprocessor,
@@ -904,8 +923,6 @@ class AutoSklearnBackend(AutoMLBackend):
         # In general, `automl_.predict()` always first tries `automl_.models_` and then, if not possible because no
         #   transformer/estimator instances are found, resorts to `automl_.cv_models_`.
 
-        if resampling_strategy is None:
-            resampling_strategy = 'holdout'
         if resampling_strategy_args is None:
             resampling_strategy_args = {}
 
@@ -918,7 +935,7 @@ class AutoSklearnBackend(AutoMLBackend):
         elif no_groups:
             # rely on autosklearn's default setup
             return resampling_strategy
-        elif not isinstance(resampling_strategy, str):
+        elif not isinstance(resampling_strategy, str) and resampling_strategy is not None:
             if not isinstance(resampling_strategy, (sklearn.model_selection.GroupShuffleSplit,
                                                     sklearn.model_selection.GroupKFold,
                                                     sklearn.model_selection.LeaveOneGroupOut,
@@ -928,6 +945,9 @@ class AutoSklearnBackend(AutoMLBackend):
                 logging.warn('Grouping information might not be taken into account by specified'
                              f' resampling strategy {resampling_strategy}.')
             return resampling_strategy
+
+        if resampling_strategy is None:
+            resampling_strategy = 'holdout'
 
         shuffle = resampling_strategy_args.get('shuffle', True)
         if not (no_groups or shuffle):
