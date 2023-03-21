@@ -1,10 +1,11 @@
 ## Configuring CaTabRa
 
 CaTabRa can be configured via *config files*. These config files control the behavior of the CaTabRa command-line
-interface (as described in `doc/cli.md`).
+interface (as described in [/doc/cli.md](https://github.com/risc-mi/catabra/tree/main/doc/cli.md)).
 
 Config files are JSON files with a single top-level object. The possible parameters are described below.
-See `core/config.py` for further information, including the default values of the parameters.
+See [`catabra.core.config`](https://github.com/risc-mi/catabra/tree/main/catabra/core/config.py) for further
+information, including the default values of the parameters.
 
 ## General Configuration Parameters
 * `"automl"`: AutoML backend to use. Currently, the only available option is `"auto-sklearn"`
@@ -38,7 +39,8 @@ See `core/config.py` for further information, including the default values of th
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*
-    suitable metrics are computed automatically. See `doc/metrics.md` for a list of supported metrics.
+    suitable metrics are computed automatically.
+    See [/doc/metrics.md](https://github.com/risc-mi/catabra/tree/main/doc/metrics.md) for a list of supported metrics.
 * `"multiclass_classification_metrics"`: List of metrics to evaluate when training multiclass classification models.
     Has the same meaning as `"binary_classification_metrics"`.
 * `"multilabel_classification_metrics"`: List of metrics to evaluate when training multilabel classification models.

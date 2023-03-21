@@ -319,21 +319,41 @@ class CaTabRaLoader:
     def get_model_or_fitted_ensemble(self) -> Union['AutoMLBackend', 'FittedEnsemble', None]:
         return self.get_model() or self.get_fitted_ensemble()
 
-    def get_explainer(self, fitted_ensemble: Optional['FittedEnsemble'] = None) -> Optional['EnsembleExplainer']:
+    def get_explainer(self, explainer: Optional[str] = None, fitted_ensemble: Optional['FittedEnsemble'] = None) \
+            -> Optional['EnsembleExplainer']:
         """
         Get the explainer object.
+        :param explainer: Name of the explainer to load. If None, the first explainer specified in config param
+        "explainer" is loaded.
         :param fitted_ensemble: Pre-loaded FittedEnsemble object. If None, method `get_fitted_ensemble()` is used for
         loading it.
         """
         config = self.get_config() or {}
-        explainer = config.get('explainer')
-        if explainer is not None and (self._path / explainer / 'params.joblib').exists():
+        if explainer is None:
+            explainer = config.get('explainer') or []
+            if isinstance(explainer, (list, set, tuple)):
+                if explainer:
+                    explainer = explainer[0]
+                else:
+                    return None
+
+        if (self._path / explainer / 'params.joblib').exists():
             params = load(self._path / explainer / 'params.joblib')
-            if fitted_ensemble is None:
-                fitted_ensemble = self.get_fitted_ensemble(from_model=True)
-            if fitted_ensemble is not None:
-                from ..explanation import EnsembleExplainer
+        else:
+            params = None
+        if fitted_ensemble is None:
+            fitted_ensemble = self.get_fitted_ensemble(from_model=True)
+        if fitted_ensemble is not None:
+            from ..explanation import EnsembleExplainer
+            try:
                 return EnsembleExplainer.get(explainer, config=config, ensemble=fitted_ensemble, params=params)
+            except:     # noqa
+                if params is None:
+                    # exception may be caused by missing `params`
+                    # silently return None to be consistent with original behavior
+                    return None
+                else:
+                    raise
 
     def get_train_data(self) -> Optional[pd.DataFrame]:
         """

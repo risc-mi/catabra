@@ -3,14 +3,14 @@
 CaTabRa is conceived as both a *library* and a *command-line tool*. The most straight-forward way to use CaTabRa is
 via the command-line. There is one main command:
 
-```
-$ python -m catabra ...
+```shell
+python -m catabra ...
 ```
 
 This command has various sub-commands, listed below. You can get basic information about them by invoking
 
-```
-$ python -m catabra -h
+```shell
+python -m catabra -h
 ```
 
 ## Analyzing New Data & Training Prediction Models
@@ -19,12 +19,15 @@ The first step when using CaTabRa is analyzing tabular data. *Analyzing*, in thi
 descriptive statistics, approximating the underlying data distribution for being able to detect out-of-distribution
 (OOD) samples, and training classification- or regression models for a given set of target attributes.
 The corresponding sub-command is `analyze` and can be invoked as follows:
+
+```shell
+python -m catabra analyze ...
 ```
-$ python -m catabra analyze ...
-```
+
 Further information about the command can be obtained via
-```
-$ python -m catabra analyze -h
+
+```shell
+python -m catabra analyze -h
 ```
 
 The command has one positional argument, `TABLE`, which must be the path to an existing CSV, Excel or HDF5 file
@@ -109,12 +112,15 @@ classifier should classify the samples such that among the samples to which it g
 close to 0.8, approximately 80% actually belong to the positive class.
 
 The corresponding sub-command is `calibrate` and can be invoked as follows:
+
+```shell
+python -m catabra calibrate ...
 ```
-$ python -m catabra calibrate ...
-```
+
 Further information about the command can be obtained via
-```
-$ python -m catabra calibrate -h
+
+```shell
+python -m catabra calibrate -h
 ```
 
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa classifier to
@@ -144,12 +150,15 @@ In addition, there are optional arguments as well:
 
 After analyzing data, the resulting (possibly calibrated) models can be evaluated on held-out test data.
 The corresponding sub-command is `evaluate` and can be invoked as follows:
+
+```shell
+python -m catabra evaluate ...
 ```
-$ python -m catabra evaluate ...
-```
+
 Further information about the command can be obtained via
-```
-$ python -m catabra evaluate -h
+
+```shell
+python -m catabra evaluate -h
 ```
 
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
@@ -177,7 +186,8 @@ In addition, there are optional arguments as well:
 * `--threshold THRESHOLD`: Decision threshold for binary- and multilabel classification. Defaults to 0.5, unless
     specified in `FROM`. In binary classification this can also be the name of a built-in thresholding strategy,
     possibly followed by "on" and the split on which to calculate the threshold. Splits must be specified by the name
-    of the subdirectory containing the corresponding evaluation results. See /doc/metrics.md for a list of built-in
+    of the subdirectory containing the corresponding evaluation results.
+    See [/doc/metrics.md](https://github.com/risc-mi/catabra/tree/main/doc/metrics.md) for a list of built-in
     thresholding strategies.
 * `--bootstrapping-repetitions BS_REPETITIONS`: Number of bootstrapping repetitions. Set to 0 to disable bootstrapping.
     Overwrites config param `"bootstrapping_repetitions"`.
@@ -193,12 +203,15 @@ In addition, there are optional arguments as well:
 
 After analyzing data, the resulting models can be explained in terms of feature importance. The corresponding
 sub-command is `explain` and can be invoked as follows:
+
+```shell
+python -m catabra explain ...
 ```
-$ python -m catabra explain ...
-```
+
 Further information about the command can be obtained via
-```
-$ python -m catabra explain -h
+
+```shell
+python -m catabra explain -h
 ```
 
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to
@@ -216,6 +229,10 @@ In addition, there are optional arguments as well:
 * `--model-id [MODEL_ID ...]`: Identifier(s) of the prediction model(s) to explain. By default, all models in the final
     ensemble are explained. In contrast to `evaluate`, more than one ID can be specified.
     Check out `SOURCE/model_summary.json` for all available model-IDs.
+* `--explainer EXPLAINER`: Name of the explainer to use. Defaults to the first explainer specified in config param
+    `"explainer"`. Note that only explainers that were fitted to training data during `analyze` can be used, as well as
+    explainers that do not need to be fit to training data (e.g., `"permutation"`). Pass `-e` without arguments to get
+    a list of all available explainers.
 * `--global`: Create global explanations. If specified, `TABLE` might not be required (depends on the explanation
     backend). Mutually exclusive with `--local`. If neither `--global` nor `--local` are specified, global or local
     explanations are generated depending on the explanation backend.
@@ -240,12 +257,15 @@ In addition, there are optional arguments as well:
 
 Trained models (and OOD detectors) can be applied to new, unlabeled data. The corresponding sub-command is `apply` and
 can be invoked as follows:
+
+```shell
+python -m catabra apply ...
 ```
-$ python -m catabra apply ...
-```
+
 Further information about the command can be obtained via
-```
-$ python -m catabra apply -h
+
+```shell
+python -m catabra apply -h
 ```
 
 The command has one positional argument, `SOURCE`, which is the directory containing the existing CaTabRa object to

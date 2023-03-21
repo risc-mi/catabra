@@ -294,28 +294,38 @@ class CaTabRaAnalysis(CaTabRaBase):
     def _make_explainer(self, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
                         versions) -> Optional['EnsembleExplainer']:
         from ..explanation import EnsembleExplainer
-        explainer = self._config.get('explainer')
-        logging.log(f'Creating {explainer} explainer')
+        explainers = self._config.get('explainer') or []
+        if not isinstance(explainers, (list, set, tuple)):
+            explainers = [explainers]
+        unknown = False
 
-        try:
-            explainer = EnsembleExplainer.get(
-                explainer,
-                config=self._config,
-                ensemble=backend.fitted_ensemble(),
-                feature_names=encoder.feature_names_,
-                target_names=encoder.get_target_or_class_names(),
-                x=x_train,
-                y=y_train
-            )
+        for e in explainers:
+            logging.log(f'Creating {e} explainer')
 
-            if explainer is None:
-                logging.warn(f'Unknown explanation backend: {self._config["explainer"]}')
-            else:
-                (self._invocation.out / explainer.name).mkdir(exist_ok=True, parents=True)
-                io.dump(explainer.params_, self._invocation.out / explainer.name / 'params.joblib')
-                versions.update(explainer.get_versions())
-        except Exception as e:  # noqa
-            logging.warn(f'Error when creating explainer; skipping\n' + str(e))
+            try:
+                explainer = EnsembleExplainer.get(
+                    e,
+                    config=self._config,
+                    ensemble=backend.fitted_ensemble(),
+                    feature_names=encoder.feature_names_,
+                    target_names=encoder.get_target_or_class_names(),
+                    x=x_train,
+                    y=y_train
+                )
+
+                if explainer is None:
+                    logging.warn(f'Unknown explanation backend: {e}')
+                    unknown = True
+                else:
+                    (self._invocation.out / explainer.name).mkdir(exist_ok=True, parents=True)
+                    io.dump(explainer.params_, self._invocation.out / explainer.name / 'params.joblib')
+                    versions.update(explainer.get_versions())
+            except Exception as ex:  # noqa
+                logging.warn(f'Error when creating explainer; skipping\n' + str(ex))
+
+        if unknown:
+            logging.warn('Unknown explanation backend(s) specified. Choose among ' +
+                         cu.repr_list(EnsembleExplainer.list_explainers()))
 
     @staticmethod
     def get_training_stats(hist):

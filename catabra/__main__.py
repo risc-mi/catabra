@@ -63,6 +63,12 @@ def make_parser():
                  bootstrapping_repetitions=args.bootstrapping_repetitions, from_invocation=getattr(args, 'from', None))
 
     def _explain(args: argparse.Namespace):
+        if args.explainer == '':
+            # list available explanation backends
+            from .explanation.base import EnsembleExplainer
+            print('Available explanation backends:\n  ' + '\n  '.join(EnsembleExplainer.list_explainers()))
+            return
+
         from .explanation import explain
         glob = getattr(args, 'global')
         loc = getattr(args, 'local')
@@ -71,8 +77,8 @@ def make_parser():
                 raise ValueError('GLOBAL and LOCAL are mutually exclusive.')
         elif not loc:
             glob = None
-        explain(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
-                model_id=parse_model_id(args.model_id), out=args.out, glob=glob, jobs=args.jobs,
+        explain(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight, glob=glob,
+                model_id=parse_model_id(args.model_id), explainer=args.explainer, out=args.out, jobs=args.jobs,
                 batch_size=args.batch_size, aggregation_mapping=args.aggregation_mapping,
                 from_invocation=getattr(args, 'from', None))
 
@@ -335,6 +341,17 @@ def make_parser():
         metavar='MODEL_ID',
         help='The ID(s) of the prediction model(s) to explain. If no MODEL_ID is given, all models in the ensemble are'
              ' explained, if possible. Note that due to technical restrictions not all models might be explainable.'
+    )
+    explainer.add_argument(
+        '-e', '--explainer',
+        type=str,
+        nargs='?',
+        const='',
+        metavar='EXPLAINER',
+        help='Name of the explainer to use. Defaults to the first explainer specified in config param "explainer". '
+             'Note that only explainers that were fitted to training data during "analyze" can be used, as well as'
+             ' explainers that do not need to be fit to training data (e.g., "permutation"). Pass `-e` without'
+             ' arguments to get a list of all available explainers.'
     )
     explainer.add_argument(
         '-g', '--global',
