@@ -229,6 +229,10 @@ In addition, there are optional arguments as well:
 * `--model-id [MODEL_ID ...]`: Identifier(s) of the prediction model(s) to explain. By default, all models in the final
     ensemble are explained. In contrast to `evaluate`, more than one ID can be specified.
     Check out `SOURCE/model_summary.json` for all available model-IDs.
+* `--explainer EXPLAINER`: Name of the explainer to use. Defaults to the first explainer specified in config param
+    `"explainer"`. Note that only explainers that were fitted to training data during `analyze` can be used, as well as
+    explainers that do not need to be fit to training data (e.g., `"permutation"`). Pass `-e` without arguments to get
+    a list of all available explainers.
 * `--global`: Create global explanations. If specified, `TABLE` might not be required (depends on the explanation
     backend). Mutually exclusive with `--local`. If neither `--global` nor `--local` are specified, global or local
     explanations are generated depending on the explanation backend.

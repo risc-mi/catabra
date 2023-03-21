@@ -9,11 +9,43 @@ import numpy as np
 import pandas as pd
 from sklearn import metrics as skl_metrics
 
+from .bootstrapping import Bootstrapping
 
-def _micro_average(func):
+
+class _OperatorBase:
+
+    @classmethod
+    def op_name(cls) -> str:
+        return cls.__name__.lstrip('_')
+
+    @classmethod
+    def get_function_name(cls, func) -> str:
+        return getattr(func, '__name__', None) or repr(func)
+
+    def __init__(self, func):
+        if not callable(func):
+            raise ValueError(f'Function must be callable, but found {func}')
+        self._func = func
+
+    @property
+    def base_function(self):
+        return self._func
+
+    @property
+    def __name__(self) -> str:
+        return self.op_name() + '(' + self.get_function_name(self._func) + ')'
+
+    def __repr__(self) -> str:
+        return self.__name__
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError()
+
+
+class _micro_average(_OperatorBase):    # noqa
     # in case of multilabel problems, this implementation also works with class probabilities
 
-    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
+    def __call__(self, y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
             classes = np.unique(y_true)
@@ -25,39 +57,34 @@ def _micro_average(func):
         if sample_weight is not None:
             sample_weight = np.repeat(sample_weight, y_true.shape[1])
 
-        return func(y_true.ravel(), y_pred.ravel(), sample_weight=sample_weight, **kwargs)
-
-    return _out
+        return self._func(y_true.ravel(), y_pred.ravel(), sample_weight=sample_weight, **kwargs)
 
 
-def _macro_average(func):
+class _macro_average(_OperatorBase):    # noqa
     # in case of multilabel problems, this implementation also works with class probabilities
 
-    def _out(y_true, y_pred, **kwargs):
+    def __call__(self, y_true, y_pred, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
             classes = np.unique(y_true)
-            return np.mean([func(y_true == c, y_pred == c, **kwargs) for c in classes])
+            return np.mean([self._func(y_true == c, y_pred == c, **kwargs) for c in classes])
         else:
-            return np.mean([func(y_true[:, i], y_pred[:, i], **kwargs) for i in range(y_true.shape[1])])
-
-    return _out
+            return np.mean([self._func(y_true[:, i], y_pred[:, i], **kwargs) for i in range(y_true.shape[1])])
 
 
-def _samples_average(func):
+class _samples_average(_OperatorBase):  # noqa
     # only defined for multilabel problems, and works for class probabilities and class indicators alike
 
-    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
+    def __call__(self, y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(2,))
-        return np.average([func(y_true[i], y_pred[i], **kwargs) for i in range(y_true.shape[0])], weights=sample_weight)
+        return np.average([self._func(y_true[i], y_pred[i], **kwargs) for i in range(y_true.shape[0])],
+                          weights=sample_weight)
 
-    return _out
 
-
-def _weighted_average(func):
+class _weighted_average(_OperatorBase):     # noqa
     # in case of multilabel problems, this implementation also works with class probabilities
 
-    def _out(y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
+    def __call__(self, y_true, y_pred, sample_weight: Optional[np.ndarray] = None, **kwargs):
         y_true, y_pred = _to_num_arrays(y_true, y_pred, rank=(1, 2))
         if y_true.ndim == 1:
             if sample_weight is None:
@@ -67,17 +94,65 @@ def _weighted_average(func):
                 weights = np.zeros((len(classes),), dtype=np.float32)
                 for i, c in enumerate(classes):
                     weights[i] = ((y_true == c) * sample_weight).sum()
-            return np.sum([w * func(y_true == c, y_pred == c, sample_weight=sample_weight, **kwargs)
+            return np.sum([w * self._func(y_true == c, y_pred == c, sample_weight=sample_weight, **kwargs)
                            for c, w in zip(classes, weights)]) / len(y_true)
         else:
             if sample_weight is None:
                 weights = (y_true > 0).sum(axis=0)
             else:
                 weights = ((y_true > 0) * sample_weight[..., np.newaxis]).sum(axis=0)
-            return np.sum([w * func(y_true[:, i], y_pred[:, i], sample_weight=sample_weight, **kwargs)
+            return np.sum([w * self._func(y_true[:, i], y_pred[:, i], sample_weight=sample_weight, **kwargs)
                            for i, w in enumerate(weights)]) / weights.sum()
 
-    return _out
+
+class _NegativeFunction(_OperatorBase):
+
+    def __call__(self, *args, **kwargs):
+        return -self._func(*args, **kwargs)
+
+    @property
+    def __name__(self) -> str:
+        return '-' + self.get_function_name(self._func)
+
+    @classmethod
+    def make(cls, func):
+        if isinstance(func, _NegativeFunction):
+            return func.base_function
+        else:
+            return cls(func)
+
+
+def to_score(func):
+    """
+    Convenience function for converting a metric into a (possibly different) metric that returns scores (i.e., higher
+    values correspond to better results). That means, if the given metric returns scores already, it is returned
+    unchanged. Otherwise, it is negated.
+    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc. Note that in case of classification
+    metrics, both thresholded and non-thresholded metrics are accepted.
+    :return: Either `func` itself or `-func`.
+    """
+
+    func_th = maybe_thresholded(func, threshold=0.5)
+    y = np.array([0, 0, 1], dtype=np.float32)
+    y_hat = y * 0.8 + 0.1       # some metrics (e.g., log_loss) don't accept exact 0. and 1.
+    try:
+        perfect = func_th(y, y_hat)
+    except:     # noqa
+        y = y[..., np.newaxis]
+        y_hat = y_hat[..., np.newaxis]
+        try:
+            perfect = func_th(y, y_hat)
+        except:     # noqa
+            y[1] = 1.
+            y[2] = 2.
+            y_hat = np.eye(3, dtype=np.float32) * 0.8 + 0.1
+            perfect = func_th(y, y_hat)
+
+    worse = func_th(y, y_hat[::-1])
+    if perfect < worse:
+        return _NegativeFunction.make(func)
+    else:
+        return func
 
 
 def get(name):
@@ -115,46 +190,82 @@ def get(name):
     return name
 
 
-def bootstrapped(func, n_repetitions: int = 100, agg='mean', seed=None, replace: bool = True,
+class _bootstrapped(_OperatorBase):     # noqa
+
+    def __init__(self, func, n_repetitions: int = 100, agg='mean', seed=None, replace: bool = True,
                  size: Union[int, float] = 1., **kwargs):
-    """
-    Convenience function for converting a metric into its bootstrapped version.
-    :param func: The metric to convert, e.g., `roc_auc`, `accuracy`, `mean_squared_error`, etc.
-    :param n_repetitions: Number of bootstrapping repetitions to perform. If 0, `func` is returned unchanged.
-    :param agg: Aggregation to compute of bootstrapping results.
-    :param seed: Random seed.
-    :param replace: Whether to resample with replacement. If False, this does not actually correspond to bootstrapping.
-    :param size: The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given
-    data. Bootstrapping normally assumes that resampled data have the same number of samples as the original data,
-    so this parameter should be set to 1.
-    :param kwargs: Additional keyword arguments that are passed to `func` upon application. Note that only arguments
-    that do not need to be resampled can be passed here; in particular, this excludes `sample_weight`.
-    :return: New metric that, when applied to `y_true` and `y_hat`, resamples the data, evaluates the metric on each
-    resample, and returns som aggregation (typically average) of the results thus obtained.
-    """
-    if n_repetitions <= 0:
+        super(_bootstrapped, self).__init__(func)
+        self._n_repetitions = n_repetitions
+        self._agg = agg
+        self._seed = seed
+        self._replace = replace
+        self._size = size
+        self._kwargs = kwargs
+
+    @property
+    def n_repetitions(self) -> int:
+        return self._n_repetitions
+
+    @property
+    def agg(self):
+        return self._agg
+
+    @property
+    def seed(self):
+        return self._seed
+
+    @property
+    def replace(self) -> bool:
+        return self._replace
+
+    @property
+    def size(self):
+        return self._size
+
+    def __call__(self, y_true, y_hat, sample_weight=None, **kwargs):
+        kwargs.update(self._kwargs)
         if kwargs:
-            return partial(func, **kwargs)
+            _func = partial(self._func, **kwargs)
         else:
-            return func
-
-    from .bootstrapping import Bootstrapping
-
-    def fn(y_true, y_hat, sample_weight=None, **kwargs2):
-        kwargs2.update(kwargs)
-        if kwargs2:
-            _func = partial(func, **kwargs2)
-        else:
-            _func = func
+            _func = self._func
         if sample_weight is None:
             _kwargs = None
         else:
             _kwargs = dict(sample_weight=sample_weight)
-        bs = Bootstrapping(y_true, y_hat, kwargs=_kwargs, fn=_func, seed=seed, replace=replace, size=size)
-        bs.run(n_repetitions=n_repetitions)
-        return bs.agg(agg)
+        bs = Bootstrapping(y_true, y_hat, kwargs=_kwargs, fn=_func, seed=self._seed, replace=self._replace,
+                           size=self._size)
+        bs.run(n_repetitions=self._n_repetitions)
+        return bs.agg(self._agg)
 
-    return fn
+    @classmethod
+    def make(cls, func, n_repetitions: int = 100, agg='mean', seed=None, replace: bool = True,
+             size: Union[int, float] = 1., **kwargs):
+        """
+        Convenience function for converting a metric into its bootstrapped version.
+        :param func: The metric to convert, e.g., `roc_auc`, `accuracy`, `mean_squared_error`, etc.
+        :param n_repetitions: Number of bootstrapping repetitions to perform. If 0, `func` is returned unchanged.
+        :param agg: Aggregation to compute of bootstrapping results.
+        :param seed: Random seed.
+        :param replace: Whether to resample with replacement. If False, this does not actually correspond to
+        bootstrapping.
+        :param size: The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given
+        data. Bootstrapping normally assumes that resampled data have the same number of samples as the original data,
+        so this parameter should be set to 1.
+        :param kwargs: Additional keyword arguments that are passed to `func` upon application. Note that only
+        arguments that do not need to be resampled can be passed here; in particular, this excludes `sample_weight`.
+        :return: New metric that, when applied to `y_true` and `y_hat`, resamples the data, evaluates the metric on
+        each resample, and returns som aggregation (typically average) of the results thus obtained.
+        """
+        if n_repetitions <= 0:
+            if kwargs:
+                return partial(func, **kwargs)
+            else:
+                return func
+
+        return cls(func, n_repetitions=n_repetitions, agg=agg, seed=seed, replace=replace, size=size, **kwargs)
+
+
+bootstrapped = _bootstrapped.make       # convenient alias
 
 
 # regression
@@ -605,69 +716,80 @@ def multiclass_proba_to_pred(y: np.ndarray) -> np.ndarray:
         return y.shape[1] - np.argmax(y[:, ::-1], axis=1) - 1
 
 
-def thresholded(func, threshold: Union[float, str] = 0.5, **kwargs):
+class thresholded(_OperatorBase):
     """
-    Convenience function for converting a classification metric that can only be applied to class predictions into a
+    Convenience class for converting a classification metric that can only be applied to class predictions into a
     metric that can be applied to probabilities. This proceeds by specifying a fixed decision threshold.
     :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
     :param threshold: The decision threshold. In binary classification this can also be the name of a thresholding
     strategy that is accepted by function `get_thresholding_strategy()`.
     :param kwargs: Additional keyword arguments that are passed to `func` upon application.
-    :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)` in
-    case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case of
-    multiclass classification.
+    :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)`
+    in case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case
+    of multiclass classification.
     """
 
-    if isinstance(threshold, str):
-        if threshold == 'argmax':
-            threshold = partial(argmax_threshold, func)
-        else:
-            threshold = get_thresholding_strategy(threshold)
-    elif not isinstance(threshold, (int, float)):
-        raise ValueError(f'Threshold must be a string or float, but found {threshold}')
+    def __init__(self, func, threshold: Union[float, str] = 0.5, **kwargs):
+        if isinstance(threshold, str):
+            if threshold == 'argmax':
+                threshold = partial(argmax_threshold, func)
+            else:
+                threshold = get_thresholding_strategy(threshold)
+        elif not isinstance(threshold, (int, float)):
+            raise ValueError(f'Threshold must be a string or float, but found {threshold}')
+        super(thresholded, self).__init__(func)
+        self._threshold = threshold
+        self._kwargs = kwargs
 
-    def fn(y_true, y_score, **kwargs2):
-        kwargs2.update(kwargs)
+    @property
+    def threshold(self):
+        return self._threshold
+
+    def __call__(self, y_true, y_score, **kwargs):
+        kwargs.update(self._kwargs)
         if y_score.ndim == 2 and y_score.shape[1] > 1 and (y_true.ndim == 1 or y_true.shape[1] == 1):
             # multiclass classification => `threshold` is not needed
-            return func(y_true, multiclass_proba_to_pred(y_score), **kwargs2)
-        elif isinstance(threshold, (int, float)):
+            return self._func(y_true, multiclass_proba_to_pred(y_score), **kwargs)
+        elif isinstance(self._threshold, (int, float)):
             # binary- or multilabel classification
-            return func(y_true, y_score >= threshold, **kwargs2)
+            return self._func(y_true, y_score >= self._threshold, **kwargs)
         else:
-            t = threshold(y_true, y_score, sample_weight=kwargs2.get('sample_weight'))
-            return func(y_true, y_score >= t, **kwargs2)
+            t = self._threshold(y_true, y_score, sample_weight=kwargs.get('sample_weight'))
+            return self._func(y_true, y_score >= t, **kwargs)
 
-    return fn
+    @classmethod
+    def make(cls, func, threshold: Union[float, str] = 0.5, **kwargs):
+        """
+        Convenience function for converting a classification metric into its "thresholded" version IF NECESSARY.
+        That means, if the given metric can be applied to class probabilities, it is returned unchanged. Otherwise,
+        `thresholded(func, threshold)` is returned.
+        :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
+        :param threshold: The decision threshold.
+        :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
+        :return: Either `func` itself or `thresholded(func, threshold)`.
+        """
+
+        if not isinstance(func, cls):
+            try:
+                # apply `func` to see whether it can be applied to probabilities
+                # apply it to one positive and one negative sample, because some metrics like `roc_auc` raise an
+                # exception if only one class is present
+                func(np.arange(2, dtype=np.float32), 0.3 * np.arange(1, 3, dtype=np.float32), **kwargs)
+            except:  # noqa
+                try:
+                    # check whether `func` can be applied to multiclass problems
+                    func(np.arange(3, dtype=np.float32),
+                         np.array([[0.1, 0.3, 0.6], [0.9, 0.1, 0], [0.2, 0.7, 0.1]], dtype=np.float32), **kwargs)
+                except:  # noqa
+                    return cls(func, threshold=threshold, **kwargs)
+
+        if kwargs:
+            return partial(func, **kwargs)
+        else:
+            return func
 
 
-def maybe_thresholded(func, threshold: Union[float, str] = 0.5, **kwargs):
-    """
-    Convenience function for converting a classification metric into its "thresholded" version IF NECESSARY.
-    That means, if the given metric can be applied to class probabilities, it is returned unchanged. Otherwise,
-    `thresholded(func, threshold)` is returned.
-    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
-    :param threshold: The decision threshold.
-    :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
-    :return: Either `func` itself or `thresholded(func, threshold)`.
-    """
-    try:
-        # apply `func` to see whether it can be applied to probabilities
-        # apply it to one positive and one negative sample, because some metrics like `roc_auc` raise an exception if
-        # only one class is present
-        func(np.arange(2, dtype=np.float32), 0.3 * np.arange(1, 3, dtype=np.float32), **kwargs)
-    except:     # noqa
-        try:
-            # check whether `func` can be applied to multiclass problems
-            func(np.arange(3, dtype=np.float32),
-                 np.array([[0.1, 0.3, 0.6], [0.9, 0.1, 0], [0.2, 0.7, 0.1]], dtype=np.float32), **kwargs)
-        except:     # noqa
-            return thresholded(func, threshold=threshold, **kwargs)
-
-    if kwargs:
-        return partial(func, **kwargs)
-    else:
-        return func
+maybe_thresholded = thresholded.make
 
 
 # classification with thresholds

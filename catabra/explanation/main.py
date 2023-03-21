@@ -13,9 +13,9 @@ from ..core.paths import CaTabRaPaths
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
-            split: Optional[str] = None, sample_weight: Optional[str] = None, out: Union[str, Path, None] = None,
-            glob: Optional[bool] = False, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-            aggregation_mapping: Optional[Dict[str, List[str]]] = None,
+            explainer: Optional[str] = None, split: Optional[str] = None, sample_weight: Optional[str] = None,
+            out: Union[str, Path, None] = None, glob: Optional[bool] = None, jobs: Optional[int] = None,
+            batch_size: Optional[int] = None, aggregation_mapping: Optional[Dict[str, List[str]]] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Explain an existing CaTabRa object (prediction model) in terms of feature importance.
@@ -26,6 +26,9 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
     :param model_id: Optional, ID(s) of the prediction model(s) to evaluate. If None or "__ensemble__", all models in
     the ensemble are explained, if possible. Note that due to technical restrictions not all models might be
     explainable.
+    :param explainer: Optional, name of the explainer to use. Defaults to the first explainer specified in config param
+    "explainer". Note that only explainers that were fitted to training data during "analyze" can be used, as well as
+    explainers that do not need to be fit to training data (e.g., "permutation").
     :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
     subset is explained individually. In contrast to function `analyze()`, the name/values of the column do not need to
     carry any semantic information about training and test sets.
@@ -51,6 +54,7 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
         *table,
         folder=folder,
         model_id=model_id,
+        explainer=explainer,
         glob=glob,
         split=split,
         sample_weight=sample_weight,
@@ -78,15 +82,24 @@ class CaTabRaExplanation(CaTabRaBase):
             logging.log('### Aborting')
             return
 
-        explainer = loader.get_explainer()
+        explainer = loader.get_explainer(explainer=self._invocation.explainer)
         if explainer is None:
+            if self._invocation.explainer is not None:
+                from .base import EnsembleExplainer
+                lst = EnsembleExplainer.list_explainers()
+                if self._invocation.explainer not in lst:
+                    from ..util.common import repr_list
+                    logging.log(f'### Aborting: unknown explanation backend {self._invocation.explainer};'
+                                ' choose among ' + repr_list(lst))
+                    return
             logging.log('### Aborting: no trained prediction model or no explainer params found')
             return
-        global_behavior = explainer.global_behavior
+        behavior = explainer.behavior
 
         glob = self._invocation.glob
         if glob is None:
-            glob = not (global_behavior.get('mean_of_local', False) or len(self._invocation.table) > 0)
+            glob = not (behavior.get('supports_local') and (behavior.get('global_is_mean_of_local', False) or
+                                                            len(self._invocation.table) > 0))
 
         with logging.LogMirror((self._invocation.out / CaTabRaPaths.ConsoleLogs).as_posix()):
             logging.log(f'### Explanation started at {self._invocation.start}')
@@ -97,9 +110,10 @@ class CaTabRaExplanation(CaTabRaBase):
             # merge tables
             df, _ = tu.merge_tables(self._invocation.table)
             if df is None:
-                if not glob or global_behavior.get('requires_x', False):
+                if not glob or behavior.get('global_requires_x', False):
                     raise ValueError('No table(s) to explain models on specified.')
                 x_test = None
+                y_test = None
             else:
                 if df.columns.nlevels != 1:
                     raise ValueError(f'Table must have 1 column level, but found {df.columns.nlevels}.')
@@ -112,6 +126,10 @@ class CaTabRaExplanation(CaTabRaBase):
                     io.write_df(df, self._invocation.out / CaTabRaPaths.ExplanationData)
 
                 x_test = encoder.transform(x=df)
+                try:
+                    y_test = encoder.transform(y=df)
+                except ValueError:
+                    y_test = None
 
             _iter_splits = self._get_split_iterator(df)
             sample_weights = self._invocation.get_sample_weights(df)
@@ -128,7 +146,8 @@ class CaTabRaExplanation(CaTabRaBase):
             for mask, directory in _iter_splits():
                 if mask is not None:
                     logging.log('*** Split ' + directory.stem)
-                explain_split(explainer, x=x_test if mask is None else x_test[mask],
+                explain_split(explainer, x=x_test if x_test is None or mask is None else x_test[mask],
+                              y=y_test if y_test is None or mask is None else y_test[mask],
                               sample_weight=sample_weights if sample_weights is None or mask is None else
                               sample_weights[mask],
                               directory=directory, glob=glob, model_id=model_id, batch_size=self._invocation.batch_size,
@@ -168,6 +187,10 @@ class ExplanationInvocation(Invocation):
         return self._model_id
 
     @property
+    def explainer(self) -> Optional[str]:
+        return self._explainer
+
+    @property
     def glob(self) -> Optional[bool]:
         return self._glob
 
@@ -188,13 +211,15 @@ class ExplanationInvocation(Invocation):
             jobs: Optional[int] = None,
             folder: Union[str, Path] = None,
             model_id=None,
-            glob: Optional[bool] = False,
+            explainer=None,
+            glob: Optional[bool] = None,
             batch_size: Optional[int] = None,
             aggregation_mapping: Union[str, Path, Dict, None] = None
     ):
         super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)
         self._folder = folder
         self._model_id = model_id
+        self._explainer = explainer
         self._glob = glob
         self._batch_size = batch_size
         self._aggregation_mapping = aggregation_mapping
@@ -206,6 +231,8 @@ class ExplanationInvocation(Invocation):
                 self._folder = src.get('folder')
             if self._model_id is None:
                 self._model_id = src.get('model_id')
+            if self._explainer is None:
+                self._explainer = src.get('explainer')
             if self._glob is None:
                 self._glob = src.get('glob')
             if self._batch_size is None:
@@ -245,6 +272,7 @@ class ExplanationInvocation(Invocation):
             table=['<DataFrame>' if isinstance(tbl, pd.DataFrame) else tbl for tbl in self._table],
             folder=self._folder,
             model_id=self._model_id,
+            explainer=self._explainer,
             glob=self._glob,
             batch_size=self._batch_size,
             aggregation_mapping=self._aggregation_mapping
@@ -256,7 +284,7 @@ class ExplanationInvocation(Invocation):
         return False
 
 
-def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None,
+def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
                   sample_weight: Optional[np.ndarray] = None, directory=None, glob: bool = False,
                   model_id=None, batch_size: Optional[int] = None, jobs: int = 1,
                   aggregation_mapping: Optional[Dict] = None, static_plots: bool = True,
@@ -265,6 +293,7 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
     Explain a single data split.
     :param explainer: Explainer object.
     :param x: Encoded data to apply `explainer` to, optional unless `glob` is False. Only features, no labels.
+    :param y: Encoded data to apply `explainer` to, optional. Only labels, no features.
     :param sample_weight: Sample weights, optional. Ignored if `x` is None or `glob` is False.
     :param directory: Directory where to save the explanations. If None, results are returned in a dict.
     :param glob: Whether to create global explanations.
@@ -294,22 +323,17 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
 
     title = explainer.name + ' Feature Importance'
     if glob:
-        explanations: dict = explainer.explain_global(x=x, sample_weight=sample_weight, jobs=jobs,
-                                                      batch_size=batch_size, model_id=model_id, show_progress=verbose)
-        if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations_global(expl, aggregation_mapping)
-                            for model, expl in explanations.items()}
-
+        explanations: dict = explainer.explain_global(x=x, y=y, sample_weight=sample_weight, jobs=jobs,
+                                                      batch_size=batch_size, model_id=model_id,
+                                                      mapping=aggregation_mapping, show_progress=verbose)
         if static_plots:
             _save_plots(plot_bars(explanations, interactive=False, title=title), 'static_plots')
         if interactive_plots:
             _save_plots(plot_bars(explanations, interactive=True, title=title), 'interactive_plots')
     else:
-        explanations: dict = explainer.explain(x, jobs=jobs, batch_size=batch_size,
-                                               model_id=model_id, show_progress=verbose)
+        explanations: dict = explainer.explain(x, y=y, jobs=jobs, batch_size=batch_size,
+                                               model_id=model_id, mapping=aggregation_mapping, show_progress=verbose)
         if aggregation_mapping is not None:
-            explanations = {model: explainer.aggregate_explanations(expl, aggregation_mapping)
-                            for model, expl in explanations.items()}
             x = explainer.aggregate_features(x, aggregation_mapping)
 
         if static_plots:
@@ -503,15 +527,15 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
         groups = {str(df.name): [df.name]}
         df = df.to_frame()
     else:
-        if df.shape[1] == 2 and '<0' in df.columns and '>0' in df.columns:
-            groups = {'': list(df.columns)}
-        elif df.shape[1] == 4 and '<0' in df.columns and '>0' in df.columns \
-                and '<0 std' in df.columns and '>0 std' in df.columns:
-            groups = {'': ['<0', '>0']}
+        # ignore all columns ending with " std" for which another column without that suffix exists
+        all_columns = [c for c in df.columns
+                       if not (isinstance(c, str) and c.endswith(' std') and c[:-4] in df.columns)]
+        if len(all_columns) == 2 and '<0' in all_columns and '>0' in all_columns:
+            groups = {'': all_columns}
         else:
             cols = {c[:-3] if isinstance(c, str) and (c.endswith('_>0') or c.endswith('_<0')) else c
-                    for c in df.columns}
-            groups = {str(c): [c0 for c0 in (c, f'{c}_>0', f'{c}_<0') if c0 in df.columns] for c in cols}
+                    for c in all_columns}
+            groups = {str(c): [c0 for c0 in (c, f'{c}_>0', f'{c}_<0') if c0 in all_columns] for c in cols}
         idx = pd.Series(0., index=df.index)
         for columns in groups.values():
             idx = np.maximum(idx, np.maximum(0, df[columns].max(axis=1)) - np.minimum(0, df[columns].min(axis=1)))
@@ -519,7 +543,7 @@ def _prepare_for_bar(df: Union[pd.DataFrame, pd.Series], max_features: int,
 
     if max_features < len(idx) and add_sum_of_remaining:
         df0 = df.reindex(idx[:max_features - 1])
-        df0.loc[f'Sum of {len(idx) + 1 -max_features} remaining features'] = \
+        df0.loc[f'Sum of {len(idx) + 1 - max_features} remaining features'] = \
             df.loc[idx[max_features - 1:]].sum(axis=0)
     else:
         df0 = df.reindex(idx[:max_features])

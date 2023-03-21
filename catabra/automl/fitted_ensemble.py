@@ -308,25 +308,22 @@ class FittedEnsemble:
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
         :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None.
+        If "auto", calibrated predictions are returned iff `model_id` is None; note that only the entire ensemble is
+        calibrated, not individual constituents.
         :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
         """
         if model_id is None:
-            calibrated = calibrated is not False
-        else:
-            calibrated = calibrated is True
-        calibrated = calibrated and self.calibrator_ is not None
-
-        if calibrated:
-            y = self.predict_proba(x, jobs=jobs, batch_size=batch_size, model_id=model_id, calibrated=True)
+            y = self._predict_all(x, jobs, batch_size, calibrated is not False, False)['__ensemble__']
+        elif calibrated is True and self.calibrator_ is not None:
+            # must be classification task
+            y = self.calibrate(self.models_[model_id].predict_proba(x, batch_size=batch_size))
             if self.task == 'multiclass_classification':
-                y = np.argmax(y, axis=1)
+                y = metrics.multiclass_proba_to_pred(y)
             else:
-                y = (y > 0.5).astype(np.int32)
-        elif model_id is None:
-            y = self._predict_all(x, jobs, batch_size, False)['__ensemble__']
+                y = (y >= 0.5).astype(np.int32)
         else:
             y = self.models_[model_id].predict(x, batch_size=batch_size)
+
         return y
 
     def predict_proba(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None,
@@ -339,42 +336,49 @@ class FittedEnsemble:
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
         :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
         :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None.
+        If "auto", calibrated predictions are returned iff `model_id` is None; note that only the entire ensemble is
+        calibrated, not individual constituents.
         :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
         """
         if model_id is None:
-            calibrated = calibrated is not False
-            y = self._predict_all(x, jobs, batch_size, True)['__ensemble__']
+            y = self._predict_all(x, jobs, batch_size, calibrated is not False, True)['__ensemble__']
         else:
-            calibrated = calibrated is True
             y = self.models_[model_id].predict_proba(x, batch_size=batch_size)
-        if calibrated:
-            y = self.calibrate(y)
+            if calibrated is True:
+                y = self.calibrate(y)
         return y
 
-    def predict_all(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None) -> Dict[Any, np.ndarray]:
+    def predict_all(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None,
+                    calibrated_ensemble: bool = False) -> Dict[Any, np.ndarray]:
         """
-        Apply all trained models to given data, including constituent models and the entire ensemble. Note that
-        uncalibrated predictions are returned.
+        Apply all trained models to given data, including constituent models and the entire ensemble. In classification
+        tasks, class probabilities are returned for all constituent models and class indices only for the whole
+        ensemble.
         :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
         :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
+        :param calibrated_ensemble: Whether to return calibrated predictions of the whole ensemble. Does not affect
+        constituent models, whose predictions are always returned uncalibrated. This can lead to awkward situations for
+        singleton ensembles when predictions of the sole model are returned both calibrated und uncalibrated.
         :return: Dict mapping model IDs to prediction-arrays. The key of the entire ensemble is "__ensemble__".
         """
-        return self._predict_all(x, jobs, batch_size, False)
+        return self._predict_all(x, jobs, batch_size, calibrated_ensemble, False)
 
-    def predict_proba_all(self, x: pd.DataFrame, jobs: int = 1,
-                          batch_size: Optional[int] = None) -> Dict[Any, np.ndarray]:
+    def predict_proba_all(self, x: pd.DataFrame, jobs: int = 1, batch_size: Optional[int] = None,
+                          calibrated_ensemble: bool = False) -> Dict[Any, np.ndarray]:
         """
         Apply all trained models to given data, including constituent models and the entire ensemble. In contrast to
         method `predict_all()`, this method returns class probabilities in case of classification tasks. Does not work
-        for regression tasks. Note that uncalibrated predictions are returned.
+        for regression tasks.
         :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
         :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
         :param batch_size: Batch size, i.e., number of samples processed in parallel.
+        :param calibrated_ensemble: Whether to return calibrated predictions of the whole ensemble. Does not affect
+        constituent models, whose predictions are always returned uncalibrated. This can lead to awkward situations for
+        singleton ensembles when predictions of the sole model are returned both calibrated und uncalibrated.
         :return: Dict mapping model IDs to probability-arrays. The key of the entire ensemble is "__ensemble__".
         """
-        return self._predict_all(x, jobs, batch_size, True)
+        return self._predict_all(x, jobs, batch_size, calibrated_ensemble, True)
 
     def calibrate(self, y: np.ndarray) -> np.ndarray:
         if self.calibrator_ is not None:
@@ -417,8 +421,11 @@ class FittedEnsemble:
         dct = {k: v.estimator.__class__.__name__ for k, v in self.models_.items()}
         return f'{self.__class__.__name__}(models={dct}, task="{self.task}")'
 
-    def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], proba: bool) -> Dict[Any, np.ndarray]:
-        # get predictions of all constituent models and entire ensemble
+    def _predict_all(self, x: pd.DataFrame, jobs: int, batch_size: Optional[int], calibrated_ensemble: bool,
+                     proba: bool) -> Dict[Any, np.ndarray]:
+        calibrated_ensemble = calibrated_ensemble and self.calibrator_ is not None
+
+        # get uncalibrated predictions of all constituent models
         all_predictions = joblib.Parallel(n_jobs=jobs)(
             joblib.delayed(_model_predict)(
                 self.models_[key],
@@ -431,19 +438,31 @@ class FittedEnsemble:
             for key in self.meta_input_
         )
         out = {k: v for k, v in zip(self.meta_input_, all_predictions)}
+
         if isinstance(self.meta_estimator_, (list, tuple)):
-            pred = sum(w * p for w, p in zip(self.meta_estimator_, all_predictions))
+            y = sum(w * p for w, p in zip(self.meta_estimator_, all_predictions))
+            if calibrated_ensemble:
+                y = self.calibrate(y)
             if proba:
-                np.clip(pred, 0., 1., out=pred)
-            elif self.task == 'multilabel_classification':
-                pred = pred >= 0.5
+                np.clip(y, 0., 1., out=y)
             elif self.task == 'multiclass_classification':
-                pred = metrics.multiclass_proba_to_pred(pred)
-        elif proba:
-            pred = self.meta_estimator_.predict_proba(all_predictions)
-            np.clip(pred, 0., 1., out=pred)
+                y = metrics.multiclass_proba_to_pred(y)
+            elif self.task != 'regression':
+                y = (y >= 0.5).astype(np.int32)
+        elif proba or calibrated_ensemble:
+            # must be classification task
+            y = self.meta_estimator_.predict_proba(all_predictions)
+            if calibrated_ensemble:
+                y = self.calibrate(y)
+            if proba:
+                np.clip(y, 0., 1., out=y)
+            elif self.task == 'multiclass_classification':
+                y = metrics.multiclass_proba_to_pred(y)
+            else:
+                y = (y >= 0.5).astype(np.int32)
         else:
-            pred = self.meta_estimator_.predict(all_predictions)
-        out['__ensemble__'] = pred
+            y = self.meta_estimator_.predict(all_predictions)
+
+        out['__ensemble__'] = y
 
         return out
