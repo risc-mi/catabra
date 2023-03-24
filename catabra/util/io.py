@@ -1,15 +1,16 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Iterable, Dict, List
-from pathlib import Path
 import json
 import pickle
+from csv import Sniffer
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Union
+
 import joblib
 import pandas as pd
-from csv import Sniffer
 
-from ..core.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
 
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
@@ -291,18 +292,18 @@ class CaTabRaLoader:
         if (self._path / CaTabRaPaths.TrainingHistory).exists():
             return read_df(self._path / CaTabRaPaths.TrainingHistory)
 
-    def get_encoder(self) -> Optional['Encoder']:
+    def get_encoder(self) -> Optional['Encoder']: # noqa F821
         if (self._path / CaTabRaPaths.Encoder).exists():
             from ..util.encoding import Encoder
             return Encoder.load(self._path / CaTabRaPaths.Encoder)
 
-    def get_model(self) -> Optional['AutoMLBackend']:
+    def get_model(self) -> Optional['AutoMLBackend']: # noqa F821
         return self._load(CaTabRaPaths.Model)
 
-    def get_ood(self) -> Optional['OODDetector']:
+    def get_ood(self) -> Optional['OODDetector']: # noqa F821
         return self._load(CaTabRaPaths.OODModel)
 
-    def get_fitted_ensemble(self, from_model: bool = False) -> Optional['FittedEnsemble']:
+    def get_fitted_ensemble(self, from_model: bool = False) -> Optional['FittedEnsemble']: # noqa F821
         """
         Get the trained prediction model as a FittedEnsemble object.
         :param from_model: Whether to convert a plain model of type AutoMLBackend into a FittedEnsemble object, if
@@ -316,11 +317,11 @@ class CaTabRaLoader:
             if hasattr(model, 'fitted_ensemble'):
                 return model.fitted_ensemble()
 
-    def get_model_or_fitted_ensemble(self) -> Union['AutoMLBackend', 'FittedEnsemble', None]:
+    def get_model_or_fitted_ensemble(self) -> Union['AutoMLBackend', 'FittedEnsemble', None]: # noqa F821
         return self.get_model() or self.get_fitted_ensemble()
 
     def get_explainer(self, explainer: Optional[str] = None, fitted_ensemble: Optional['FittedEnsemble'] = None) \
-            -> Optional['EnsembleExplainer']:
+            -> Optional['EnsembleExplainer']: # noqa F821
         """
         Get the explainer object.
         :param explainer: Name of the explainer to load. If None, the first explainer specified in config param

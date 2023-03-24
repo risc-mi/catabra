@@ -1,13 +1,14 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Callable, Dict, Any
-from pathlib import Path
 import importlib
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Union
+
 import numpy as np
 import pandas as pd
 
-from .fitted_ensemble import FittedEnsemble
+from catabra.automl.fitted_ensemble import FittedEnsemble
 
 
 class AutoMLBackend:
@@ -186,4 +187,4 @@ class AutoMLBackend:
 
 for _d in Path(__file__).parent.iterdir():
     if _d.is_dir() and (_d / '__init__.py').exists():
-        importlib.import_module('.' + _d.stem, package=__package__)
+        importlib.import_module('catabra.automl.' + _d.stem)

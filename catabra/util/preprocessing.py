@@ -1,12 +1,13 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Tuple
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing as skl_preprocessing
+from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.utils.validation import check_is_fitted
-from sklearn.base import TransformerMixin, BaseEstimator, clone
 
 
 class MinMaxScaler(skl_preprocessing.MinMaxScaler):
@@ -198,7 +199,8 @@ class NumCatTransformer(BaseEstimator, TransformerMixin):
                 self.num_cols_.append(c)
 
         if self.cat_cols_ and not isinstance(self.cat_transformer, str):
-            self.cat_transformer_ = self.cat_transformer() if type(self.cat_transformer) is type else clone(self.cat_transformer)
+            self.cat_transformer_ = self.cat_transformer() if type(self.cat_transformer) \
+                                                              is type else clone(self.cat_transformer)
             self.cat_transformer_.fit(X[self.cat_cols_])
         else:
             self.cat_transformer_ = None
@@ -207,7 +209,8 @@ class NumCatTransformer(BaseEstimator, TransformerMixin):
                 self.cat_cols_ = []
 
         if self.num_cols_ and not isinstance(self.num_transformer, str):
-            self.num_transformer_ = self.num_transformer() if type(self.num_transformer) is type else clone(self.num_transformer)
+            self.num_transformer_ = self.num_transformer() if type(self.num_transformer) is type\
+                else clone(self.num_transformer)
             X_num, _ = self._prepare_num(X[self.num_cols_])
             self.num_transformer_.fit(X_num)
         else:

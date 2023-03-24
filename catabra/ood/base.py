@@ -5,13 +5,12 @@ import abc
 import importlib
 import inspect
 from abc import abstractmethod
-from enum import Enum
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from ..util import logging
+from catabra.util import logging
 
 
 class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
@@ -94,7 +93,7 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
         pass
 
     def fit(self, X: pd.DataFrame, y: pd.Series=None):
-        X_fit = X.copy(deep=True)
+        X_fit = X.copy()
         if self._subset < 1:
             np.random.RandomState(self._random_state)
             indices = np.random.choice(X.shape[0], np.round(X.shape[0] * self._subset).astype(int))

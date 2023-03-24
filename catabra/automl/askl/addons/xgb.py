@@ -1,18 +1,29 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional
 import warnings
-import numpy as np
-from ConfigSpace.configuration_space import ConfigurationSpace
-from ConfigSpace.hyperparameters import CategoricalHyperparameter, \
-    UniformIntegerHyperparameter, UniformFloatHyperparameter
-from ConfigSpace.conditions import EqualsCondition
+from typing import Optional
 
+import numpy as np
+from autosklearn.pipeline.components.base import (
+    AutoSklearnClassificationAlgorithm,
+    AutoSklearnRegressionAlgorithm,
+)
 from autosklearn.pipeline.components.classification import add_classifier
 from autosklearn.pipeline.components.regression import add_regressor
-from autosklearn.pipeline.components.base import AutoSklearnClassificationAlgorithm, AutoSklearnRegressionAlgorithm
-from autosklearn.pipeline.constants import DENSE, SIGNED_DATA, UNSIGNED_DATA, PREDICTIONS
+from autosklearn.pipeline.constants import (
+    DENSE,
+    PREDICTIONS,
+    SIGNED_DATA,
+    UNSIGNED_DATA,
+)
+from ConfigSpace.conditions import EqualsCondition
+from ConfigSpace.configuration_space import ConfigurationSpace
+from ConfigSpace.hyperparameters import (
+    CategoricalHyperparameter,
+    UniformFloatHyperparameter,
+    UniformIntegerHyperparameter,
+)
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore', category=FutureWarning)

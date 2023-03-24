@@ -1,17 +1,18 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Type
 from pathlib import Path
+from typing import Optional, Type, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.calibration import _SigmoidCalibration  # noqa
 from sklearn.isotonic import IsotonicRegression
-from sklearn.calibration import _SigmoidCalibration     # noqa
 
-from ..util import io, logging
-from ..util import table as tu
-from ..core import CaTabRaBase, Invocation, CaTabRaPaths
+from catabra.core import CaTabRaBase, CaTabRaPaths, Invocation
+from catabra.util import io, logging
+from catabra.util import table as tu
 
 
 def calibrate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None,

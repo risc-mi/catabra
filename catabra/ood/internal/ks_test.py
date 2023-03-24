@@ -1,17 +1,14 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from pathlib import Path
-from typing import Union, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
+from scipy.stats import ks_2samp
 from tqdm import tqdm
 
-from ..base import FeaturewiseOODDetector
-from ..utils import make_standard_transformer
-from catabra.util import io
-from scipy.stats import ks_2samp
+from catabra.ood.base import FeaturewiseOODDetector
 
 
 class KSTest(FeaturewiseOODDetector):

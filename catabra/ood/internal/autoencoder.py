@@ -73,7 +73,7 @@ class Autoencoder(SamplewiseOODDetector):
         return self._regressor.extract(num_layers)
 
     def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, thresh=0.5,
-                 random_state: int=None, verbose=True, mlp_kwargs=None):
+                 random_state: int=None, verbose=False, mlp_kwargs=None):
         """
         Initialization of Autoencoder
         :param: target_dim_factor: how
@@ -149,23 +149,3 @@ class Autoencoder(SamplewiseOODDetector):
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
-
-
-def test():
-    auto = Autoencoder()
-    from sklearn.datasets import load_breast_cancer
-    X, y = load_breast_cancer(return_X_y=True)
-    X = pd.DataFrame(X)
-    auto.fit(X)
-    print(np.mean(auto.predict_proba(X)))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.0001,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.001,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.01,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.1,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,1,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,100,X.shape[0] * X.shape[1]).reshape(X.shape))))
-
-    train, test = train_test_split(X)
-    auto.fit(train)
-    print(np.mean(auto.predict_proba(test)))
-

@@ -1,20 +1,22 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Iterable, Type, Tuple
 from pathlib import Path
+from typing import Iterable, Optional, Tuple, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..ood.base import OODDetector
-from ..util import table as tu, io, logging, plotting, statistics
-from ..util import common as cu
-from ..core.base import Invocation, CaTabRaBase
-from ..core import config as cfg
-from ..util.encoding import Encoder
-from ..automl.base import AutoMLBackend
-from ..monitoring.base import TrainingMonitorBackend
-from ..core.paths import CaTabRaPaths
+from catabra.automl.base import AutoMLBackend
+from catabra.core import config as cfg
+from catabra.core.base import CaTabRaBase, Invocation
+from catabra.core.paths import CaTabRaPaths
+from catabra.monitoring.base import TrainingMonitorBackend
+from catabra.ood.base import OODDetector
+from catabra.util import common as cu
+from catabra.util import io, logging, plotting, statistics
+from catabra.util import table as tu
+from catabra.util.encoding import Encoder
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -292,7 +294,7 @@ class CaTabRaAnalysis(CaTabRaBase):
             io.dump(ood, self._invocation.out / CaTabRaPaths.OODModel)
 
     def _make_explainer(self, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
-                        versions) -> Optional['EnsembleExplainer']:
+                        versions) -> Optional['EnsembleExplainer']: # noqa F821
         from ..explanation import EnsembleExplainer
         explainers = self._config.get('explainer') or []
         if not isinstance(explainers, (list, set, tuple)):

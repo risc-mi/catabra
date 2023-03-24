@@ -3,8 +3,13 @@
 
 import numpy as np
 
-from ...explanation.sklearn_explainer import TransformationExplainer, IdentityTransformationExplainer, \
-    OneHotEncoderExplainer, SelectPercentileExplainer, GenericUnivariateSelectExplainer
+from catabra.explanation.sklearn_explainer import (
+    GenericUnivariateSelectExplainer,
+    IdentityTransformationExplainer,
+    OneHotEncoderExplainer,
+    SelectPercentileExplainer,
+    TransformationExplainer,
+)
 
 
 def askl_explainer_factory(obj, params=None):

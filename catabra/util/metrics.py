@@ -1,10 +1,11 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Tuple
-from functools import partial
-import warnings
 import sys
+import warnings
+from functools import partial
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn import metrics as skl_metrics
@@ -346,10 +347,11 @@ def balance_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray]
     and can furthermore be shown to be approximately equal to accuracy and balanced accuracy, too.
     """
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0., 0.
@@ -410,10 +412,11 @@ def prevalence_score(y_true, y_score, sample_weight: Optional[np.ndarray] = None
 
 def prevalence_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0.
@@ -459,10 +462,11 @@ def zero_one_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = No
                   specificity_weight * (1 - specificity(y_true, y_score >= t)) ** 2
     """
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0.

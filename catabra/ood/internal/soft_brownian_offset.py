@@ -1,17 +1,15 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
+import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import pairwise_distances
+from tqdm import tqdm
 
 from catabra.ood.base import SamplewiseOODDetector
 from catabra.ood.utils import make_standard_transformer
-
-import numpy as np
-
-from sklearn.metrics import pairwise_distances
-from tqdm import tqdm
 
 # Based on. https://github.com/flxai/soft-brownian-offset/blob/master/sbo/sbo.py
 
@@ -152,27 +150,4 @@ class SoftBrownianOffset(SamplewiseOODDetector):
         return self._classifier.predict(X)
 
     def _predict_proba_transformed(self, X):
-        return self._classifier.predict_proba(X)
-
-
-# TODO make pytest
-def test():
-    test = np.array([
-        [0, 1, 2],
-        [0.1, 1.1, 2.1],
-        [0.2, 1.2, 2.2],
-        [0.3, 1.3, 2.3],
-        [0.4, 1.4, 2.4],
-        [0.5, 1.5, 2.5],
-        [0.6, 1.6, 2.6],
-        [0.7, 1.7, 2.7],
-        [0.8, 1.8, 2.8],
-        [0.9, 1.9, 2.9],
-    ])
-
-    ood = soft_brownian_offset(test, n_samples=10)
-    import plotly.express as px
-    df = pd.DataFrame(np.vstack([test, ood]), columns=['x', 'y', 'z'])
-    df['id'] = [True] * test.shape[0] + [False] * ood.shape[0]
-    fig = px.scatter_3d(df, x='x', y='y', z='z', color='id')
-    fig.show()
+        return self._classifier.predict_proba(X)[:,1]

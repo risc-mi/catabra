@@ -1,9 +1,10 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Callable, Dict, List
-from pathlib import Path
 import importlib
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 
@@ -155,7 +156,7 @@ class EnsembleExplainer:
     def list_explainers() -> List[str]:
         return list(EnsembleExplainer.__registered.keys())
 
-    def __init__(self, ensemble: 'FittedEnsemble' = None, config: Optional[dict] = None,
+    def __init__(self, ensemble: 'FittedEnsemble' = None, config: Optional[dict] = None, # noqa F821
                  feature_names: Optional[list] = None, target_names: Optional[list] = None,
                  x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None, params=None):
         """

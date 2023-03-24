@@ -1,16 +1,17 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 import sklearn
 from joblib import Parallel, delayed
 
-from ...util.logging import progress_bar
-from ...util import metrics
-from ..base import EnsembleExplainer
-from ...automl.fitted_ensemble import FittedEnsemble
+from catabra.automl.fitted_ensemble import FittedEnsemble
+from catabra.explanation.base import EnsembleExplainer
+from catabra.util import metrics
+from catabra.util.logging import progress_bar
 
 
 class PermutationEnsembleExplainer(EnsembleExplainer):

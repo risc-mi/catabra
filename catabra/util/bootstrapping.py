@@ -1,8 +1,9 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional
 from functools import partial
+from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 

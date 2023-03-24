@@ -1,12 +1,16 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-import pandas as pd
+import dask.dataframe as dd
 import numpy as np
+import pandas as pd
+import pytest
 
-from ..util import profile
-from .util import resample_eav_slow, compare_dataframes, create_random_data
 from catabra.util.longitudinal import resample_eav
+
+from .util import compare_dataframes, create_random_data, resample_eav_slow
+
+seed = 93584
 
 
 def test_corner_cases():
@@ -34,7 +38,10 @@ def test_corner_cases():
     )
 
     agg = {'attr_1': 'p25', 'attr_2': ['sum', 'count'], 'attr_3': ['r-1', 'r0', 't-1', 't0', 'r1']}
-    kwargs = dict(
+    out1 = resample_eav(
+        df,
+        windows,
+        agg,
         entity_col='entity',
         time_col='timestamp',
         attribute_col='attribute',
@@ -42,13 +49,45 @@ def test_corner_cases():
         include_start=True,
         include_stop=False
     )
-    out1 = profile(resample_eav, df, windows, agg, **kwargs, _prefix='  ')
-    ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
+    ground_truth = resample_eav_slow(
+        df,
+        windows,
+        agg,
+        entity_col='entity',
+        time_col='timestamp',
+        attribute_col='attribute',
+        value_col='value',
+        include_start=True,
+        include_stop=False
+    )
     compare_dataframes(out1, ground_truth)
 
 
-def _test_windows(pattern: str, include_start: bool = True, include_stop: bool = False, seed=None,
-                  return_dfs: bool = False, na_windows: bool = False):
+@pytest.mark.parametrize(
+    ids=[
+        'random',
+        'regular_non_overlapping',
+        'regular',
+        'non_overlapping',
+        'infinite',
+        'na_windows'
+    ],
+    argnames=[
+        'pattern',
+        'include_start',
+        'include_stop',
+        'na_windows'
+    ],
+    argvalues=[
+        ('random', True, False, False),
+        ('regular non-overlapping', False, True, False),
+        ('regular', True, True, False),
+        ('non-overlapping', False, False, False),
+        ('no_start', True, False, False),
+        ('regular non-overlapping', True, False, False)
+    ]
+)
+def test_windows(pattern: str, include_start: bool, include_stop: bool, na_windows: bool):
     if pattern == 'mixed':
         dfs = []
         windows = []
@@ -86,47 +125,20 @@ def _test_windows(pattern: str, include_start: bool = True, include_stop: bool =
         include_start=include_start,
         include_stop=include_stop
     )
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
-    out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs)
+    out2 = resample_eav(df, windows, agg, optimize='memory', **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
-    if return_dfs:
-        return df, out1, out2, ground_truth
-    else:
-        compare_dataframes(out1, ground_truth)
-        compare_dataframes(out2, ground_truth)
+    compare_dataframes(out1, ground_truth)
+    compare_dataframes(out2, ground_truth)
 
 
-def test_random_windows(**kwargs):
-    return _test_windows('random', **kwargs)
+@pytest.mark.slow
+def test_windows_mixed():
+    return test_windows('mixed', True, False, False)
 
 
-def test_regular_non_overlapping_windows(**kwargs):
-    return _test_windows('regular non-overlapping', include_start=False, include_stop=True, **kwargs)
-
-
-def test_regular_windows(**kwargs):
-    return _test_windows('regular', include_start=True, include_stop=True, **kwargs)
-
-
-def test_non_overlapping_windows(**kwargs):
-    return _test_windows('non-overlapping', include_start=False, include_stop=False, **kwargs)
-
-
-def test_mixed_windows(**kwargs):
-    return _test_windows('mixed', **kwargs)
-
-
-def test_infinite_windows(**kwargs):
-    return _test_windows('no_start', **kwargs)
-
-
-def test_na_windows(**kwargs):
-    return _test_windows('regular non-overlapping', **kwargs)
-
-
-def test_single_entity_attribute(seed=None):
+@pytest.mark.slow
+def test_single_entity_attribute():
     df, windows = create_random_data(100000, 1000, n_entities=1, window_pattern='random', value_dtype='int', seed=seed)
 
     agg = {'attr_1': ['mean', 'size', 'std', 'p25', 'p50', 'p99', 'r-1', 't0']}
@@ -136,16 +148,14 @@ def test_single_entity_attribute(seed=None):
         include_start=True,
         include_stop=True
     )
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
-    out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs,)
+    out2 = resample_eav(df, windows, agg, optimize='memory', **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
     compare_dataframes(out2, ground_truth)
 
 
-def test_categorical(seed=None):
+def test_categorical():
     df, windows = create_random_data(100000, 1000, attributes=['attr_1', 'attr_2'], value_dtype='category',
                                      window_pattern='random', seed=seed)
 
@@ -158,10 +168,8 @@ def test_categorical(seed=None):
         include_start=True,
         include_stop=True
     )
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
-    out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs)
+    out2 = resample_eav(df, windows, agg, optimize='memory', **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
     compare_dataframes(out2, ground_truth)
@@ -184,12 +192,12 @@ def test_custom_agg(seed=None):
         include_start=True,
         include_stop=False
     )
-    out1 = profile(resample_eav, df, windows, agg, **kwargs, _prefix='  ')
+    out1 = resample_eav(df, windows, agg, **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
 
 
-def test_include_stop(seed=None):
+def test_include_stop():
     df, _ = create_random_data(10000, 1, n_entities=200, attributes=['attr_' + str(i) for i in range(1, 10)],
                                window_pattern='random', time_dtype='timestamp', seed=seed)
     attrs = df['attribute'].value_counts().index
@@ -210,10 +218,8 @@ def test_include_stop(seed=None):
         include_start=True,
         include_stop=True
     )
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
-    out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs)
+    out2 = resample_eav(df, windows, agg, optimize='memory', **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
     compare_dataframes(out2, ground_truth)
@@ -227,16 +233,20 @@ def test_include_stop(seed=None):
         include_start=True,
         include_stop=False
     )
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
-    out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs)
+    out2 = resample_eav(df, windows, agg, optimize='memory', **kwargs)
     ground_truth = resample_eav_slow(df, windows, agg, **kwargs)
     compare_dataframes(out1, ground_truth)
     compare_dataframes(out2, ground_truth)
 
 
-def test_large(seed=None, dd=None):
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    argnames=['dd'],
+    argvalues=[(dd,), (None,)],
+    ids=['dask', 'pandas']
+)
+def test_large(dd):
     df, _ = create_random_data(10000000, 1, n_entities=20000, attributes=['attr_' + str(i) for i in range(1, 50)],
                                window_pattern='random', time_dtype='timestamp', seed=seed)
     attrs = df['attribute'].value_counts().index
@@ -259,86 +269,21 @@ def test_large(seed=None, dd=None):
         include_stop=False
     )
 
-    out1 = profile(resample_eav, df, windows, agg, optimize='time', **kwargs,
-                   _prefix='  ', _include_kwargs=['optimize'])
+    out1 = resample_eav(df, windows, agg, optimize='time', **kwargs)
     if dd is None:
-        out2 = profile(resample_eav, df, windows, agg, optimize='memory', **kwargs,
-                       _prefix='  ', _include_kwargs=['optimize'])
+        out2 = resample_eav( df, windows, agg, optimize='memory', **kwargs)
         # don't compute ground truth, as this would take way too long
         compare_dataframes(out1, out2)
     else:
+        # _fun_name='resample_eav(dask, pandas)'
         ddf = dd.from_pandas(df.set_index('entity'), npartitions=32, sort=True)
-        out_ddf1 = profile(resample_eav, ddf, windows, agg, optimize='time', **kwargs,
-                           _prefix='  ', _fun_name='resample_eav(dask, pandas)')
+        out_ddf1 = resample_eav(ddf, windows, agg, optimize='time', **kwargs)
         compare_dataframes(out1, out_ddf1)
-
-        out_ddf2 = profile(resample_eav, ddf, dd.from_pandas(windows.reset_index(drop=True), npartitions=8), agg,
-                           optimize='time', **kwargs, _prefix='  ', _fun_name='resample_eav(dask, dask)')
+        # 'resample_eav(dask, dask)'
+        out_ddf2 = resample_eav(ddf, dd.from_pandas(windows.reset_index(drop=True), npartitions=8), agg,
+                           optimize='time', **kwargs)
         assert isinstance(out_ddf2, dd.DataFrame)
-        out_ddf2 = profile(dd.compute, out_ddf2, _prefix='  ', _fun_name='dask.compute')[0]
+        out_ddf2 = dd.compute(out_ddf2, _prefix='  ', _fun_name='dask.compute')[0]
         out_ddf2.sort_index(inplace=True)           # re-establish correct order of rows
         out_ddf2.index = out1.index
         compare_dataframes(out1, out_ddf2)
-
-
-def test_dask(seed=None):
-    try:
-        import dask.dataframe as dd
-    except ImportError:
-        print('Failed to test Dask: package not found.')
-        return
-
-    return test_large(seed=seed, dd=dd)
-
-
-def main(seed=None):
-    tic = pd.Timestamp.now()
-    rng = np.random.RandomState(seed=seed)
-
-    profile(test_corner_cases)
-
-    s = rng.randint(2 ** 31)
-    profile(test_random_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_regular_non_overlapping_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_regular_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_non_overlapping_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_mixed_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_infinite_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_na_windows, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_single_entity_attribute, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_categorical, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_custom_agg, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_include_stop, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_large, seed=s, _include_kwargs=['seed'])
-
-    s = rng.randint(2 ** 31)
-    profile(test_dask, seed=s, _include_kwargs=['seed'])
-
-    print('Tests finished successfully!')
-    print('    elapsed time:', pd.Timestamp.now() - tic)
-
-
-if __name__ == '__main__':
-    main()

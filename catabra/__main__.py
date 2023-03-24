@@ -4,15 +4,13 @@
 import argparse
 import shlex
 
-from .__init__ import __version__
-
 
 def make_parser():
     _parser = argparse.ArgumentParser(
         prog='catabra',
         description='Command line interface to the CaTabRa table analyzer tool.'
     )
-    _parser.add_argument('--version', action='version', version='%(prog)s ' + __version__)
+    _parser.add_argument('--version', action='version', version='%(prog)s ' + '1.0.1')
     subparsers = _parser.add_subparsers(help='The function to invoke.')
 
     def _add_weights(_p: argparse.ArgumentParser):
@@ -138,8 +136,8 @@ def make_parser():
         nargs='?',
         const='',
         metavar='SPLIT',
-        help='Name of the column used for splitting the data into train- and test set.'
-             ' If given, models are trained on the training data and automatically evaluated on all test splits'
+        help='Name of the column used for splitting the data into train- and tests set.'
+             ' If given, models are trained on the training data and automatically evaluated on all tests splits'
              ' afterward.'
     )
     analyzer.add_argument(
@@ -149,7 +147,7 @@ def make_parser():
         const='',
         metavar='CALIBRATE',
         help='Value in column SPLIT defining the subset to calibrate the trained classifier on. For instance, if the'
-             ' column specified by SPLIT contains values "train", "val" and "test", and CALIBRATION is set to "val",'
+             ' column specified by SPLIT contains values "train", "val" and "tests", and CALIBRATION is set to "val",'
              ' the classifier is calibrated on the "val"-entries. If omitted, no calibration happens.'
     )
     _add_weights(analyzer)
@@ -207,7 +205,7 @@ def make_parser():
 
     evaluator = subparsers.add_parser(
         'evaluate',
-        help='Evaluate an existing CaTabRa object on held-out test data.'
+        help='Evaluate an existing CaTabRa object on held-out tests data.'
     )
     evaluator.add_argument(
         'src',
@@ -424,7 +422,7 @@ def make_parser():
         const='',
         metavar='SUBSET',
         help='Value in column SPLIT to consider for calibration. For instance, if the column specified by SPLIT'
-             ' contains values "train", "val" and "test", and SUBSET is set to "val", the classifier is calibrated'
+             ' contains values "train", "val" and "tests", and SUBSET is set to "val", the classifier is calibrated'
              ' only on the "val"-entries.'
     )
     calibrator.add_argument(

@@ -1,32 +1,33 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, Any, Tuple, Iterable
-import shutil
+import importlib
 import inspect
+import logging as py_logging
 import re
+import shutil
+import time as py_time  # otherwise shadowed by parameter of method `fit()`
+from distutils.version import LooseVersion
 from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, Tuple
+
+import joblib
 import numpy as np
 import pandas as pd
 import sklearn
-import joblib
-import logging as py_logging
-import time as py_time      # otherwise shadowed by parameter of method `fit()`
-from distutils.version import LooseVersion
 import yaml
-import importlib
-from smac.callbacks import IncorporateRunResultCallback
-from smac.tae import StatusType
-from smac.runhistory.runhistory import RunHistory
 from autosklearn import __version__ as askl_version
+from smac.callbacks import IncorporateRunResultCallback
+from smac.runhistory.runhistory import RunHistory
+from smac.tae import StatusType
 
-from ...util import io, logging, split, metrics
-from ...util.common import repr_timedelta, repr_list
-from ..base import AutoMLBackend
-from ..fitted_ensemble import FittedEnsemble, _model_predict
-from .scorer import get_scorer
-from . import explanation
-from ...util.preprocessing import FeatureFilter
+from catabra.automl.askl import explanation
+from catabra.automl.askl.scorer import get_scorer
+from catabra.automl.base import AutoMLBackend
+from catabra.automl.fitted_ensemble import FittedEnsemble, _model_predict
+from catabra.util import io, logging, metrics, split
+from catabra.util.common import repr_list, repr_timedelta
+from catabra.util.preprocessing import FeatureFilter
 
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')
@@ -37,7 +38,7 @@ _addons_failure = []    # list of pairs `(name, exception)`
 for _d in (Path(__file__).parent / 'addons').iterdir():
     if _d.suffix.lower() == '.py':
         try:
-            _pkg = importlib.import_module('.addons.' + _d.stem, package=__package__)
+            _pkg = importlib.import_module('catabra.automl.askl.addons.' + _d.stem, package=__package__)
             _addons_success.append((_d.stem, getattr(_pkg, 'get_versions', lambda: {})()))
         except ImportError as _e:
             # required packages are not available => skip
@@ -119,7 +120,9 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
         self._n = 0     # interestingly, counting models seems to work even if multiple jobs are used
         self.runhistory = RunHistory()      # own run history, used if training is interrupted
 
-    def __call__(self, smbo: 'SMBO', run_info: 'RunInfo', result: 'RunValue', time_left: float) -> Optional[bool]:
+    def __call__(
+            self, smbo: 'SMBO', run_info: 'RunInfo', result: 'RunValue', time_left: float # noqa F821
+    ) -> Optional[bool]:
         try:
             if self.main_metric is not None and result.status == StatusType.SUCCESS and result.additional_info:
                 self._n += 1
@@ -164,7 +167,7 @@ class _SMACLoggingCallback(IncorporateRunResultCallback):
         return None
 
 
-def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, float, float],
+def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, float, float], # noqa F821
                                 other_metrics: Iterable[Tuple[str, float, float]]) -> Tuple[float, float, float, dict]:
     # metrics must be passed as triples `(name, optimum, sign)`
 
@@ -404,9 +407,11 @@ class AutoSklearnBackend(AutoMLBackend):
                         mask &= result['timestamp'].iloc[i + 1] > aux['Timestamp']
                     if mask.any():
                         j = aux.loc[mask, 'Timestamp'].idxmin()
-                        result.loc[result.index[i], 'ensemble_val_' + main_metric[0]] = aux.loc[j, 'ensemble_optimization_score']
+                        result.loc[result.index[i], 'ensemble_val_' + main_metric[0]] = \
+                            aux.loc[j, 'ensemble_optimization_score']
                         if 'ensemble_test_score' in aux.columns:
-                            result.loc[result.index[i], 'ensemble_test_' + main_metric[0]] = aux.loc[j, 'ensemble_test_score']
+                            result.loc[result.index[i], 'ensemble_test_' + main_metric[0]] = \
+                                aux.loc[j, 'ensemble_test_score']
                 result['ensemble_val_' + main_metric[0]].fillna(method='ffill', inplace=True)
                 if 'ensemble_test_score' in aux.columns:
                     result['ensemble_test_' + main_metric[0]].fillna(method='ffill', inplace=True)
@@ -566,12 +571,16 @@ class AutoSklearnBackend(AutoMLBackend):
             logging.log('Using auto-sklearn 1.0 (regression not supported by 2.0).')
         elif groups is None and resampling_strategy is None and include is None and exclude is None:
             try:
-                from autosklearn.experimental.askl2 import AutoSklearn2Classifier as Estimator
+                from autosklearn.experimental.askl2 import (
+                    AutoSklearn2Classifier as Estimator,
+                )
                 del kwargs['include']
                 del kwargs['exclude']
                 logging.log('Using auto-sklearn 2.0.')
             except ModuleNotFoundError:
-                from autosklearn.classification import AutoSklearnClassifier as Estimator
+                from autosklearn.classification import (
+                    AutoSklearnClassifier as Estimator,
+                )
                 logging.log('Using auto-sklearn 1.0 (2.0 not found).')
         else:
             from autosklearn.classification import AutoSklearnClassifier as Estimator
@@ -974,7 +983,9 @@ class AutoSklearnBackend(AutoMLBackend):
                             next(test_cv.split(y, y))
                     except UserWarning as e:
                         if 'The least populated class in y has only' in e.args[0]:
-                            from autosklearn.evaluation.splitter import CustomStratifiedKFold
+                            from autosklearn.evaluation.splitter import (
+                                CustomStratifiedKFold,
+                            )
                             cv = CustomStratifiedKFold(
                                 n_splits=resampling_strategy_args['folds'],
                                 shuffle=shuffle,
@@ -1030,7 +1041,9 @@ def _validate_include_exclude_params(include: Optional[dict], exclude: Optional[
         from autosklearn.pipeline.regression import SimpleRegressionPipeline as Pipeline
         dataset_properties = dict(multioutput=multioutput, sparse=False)
     else:
-        from autosklearn.pipeline.classification import SimpleClassificationPipeline as Pipeline
+        from autosklearn.pipeline.classification import (
+            SimpleClassificationPipeline as Pipeline,
+        )
         dataset_properties = dict(
             multilabel=task == 'multilabel_classification',
             multiclass=task == 'multiclass_classification'

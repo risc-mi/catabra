@@ -2,11 +2,12 @@
 #  All rights reserved.
 
 from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from . import _common
+from catabra.util.plotting import _common
 
 
 def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History', ax=None, figsize='auto',
@@ -185,8 +186,8 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     return ax.figure
 
 
-def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None, figsize=(5, 5),
-                 roc: bool = True, legend=None, positive_prevalence: float = -1., **kwargs):
+def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None,
+                 figsize=(5, 5), roc: bool = True, legend=None, positive_prevalence: float = -1., **kwargs):
     """
     Plot ROC or PR curve(s).
     :param xs: The x-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
@@ -520,7 +521,7 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
     # add text
     xlen = ax.get_xlim()[1] - ax.get_xlim()[0]
     bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
-    width, height = bbox.width, bbox.height
+    width = bbox.width
     bbox_to_xscale = xlen / width
     for i, (g, columns) in enumerate(groups.items()):
         ypos_offset = -((i - len(groups) / 2) * bar_width + bar_width / 2)

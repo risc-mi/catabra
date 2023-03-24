@@ -3,11 +3,11 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.utils import check_random_state
-from sklearn.utils.validation import column_or_1d
-from sklearn.utils.multiclass import type_of_target
 from sklearn import model_selection
 from sklearn.model_selection._split import _BaseKFold, _validate_shuffle_split
+from sklearn.utils import check_random_state
+from sklearn.utils.multiclass import type_of_target
+from sklearn.utils.validation import column_or_1d
 
 
 def _find_best_fold(n_splits: int, y_counts_per_fold, y_cnt, group_y_counts) -> int:

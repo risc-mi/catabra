@@ -1,14 +1,15 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from abc import ABC, abstractmethod
 import shutil
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Union, Optional, Type, Tuple, Dict
+from typing import Dict, Optional, Tuple, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..util import io, logging
+from catabra.util import io, logging
 
 
 class Invocation(ABC):
