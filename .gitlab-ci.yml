@@ -1,0 +1,106 @@
+image: dockernexus01.risc-software.at/python:3.9
+
+include:
+  - project: 'common/ci-templates'
+    file: ['/devops/python/build-and-publish.yml', '/devops/util/util.yml', '/devops/python/test.yml']
+
+stages:
+  - test
+  - build
+  - publish
+
+# -- changing python versions ------------------------------------------------------------------------------------------
+
+.cibuildwheel-linux-builds:
+  image: dockernexus01.risc-software.at/python:3.9
+
+.poetry-build:
+  image: dockernexus01.risc-software.at/python:3.9
+
+.publish-to-gitlab:
+  image: dockernexus01.risc-software.at/python:3.9
+
+.publish-to-risc-pypi:
+  image: dockernexus01.risc-software.at/python:3.9
+
+.poetry-run-if-possible:
+  image: dockernexus01.risc-software.at/python:3.9
+
+# ----------------------------------------------------------------------------------------------------------------------
+
+
+.python-test-with-poetry:
+  image: dockernexus01.risc-software.at/python:3.9
+  script:
+    - python -m pytest -m "not slow and not allowed_to_fail" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
+
+.python-test-with-poetry-slow:
+  extends:
+    - .python-test-with-poetry
+  script:
+    - python -m pytest -m "slow" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
+
+.python-test-with-poetry-failable:
+  extends:
+    - .python-test-with-poetry
+  script:
+    - python -m pytest -m "allowed_to_fail" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
+
+python-import-order-check:
+  needs: []
+  extends:
+    - .python-import-order-check
+  allow_failure: true
+
+python-linter-check:
+  needs: []
+  extends:
+    - .python-linter-check
+  allow_failure: true
+
+python-test-basic:
+  stage: test
+  extends:
+    - .python-test-with-poetry
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
+
+python-test-slow:
+  stage: test
+  extends:
+    - .python-test-with-poetry-slow
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: never
+  allow_failure: false
+
+python-inspect:
+  stage: test
+  extends:
+    - .python-test-with-poetry-failable
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: never
+  allow_failure: true
+
+build-wheel-poetry:
+  needs: ["python-test-basic", "python-test-slow"]
+  stage: build
+  extends:
+    - .poetry-build
+    - .build-on-semversion
+
+publish-to-risc-pypi:
+  needs: ["build-wheel-poetry"]
+  stage: publish
+  extends:
+    - .publish-to-risc-pypi
+    - .build-on-semversion
+  variables:
+    DIRECTORY: dist/*
+
+

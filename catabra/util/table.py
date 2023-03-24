@@ -1,11 +1,12 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Tuple, List, Dict, Union, Optional, Iterable
+from typing import Dict, Iterable, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 
-from . import io
+from catabra.util import io
 
 
 def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories: int = 100) -> pd.DataFrame:

@@ -4,17 +4,19 @@
 # re-implementation of KernelExplainer to correctly handle DataFrames as input
 # see also https://github.com/slundberg/shap/issues/2530
 
-import numpy as np
-import scipy as sp
-from scipy.sparse import issparse
-import pandas as pd
-from tqdm.auto import tqdm
-import logging
 import gc
+import logging
 
+import numpy as np
+import pandas as pd
+import scipy as sp
 from shap import KernelExplainer
-from shap.utils._legacy import convert_to_instance_with_index, DenseDataWithIndex, InstanceWithIndex
-
+from shap.utils._legacy import (
+    DenseDataWithIndex,
+    InstanceWithIndex,
+    convert_to_instance_with_index,
+)
+from tqdm.auto import tqdm
 
 log = logging.getLogger('shap')
 

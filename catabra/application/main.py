@@ -1,14 +1,16 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Type
 from pathlib import Path
+from typing import Optional, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu, io, logging, metrics
-from ..core import CaTabRaBase, Invocation, CaTabRaPaths
-from ..ood.base import SamplewiseOODDetector, OverallOODDetector
+from catabra.core import CaTabRaBase, CaTabRaPaths, Invocation
+from catabra.ood.base import OverallOODDetector, SamplewiseOODDetector
+from catabra.util import io, logging, metrics
+from catabra.util import table as tu
 
 
 def apply(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,

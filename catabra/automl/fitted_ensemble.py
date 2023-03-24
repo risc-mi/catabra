@@ -1,16 +1,17 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Dict, Any
 from functools import partial
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import joblib
 import numpy as np
 import pandas as pd
 import sklearn
 import sklearn.ensemble
-import joblib
 
-from ..util import metrics, io
+from catabra.util import io, metrics
 
 
 def _preprocess(x, pp: list):

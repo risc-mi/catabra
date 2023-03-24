@@ -1,17 +1,18 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, Any
+import time as py_time  # otherwise shadowed by parameter of method `fit()`
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
-import time as py_time      # otherwise shadowed by parameter of method `fit()`
 from sklearn.base import clone
 from sklearn.impute import SimpleImputer
-from sklearn.pipeline import make_pipeline, Pipeline
+from sklearn.pipeline import Pipeline, make_pipeline
 
-from ..util import logging, preprocessing
-from .base import AutoMLBackend
-from .fitted_ensemble import FittedEnsemble, _model_predict
+from catabra.automl.base import AutoMLBackend
+from catabra.automl.fitted_ensemble import FittedEnsemble, _model_predict
+from catabra.util import logging, preprocessing
 
 
 def _flatten_transformer_pipeline(obj) -> list:

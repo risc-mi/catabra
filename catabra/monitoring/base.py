@@ -1,10 +1,10 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Callable
+import importlib
 import time
 from pathlib import Path
-import importlib
+from typing import Callable, Optional
 
 
 class TrainingMonitorBackend:
@@ -131,4 +131,4 @@ class TrainingMonitorBackend:
 
 for _d in Path(__file__).parent.iterdir():
     if _d.is_dir() and (_d / '__init__.py').exists():
-        importlib.import_module('.' + _d.stem, package=__package__)
+        importlib.import_module('catabra.monitoring.' + _d.stem, package=__package__)

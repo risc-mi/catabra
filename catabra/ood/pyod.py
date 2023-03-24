@@ -3,10 +3,11 @@
 
 import importlib
 import inspect
+
 import pandas as pd
 
 try:
-    import pyod
+    import pyod  # noqa F401
 except ImportError:
     raise ImportError(
         'Package pyod is required for out-of-distribution detection with class PyODDetector. You can install it either'
@@ -14,8 +15,8 @@ except ImportError:
         ' Visit https://github.com/yzhao062/pyod for details.'
     )
 
-from .utils import make_standard_transformer
-from .base import SamplewiseOODDetector
+from catabra.ood.base import SamplewiseOODDetector
+from catabra.ood.utils import make_standard_transformer
 
 
 class PyODDetector(SamplewiseOODDetector):

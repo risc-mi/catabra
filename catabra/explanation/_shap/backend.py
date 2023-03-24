@@ -1,16 +1,26 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, List
 from multiprocessing import Pool
+from typing import Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 import shap
 
+from catabra.automl.fitted_ensemble import (
+    FittedEnsemble,
+    FittedModel,
+    get_prediction_function,
+)
+from catabra.explanation.base import (
+    EnsembleExplainer,
+    IdentityTransformationExplainer,
+    TransformationExplainer,
+)
+from catabra.util.logging import progress_bar
+
 from .kernel_explainer import CustomKernelExplainer
-from ...util.logging import progress_bar
-from ..base import TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
-from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
 
 
 class SHAPEnsembleExplainer(EnsembleExplainer):

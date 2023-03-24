@@ -2,6 +2,7 @@
 #  All rights reserved.
 
 from typing import Union
+
 import numpy as np
 import pandas as pd
 
@@ -308,7 +309,7 @@ def prev_next_values(df: pd.DataFrame, sort_by=None, group_by=None, columns=None
     return out
 
 
-def _parse_column_specs(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], spec) -> list:
+def _parse_column_specs(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], spec) -> list: # noqa F821
     if isinstance(spec, (tuple, str, int, np.ndarray, pd.Series)):
         spec = [spec]
     out = []

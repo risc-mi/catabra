@@ -1,8 +1,8 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Iterable
 import itertools
+from typing import Iterable, Optional, Union
 
 
 def fresh_name(name, lst: Iterable):
@@ -103,6 +103,7 @@ def repr_timedelta(delta, subsecond_resolution: int = 0) -> str:
 
 def get_versions() -> dict:
     import sys
+
     from ..__version__ import __version__ as catabra_version
 
     out = dict(

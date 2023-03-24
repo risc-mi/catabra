@@ -33,14 +33,38 @@ pytest-subtests = "^0.10.0"
 pytest-cov = "^4.0.0"
 pytest-xdist = "^3.2.0"
 dask = "^2023.2.1"
+black = "^23.1.0"
+isort = "^5.12.0"
+ruff = "^0.0.257"
+
+[tool.poetry.group.optional.dependencies]
+xgboost = {version="^1.7.4", extras=['all']}
+plotly = {version="^5.13.1", extras=['all']}
 
 [tool.poetry_bumpversion.file."catabra/__version__.py"]
 
-[tool.pytest_ini_options]
+[tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "allowed_to_fail: marks tests that can fail under certain conditions without it being an error"
 ]
-test_paths = ['test']
+testpaths = ['test']
+
+[tool.ruff]
+line-length = 120
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.per-file-ignores]
+"config.py" = ["E501"]
+
+[tool.isort]
+profile = "black"
+
+[tool.poe.tasks]
+format = "black ."
+sort_imports = "isort ."
+lint = "ruff check ."
+test = "pytest -ra --doctest-modules --junitxml=python-junit.xml --cov --cov-report=html --cov-report term"
 
 [build-system]
 requires = ["poetry-core"]

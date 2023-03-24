@@ -3,11 +3,11 @@
 
 from typing import Union
 
-from . import _matplotlib as mpl_backend
 from catabra.util.io import Path, make_path
+from catabra.util.plotting import _matplotlib as mpl_backend  # noqa F401
 
 try:
-    from . import _plotly as plotly_backend
+    from catabra.util.plotting import _plotly as plotly_backend
 except ModuleNotFoundError:
     plotly_backend = None
 

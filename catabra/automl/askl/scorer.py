@@ -2,14 +2,20 @@
 #  All rights reserved.
 
 from autosklearn import metrics
-from ...util import metrics as um
 
+from catabra.util import metrics as um
 
 # scorers not yet predefined in austosklearn
 _EXTRA_SCORERS = dict(
     # regression
     explained_variance=metrics.make_scorer('explained_variance', um.explained_variance),
-    mean_absolute_percentage_error=metrics.make_scorer('mean_absolute_percentage_error', um.mean_absolute_percentage_error, greater_is_better=False, optimum=0, worst_possible_result=metrics.MAXINT)
+    mean_absolute_percentage_error=metrics.make_scorer(
+        'mean_absolute_percentage_error',
+        um.mean_absolute_percentage_error,
+        greater_is_better=False,
+        optimum=0,
+        worst_possible_result=metrics.MAXINT
+    )
 )
 
 for _m in ('brier_loss', 'hinge_loss', 'log_loss', 'roc_auc', 'roc_auc_ovr', 'roc_auc_ovo',

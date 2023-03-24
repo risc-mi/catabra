@@ -1,10 +1,10 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from sklearn.pipeline import make_pipeline
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
 
-from ..util.preprocessing import NumCatTransformer, MinMaxScaler, OneHotEncoder
+from catabra.util.preprocessing import MinMaxScaler, NumCatTransformer, OneHotEncoder
 
 
 def make_standard_transformer() -> NumCatTransformer:

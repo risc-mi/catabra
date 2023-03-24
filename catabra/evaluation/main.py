@@ -1,15 +1,17 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Tuple, Callable, Type
 from pathlib import Path
+from typing import Callable, Optional, Tuple, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu, io, logging, plotting, metrics, statistics
-from ..core import CaTabRaBase, Invocation, CaTabRaPaths
-from ..util.bootstrapping import Bootstrapping
-from ..ood.base import OverallOODDetector
+from catabra.core import CaTabRaBase, CaTabRaPaths, Invocation
+from catabra.ood.base import OverallOODDetector
+from catabra.util import io, logging, metrics, plotting, statistics
+from catabra.util import table as tu
+from catabra.util.bootstrapping import Bootstrapping
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
@@ -1354,7 +1356,7 @@ def plot_multilabel(overall: pd.DataFrame, thresholded: dict, threshold: float =
     return out
 
 
-def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', threshold: float = 0.5,
+def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder', threshold: float = 0.5, # noqa F821
                  bootstrapping_repetitions: int = 0, bootstrapping_metrics: Optional[list] = None,
                  sample_weight: Union[str, np.ndarray] = 'from_predictions') -> Tuple[dict, dict]:
     """
@@ -1394,7 +1396,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
         raise ValueError('`sample_weight` must be "from_predictions", "uniform" or an array, but found None.')
     elif len(sample_weight) != len(y_true):
         raise ValueError(
-            'Length of `sample_weight` differs from number of samples: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from number of samples: %r' % [len(y_true), len(sample_weight)] # noqa F507
         )
 
     if encoder.task_ == 'regression':
@@ -1449,7 +1451,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
 
 
 def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[str, Path, pd.DataFrame, dict],
-                 encoder: 'Encoder', interactive: bool = False, threshold: float = 0.5,
+                 encoder: 'Encoder', interactive: bool = False, threshold: float = 0.5, # noqa F821
                  bootstrapping_repetitions: int = 0) -> dict:
     """
     Plot the results of an evaluation. This happens automatically if config params "static_plots" or
@@ -1716,8 +1718,10 @@ def _bootstrap(n_repetitions: int, y_true, y_hat, sample_weight: Optional[np.nda
         return None, None, None, None, None
 
 
-def _get_y_true_hat_weight_from_predictions(predictions: Union[pd.DataFrame, str, Path], encoder: 'Encoder') \
-        -> Tuple[pd.DataFrame, pd.DataFrame, Optional[np.ndarray]]:
+def _get_y_true_hat_weight_from_predictions(
+        predictions: Union[pd.DataFrame, str, Path],
+        encoder: 'Encoder' # noqa F821
+) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[np.ndarray]]:
     # return _decoded_ `y_true` and `y_hat`
 
     inplace = False

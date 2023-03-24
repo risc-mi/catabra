@@ -1,12 +1,12 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
-from ...util import io
-from ...util.plotting import plotly_backend
-from ..base import TrainingMonitorBackend
+from catabra.monitoring.base import TrainingMonitorBackend
+from catabra.util import io
+from catabra.util.plotting import plotly_backend
 
 
 class PlotlyBackend(TrainingMonitorBackend):

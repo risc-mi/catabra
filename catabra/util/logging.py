@@ -1,11 +1,11 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, List
-import time
 import os
 import sys
+import time
 import traceback
+from typing import List, Optional
 
 from catabra.util.common import repr_timedelta
 
@@ -181,7 +181,8 @@ class LogHide:
         example:
             with LogHide(verbosity < spam_me):
                 call_verbose_package()
-        :param enabled: if False, the instance turns into a dummy object not actually doing anything, this is useful for optionally hiding output
+        :param enabled: if False, the instance turns into a dummy object not actually doing anything, this is useful for
+        optionally hiding output
         """
         self._enabled = enabled
         self._active = False
@@ -260,6 +261,7 @@ class LogMirror:
                 callable2 = getattr(self._stream2, self.__missing_method_name)
                 callable2(*args, **kwargs)
             except:
+                # TODO: specify expected Exception (E722 Do not use bare `except`)
                 pass
 
             # Emit method call to stream 1
@@ -267,4 +269,5 @@ class LogMirror:
                 callable1 = getattr(self._stream1, self.__missing_method_name)
                 return callable1(*args, **kwargs)
             except:
+                # TODO: specify expected Exception (E722 Do not use bare `except`)
                 pass

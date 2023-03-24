@@ -2,19 +2,19 @@
 #  All rights reserved.
 
 from typing import Union
+
 import numpy as np
 import pandas as pd
-
 
 # maximum number of rows to allow for intermediate DataFrames when optimizing for "time"
 MAX_ROWS = 10000000
 
 
-def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
-                 windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
+def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F821
+                 windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F821
                  agg: dict = None, entity_col=None, time_col=None, attribute_col=None, value_col=None,
                  include_start: bool = True, include_stop: bool = False, optimize: str = 'time') \
-        -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']:
+        -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']: # noqa F821
     """
     Resample data in EAV (entity-attribute-value) format wrt. explicitly passed windows of arbitrary (possibly
     infinite) length.
@@ -399,10 +399,12 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
     return out
 
 
-def resample_interval(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
-                      windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'],
-                      attributes: list = None, entity_col=None, start_col=None, stop_col=None, attribute_col=None,
-                      value_col=None, time_col=None, epsilon=1e-7) -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']:
+def resample_interval(
+        df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F821
+        windows: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F821
+        attributes: list = None, entity_col=None, start_col=None, stop_col=None, attribute_col=None,
+        value_col=None, time_col=None, epsilon=1e-7
+) -> Union[pd.DataFrame, 'dask.dataframe.DataFrame']: # noqa F821
     """
     Resample interval-like data wrt. explicitly passed windows of arbitrary (possibly infinite) length. "Interval-like"
     means that each observation is characterized by a start- and stop time rather than a singular timestamp (as in EAV
@@ -973,9 +975,9 @@ def _resample_eav_pandas(windows: pd.DataFrame, df: pd.DataFrame, standard_agg=N
         # select strategy for each entity: full join (fast but memory intensive) or group (slow but memory efficient)
         if entity_col is None:
             if len(windows) == 1 or (window_pattern['overlapping'] and optimize == 'time'):
-                join_mask = np.ones((len(windows),), dtype=np.bool)
+                    join_mask = np.ones((len(windows),), dtype='bool')
             else:
-                join_mask = np.zeros((len(windows),), dtype=np.bool)
+                join_mask = np.zeros((len(windows),), dtype='bool')
         else:
             join_mask = window_pattern['n'] == 1
             if optimize == 'time':
@@ -1256,7 +1258,7 @@ def _group_windows(windows: pd.DataFrame, window_pattern: Union[pd.DataFrame, di
             elif window_pattern['regular']:
                 out.values[:] = np.arange(len(windows), dtype=out.dtype) % window_pattern['n_shifts_regular']
             else:
-                overlap_mask = np.ones((len(windows),), dtype=np.bool)      # don't set to True
+                overlap_mask = np.ones((len(windows),), dtype='bool')      # don't set to True
                 pre_group = _pregroup_windows(windows, entity_col, start_col, stop_col, include_both_endpoints)
                 windows_grouped = windows.groupby(pre_group.values).agg({start_col: 'min', stop_col: 'max'})
                 entity_col = '__entity__'
@@ -1324,7 +1326,7 @@ def _check_disjoint(df: pd.DataFrame, entity_col, start_col, stop_col, include_b
     # returns either mask or array with entities with overlapping windows
 
     if entity_col is None:
-        mask = np.ones((len(df),), dtype=np.bool)
+        mask = np.ones((len(df),), dtype='bool')
     else:
         mask = np.roll(df[entity_col].values, -1) == df[entity_col].values
     mask[-1:] = False       # works for empty array, too

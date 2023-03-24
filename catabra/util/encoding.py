@@ -1,14 +1,16 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Tuple
 from pathlib import Path
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import LabelEncoder
 
-from . import common as cu, io
+from catabra.util import common as cu
+from catabra.util import io
 
 
 class Encoder(BaseEstimator):

@@ -1,7 +1,7 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from ..base import AutoMLBackend
+from catabra.automl.base import AutoMLBackend
 
 
 def askl_factory(**kwargs):

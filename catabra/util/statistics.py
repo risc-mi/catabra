@@ -1,13 +1,14 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Tuple, Optional
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .io import Path, make_path, write_df, write_dfs, convert_rows_to_str
-from . import logging
+from catabra.util import logging
+from catabra.util.io import Path, convert_rows_to_str, make_path, write_df, write_dfs
 
 
 def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
@@ -137,7 +138,7 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
 
     # delete temp variables and end function
     del num_stats, non_num_stats
-    logging.log(f'Saving descriptive statistics completed')
+    logging.log('Saving descriptive statistics completed')
 
 
 def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, corr_threshold: int = 200) \

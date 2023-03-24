@@ -2,14 +2,16 @@
 #  All rights reserved.
 
 import json
-from typing import Union, Optional, Tuple, Type, Dict, List
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..util import table as tu, io, logging, plotting
-from ..core import CaTabRaBase, Invocation
-from ..core.paths import CaTabRaPaths
+from catabra.core import CaTabRaBase, Invocation
+from catabra.core.paths import CaTabRaPaths
+from catabra.util import io, logging, plotting
+from catabra.util import table as tu
 
 
 def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None,
@@ -284,9 +286,9 @@ class ExplanationInvocation(Invocation):
         return False
 
 
-def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None, y: Optional[pd.DataFrame] = None,
-                  sample_weight: Optional[np.ndarray] = None, directory=None, glob: bool = False,
-                  model_id=None, batch_size: Optional[int] = None, jobs: int = 1,
+def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = None, # noqa F821
+                  y: Optional[pd.DataFrame] = None,  sample_weight: Optional[np.ndarray] = None, directory=None,
+                  glob: bool = False, model_id=None, batch_size: Optional[int] = None, jobs: int = 1,
                   aggregation_mapping: Optional[Dict] = None, static_plots: bool = True,
                   interactive_plots: bool = False, verbose: bool = False) -> Optional[dict]:
     """
