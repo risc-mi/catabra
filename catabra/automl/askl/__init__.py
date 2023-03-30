@@ -5,7 +5,7 @@ from catabra.automl.base import AutoMLBackend
 
 
 def askl_factory(**kwargs):
-    from .backend import AutoSklearnBackend
+    from catabra.automl.askl.backend import AutoSklearnBackend
     return AutoSklearnBackend(**kwargs)
 
 

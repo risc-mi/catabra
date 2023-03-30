@@ -5,7 +5,7 @@ from ..base import EnsembleExplainer
 
 
 def permutation_factory(**kwargs):
-    from .backend import PermutationEnsembleExplainer
+    from catabra.explanation._permutation.backend import PermutationEnsembleExplainer
     return PermutationEnsembleExplainer(**kwargs)
 
 
