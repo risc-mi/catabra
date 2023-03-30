@@ -152,8 +152,9 @@ class CaTabRaExplanation(CaTabRaBase):
                               y=y_test if y_test is None or mask is None else y_test[mask],
                               sample_weight=sample_weights if sample_weights is None or mask is None else
                               sample_weights[mask],
-                              directory=directory, glob=glob, model_id=model_id, batch_size=self._invocation.batch_size,
-                              jobs=self._invocation.jobs, static_plots=static_plots, interactive_plots=interactive_plots,
+                              directory=directory, glob=glob, model_id=model_id,
+                              batch_size=self._invocation.batch_size, jobs=self._invocation.jobs,
+                              static_plots=static_plots, interactive_plots=interactive_plots,
                               aggregation_mapping=self._invocation.aggregation_mapping, verbose=True)
 
             end = pd.Timestamp.now()

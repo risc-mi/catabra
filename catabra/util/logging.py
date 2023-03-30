@@ -260,14 +260,12 @@ class LogMirror:
             try:
                 callable2 = getattr(self._stream2, self.__missing_method_name)
                 callable2(*args, **kwargs)
-            except:
-                # TODO: specify expected Exception (E722 Do not use bare `except`)
+            except:     # noqa
                 pass
 
             # Emit method call to stream 1
             try:
                 callable1 = getattr(self._stream1, self.__missing_method_name)
                 return callable1(*args, **kwargs)
-            except:
-                # TODO: specify expected Exception (E722 Do not use bare `except`)
+            except:     # noqa
                 pass

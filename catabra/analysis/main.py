@@ -323,7 +323,7 @@ class CaTabRaAnalysis(CaTabRaBase):
                     io.dump(explainer.params_, self._invocation.out / explainer.name / 'params.joblib')
                     versions.update(explainer.get_versions())
             except Exception as ex:  # noqa
-                logging.warn(f'Error when creating explainer; skipping\n' + str(ex))
+                logging.warn('Error when creating explainer; skipping\n' + str(ex))
 
         if unknown:
             logging.warn('Unknown explanation backend(s) specified. Choose among ' +
