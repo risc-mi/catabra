@@ -4,9 +4,9 @@ import subprocess
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Iterable, Tuple, Optional
-from urllib.request import urlopen
+from typing import Iterable, Optional, Tuple
 from urllib.error import HTTPError
+from urllib.request import urlopen
 
 import pytest
 
