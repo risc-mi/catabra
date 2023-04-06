@@ -44,12 +44,13 @@ def save(fig, fn: Union[str, Path], png: bool = False):
             for name, f in fig.items():
                 save(f, fn / name, png=png)
     elif hasattr(fig, 'savefig'):
-        if fn.suffix == '':
-            fn = fn.with_suffix('.png' if png else '.pdf')
+        if fn.suffix not in ('.eps', '.jpeg', '.jpg', '.pdf', '.pgf', '.png', '.ps', '.raw', '.rgba', '.svg',
+                             '.svgz', '.tif', '.tiff'):
+            fn = fn.parent / (fn.name + ('.png' if png else '.pdf'))
         fig.savefig(fn, bbox_inches='tight')
     elif hasattr(fig, 'write_html'):
-        if fn.suffix == '':
-            fn = fn.with_suffix('.html')
+        if fn.suffix != '.html':
+            fn = fn.parent / (fn.name + '.html')
         fig.write_html(fn, include_plotlyjs='cdn', include_mathjax='cdn', full_html=True)
     else:
         raise ValueError(f'Cannot save figure of type {type(fig)}.')
