@@ -43,6 +43,21 @@ def _test(
     else:
         targets = dict(classify=targets)
 
+    config = {
+        'automl': backend,
+        'ensemble_size': 1 if single_model else 10,
+        'auto-sklearn': {} if holdout else dict(resampling_strategy='cv',
+                                                resampling_strategy_arguments=dict(folds=3)),
+        'ood_class': None  # OOD detection is tested separately elsewhere
+    }
+    if not holdout:
+        config.update(
+            {
+                'auto-sklearn_resampling_strategy': 'cv',
+                'auto-sklearn_resampling_strategy_arguments': dict(folds=3)
+            }
+        )
+
     analyze(
         _ROOT / 'data.h5' if from_file else df,
         **targets,
@@ -53,13 +68,7 @@ def _test(
         time=_TIME + 1 if multi_process else _TIME,
         jobs=2 if multi_process else 1,
         out=_OUT,
-        config={
-            'automl': backend,
-            'ensemble_size': 1 if single_model else 10,
-            'auto-sklearn': {} if holdout else dict(resampling_strategy='cv',
-                                                    resampling_strategy_arguments=dict(folds=3)),
-            'ood': None  # OOD detection is tested separately elsewhere
-        }
+        config=config
     )
 
     with subtests.test(msg='output_loading', i=0):
