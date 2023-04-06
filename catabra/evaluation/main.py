@@ -1620,7 +1620,7 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
             if sample_weight is None:
                 w = 1
             else:
-                w = sample_weight
+                w = sample_weight.reshape((-1, *([1] * (y_hat.ndim - 1))))      # make `sample_weight` broadcast-able
             tp = (((y_hat >= threshold) & (y_true > 0)) * w).sum(axis=0)
             fp = (((y_hat >= threshold) & (y_true < 1)) * w).sum(axis=0)
             tn = (((y_hat < threshold) & (y_true < 1)) * w).sum(axis=0)
