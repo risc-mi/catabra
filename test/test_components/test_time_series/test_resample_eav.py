@@ -113,7 +113,7 @@ def test_windows(pattern: str, include_start: bool, include_stop: bool, na_windo
     if na_windows:
         rng = np.random.RandomState(seed=seed)
         windows.drop([('timestamp', 'stop')], axis=1, inplace=True)
-        windows.loc[rng.randint(2, size=len(windows), dtype=np.bool), ('timestamp', 'start')] = None
+        windows.loc[rng.randint(2, size=len(windows), dtype=bool), ('timestamp', 'start')] = None
 
     agg = {'attr_1': ['mean', 'size', 'skew', 'sem'], 'attr_3': ['p25', 'p50', 'p99'], 'attr_4': ['p50', 'r-1', 't0'],
            'attr_6': ['r0', 't-1', 'r2']}

@@ -295,7 +295,7 @@ class CaTabRaEvaluation(CaTabRaBase):
     def _get_split_iterator(self, df):
         if self._invocation.split is None:
             def _iter_splits():
-                yield np.ones((len(df),), dtype=np.bool), self._invocation.out
+                yield np.ones((len(df),), dtype=bool), self._invocation.out
         else:
             split_masks, _ = tu.train_test_split(df, self._invocation.split)
 

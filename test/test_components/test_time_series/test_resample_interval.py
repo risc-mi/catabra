@@ -68,7 +68,7 @@ def test_windows(pattern: str, include_df_start: bool, include_df_stop: bool, na
     if na_windows:
         rng = np.random.RandomState(seed=seed)
         windows.drop([('timestamp', 'stop')], axis=1, inplace=True)
-        windows.loc[rng.randint(2, size=len(windows), dtype=np.bool), ('timestamp', 'start')] = None
+        windows.loc[rng.randint(2, size=len(windows), dtype=bool), ('timestamp', 'start')] = None
 
     kwargs = dict(
         attributes=['attr_1', 'attr_2', 'attr_5', 'attr_4'],

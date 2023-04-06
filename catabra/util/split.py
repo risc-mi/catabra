@@ -34,11 +34,11 @@ def _stratified_group_shuffle_split(y, groups, n_test: int, rng,
     n_samples = len(y)
     if n_test >= n_samples:
         for _ in range(n_splits):
-            yield np.ones(n_samples, dtype=np.bool)
+            yield np.ones(n_samples, dtype=bool)
         return
     elif n_test <= 0:
         for _ in range(n_splits):
-            yield np.zeros(n_samples, dtype=np.bool)
+            yield np.zeros(n_samples, dtype=bool)
         return
 
     _, y_inv, y_cnt = np.unique(y, return_inverse=True, return_counts=True)
@@ -243,11 +243,11 @@ class StratifiedGroupKFold(_BaseKFold):
 
         if self.shuffle and self.method == 'brute_force':
             n_test = int(len(y) / self.n_splits + 0.5)
-            train_mask = np.ones(len(y), dtype=np.bool)
+            train_mask = np.ones(len(y), dtype=bool)
             for _ in range(self.n_splits):
                 for local_test_mask in _stratified_group_shuffle_split(y[train_mask], groups[train_mask], n_test, rng,
                                                                        method='brute_force', n_iter=self.n_iter):
-                    test_mask = np.zeros(len(y), dtype=np.bool)
+                    test_mask = np.zeros(len(y), dtype=bool)
                     test_mask[train_mask] = local_test_mask
                     train_mask &= ~test_mask
                     yield np.flatnonzero(test_mask)
