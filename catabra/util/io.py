@@ -79,7 +79,8 @@ def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
         return pd.read_excel(str(fn), sheet_name=None)
     elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode='r') as h5:
-            out = {k[1:]: df for k, df in h5.items()}       # `k[1:]` to trim leading "/"
+            # `k[1:]` to trim leading "/"; don't iterate over `h5.items()`; skip "/"
+            out = {k[1:]: h5[k] for k in h5.keys() if len(k) > 1}
         return out
     else:
         return dict(table=read_df(fn))
@@ -144,11 +145,11 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
                     df = df.copy()
                     for c in delta_cols:
                         df[c] = df[c].astype('str')
-                df.to_excel(writer, sheet_name=k)
+                df.to_excel(writer, sheet_name=str(k))
     elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode=mode) as h5:
             for k, df in dfs.items():
-                h5[k] = df
+                h5[str(k)] = df
     elif len(dfs) > 1:
         raise RuntimeError(f'Cannot write more than one DataFrame to a "{fn.suffix}" file.')
     else:
