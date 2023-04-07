@@ -18,6 +18,15 @@ class Autoencoder(SamplewiseOODDetector):
     Autoencoder for out-of distribution detection.
     Uses a neural network to encode data into a lower dimensional space and reconstruct the original data from it.
     Reconstruction error determines the likelihood of a sample being out-of-distribution.
+
+    Parameters
+    ----------
+    target_dim_factor: float, default=0.25
+        Fraction of features in the smallest dimension.
+    reduction_factor: float, default=0.9
+        How much each layer reduces the dimensionality
+    threshold: float, default=0.5
+        Threshold value to decide when a sample is out of distribution
     """
 
     _mlp_kwargs = {
@@ -74,12 +83,6 @@ class Autoencoder(SamplewiseOODDetector):
 
     def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, thresh=0.5,
                  random_state: int=None, verbose=False, mlp_kwargs=None):
-        """
-        Initialization of Autoencoder
-        :param: target_dim_factor: how
-        :param: reduction_factor: how much each layer reduces the dimensionality
-        :param: p_val: p-value to decide when a sample is out of distribution
-        """
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._target_dim_factor = target_dim_factor
         self._reduction_factor = reduction_factor
@@ -118,8 +121,13 @@ class Autoencoder(SamplewiseOODDetector):
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
         """
-        :param: X: samples to fit autoencoder on
-        :param y: ignored. Only for interface consistency
+
+        Parameters
+        ----------
+        X: DataFrame
+            Samples to fit autoencoder on
+        y:
+            Ignored. Only for interface consistency
         """
         num_layers = np.log(self._target_dim_factor) // np.log(self._reduction_factor)
         self._encoder_layers = np.round(np.power(np.repeat(self._reduction_factor, num_layers),

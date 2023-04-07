@@ -18,15 +18,21 @@ class MinMaxScaler(skl_preprocessing.MinMaxScaler):
         `sklearn.preprocessing.MinMaxScaler` is parameter `fit_bool` that, when set to False, does not fit this scaler
         on boolean features but rather uses 0 and 1 as fixed minimum and maximum values. This ensures that False is
         always mapped to `feature_range[0]` and True is always mapped to `feature_range[1]`. Otherwise, if the training
-        data only contains True values, True would be mapped to `feature_range[0]` and False to
-        `feature_range[0] - feature_range[1]`.
+        data only contains True values, True would be mapped to `feature_range[0]` and False to `feature_range[0] -
+        feature_range [1]`.
         The behavior on other numerical data types is not affected by this.
 
-        Note that `sklearn.preprocessing.MaxAbsScaler` always maps False to 0 and True to 1, so there is no need for
-        an analogous subclass.
+        Parameters
+        ----------
+        fit_bool: bool, default=True
+            Whether to fit this scaler on boolean features. If True, the behavior is identical to
+            `sklearn.preprocessing.MinMaxScaler`.
 
-        :param fit_bool: Whether to fit this scaler on boolean features. If True, the behavior is identical to
-        `sklearn.preprocessing.MinMaxScaler`.
+        Notes
+        -----
+        Any
+            Note that `sklearn.preprocessing.MaxAbsScaler` always maps False to 0 and True to 1, so there is no need for
+            an analogous subclass.
         """
         super(MinMaxScaler, self).__init__(**kwargs)
         self.fit_bool = fit_bool
@@ -80,11 +86,16 @@ class OneHotEncoder(skl_preprocessing.OneHotEncoder):
         `sklearn.preprocessing.OneHotEncode` is parameter `drop_na` that, when set to True, allows to drop NaN
         categories. More precisely, no separate columns representing NaN categories are added upon transformation,
         resembling the behavior of `pandas.get_dummies()`.
-        :param drop_na: Whether to drop NaN categories. If False, the behavior is identical to
-        `sklearn.preprocessing.OneHotEncode`.
-        :param drop: Categories to drop. If `drop_na` is True, this parameter must be set to None.
-        :param handle_unknown: How to handle unknown categories. If `drop_na` is True, this parameter must be set to
-        "ignore". None defaults to "ignore" if `drop_na` is True and to "error" otherwise.
+
+        Parameters
+        ----------
+        drop_na: bool, default=False
+            Whether to drop NaN categories. If False, the behavior is identical to `sklearn.preprocessing.OneHotEncode`.
+        drop: optional
+            Categories to drop. If `drop_na` is True, this parameter must be set to None.
+        handle_unknown: optional
+            How to handle unknown categories. If `drop_na` is True, this parameter must be set to "ignore". None
+            defaults to "ignore" if `drop_na` is True and to "error" otherwise.
         """
         self._drop_na = drop_na
         if self._drop_na:
@@ -129,19 +140,27 @@ class NumCatTransformer(BaseEstimator, TransformerMixin):
         The order of columns may change compared to the input: numerical columns come first, followed by categorical
         columns, followed by passed-through columns.
 
-        :param num_transformer: The transformer to apply to numerical columns, or "passthrough" or "drop". Must
-        implement `fit()` and `transform()`. Class instances are cloned before being fit to data, to ensure that the
-        given instances are left unchanged.
-        :param cat_transformer: The transformer to apply to categorical columns, or "passthrough" or "drop". Must
-        implement `fit()` and `transform()`. Class instances are cloned before being fit to data, to ensure that the
-        given instances are left unchanged.
-        :param bool: How to treat boolean columns. One of "num", "cat", "passthrough" or "drop".
-        :param obj: How to treat columns with object data type. One of "num", "cat", "passthrough" or "drop".
-        :param timedelta: How to treat timedelta columns. One of "num", "cat", "passthrough", "drop", "[ns]", "[us]",
-        "[ms]", "[s]", "[m]", "[h]", "[d]", "[w]" or "[y]". A string representing a temporal resolution means that
-        timedelta columns are first converted into floats by dividing by the given resolution, and then treating the
-        result as numeric. This is useful if `num_transformer` does not natively support timedelta values.
-        :param timestamp: How to treat timestamp/datetime columns. Same possibilities as for `timedelta`.
+        Parameters
+        ----------
+        num_transformer: optional
+            The transformer to apply to numerical columns, or "passthrough" or "drop". Must mplement `fit()` and
+            `transform()`. Class instances are cloned before being fit to data, to ensure that the given instances are
+            left unchanged.
+        cat_transformer: optional
+            The transformer to apply to categorical columns, or "passthrough" or "drop". Must implement `fit()` and
+            `transform()`. Class instances are cloned before being fit to data, to ensure that the given instances are
+            left unchanged.
+        bool: str, default='passthrough'
+            How to treat boolean columns. One of "num", "cat", "passthrough" or "drop".
+        obj: str, default='drop'
+            How to treat columns with object data type. One of "num", "cat", "passthrough" or "drop".
+        timedelta: str, default='num'
+            How to treat timedelta columns. One of "num", "cat", "passthrough", "drop", "[ns]", "[us]", "[ms]", "[s]",
+            "[m]", "[h]", "[d]", "[w]" or "[y]". A string representing a temporal resolution means that timedelta
+            columns are first converted into floats by dividing by the given resolution, and then treating the result
+            as numeric. This is useful if `num_transformer` does not natively support timedelta values.
+        timestamp: str, default='num'
+            How to treat timestamp/datetime columns. Same possibilities as for `timedelta`.
         """
 
         self.num_transformer = num_transformer or 'passthrough'

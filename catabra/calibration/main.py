@@ -22,32 +22,45 @@ def calibrate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] =
     """
     Calibrate existing CaTabRa classification models. Calibration ensures that the probability estimates returned by
     the model are an indicator for the "true" confidence of the model, such that for instance a probability of 0.5
-    means that the model is unsure about its prediction. Citing scikit-learn:
+    means that the model is unsure about its prediction.
 
-        Well calibrated classifiers are probabilistic classifiers for which the output of the `predict_proba()`
-        method can be directly interpreted as a confidence level. For instance, a well calibrated (binary)
-        classifier should classify the samples such that among the samples to which it gave a `predict_proba`-value
-        close to 0.8, approximately 80% actually belong to the positive class.
 
-    :param table: The table(s) to calibrate the CaTabRa classifier on. If multiple are given, their columns are merged
-    into a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
-    :param folder: The folder containing the CaTabRa classifier to calibrate.
-    :param split: Optional, column used for splitting the data into disjoint subsets and calibrating the classifier on
-    only one of them (given by parameter `subset`). Ignored if `subset` is None.
-    :param subset: Optional, value in column `split` to consider for calibration. For instance, if the column specified
-    by `split` contains values "train", "val" and "test", and `subset` is set to "val", the classifier is calibrated
-    only on the "val"-entries.
-    In general, note that classifiers should be neither calibrated on the data used for training nor on the data used
-    for evaluating them.
-    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
-    :param method: Calibration method. Must be one of "sigmoid", "isotonic" or "auto". "sigmoid" should be used for
-    small sample sizes (<< 1000 samples) to avoid overfitting; otherwise, "isotonic" is preferable.
-    "auto" automatically selects the calibration method based on the sample size.
-    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
-    with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
-    should be replaced; otherwise, it is automatically created.
-    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table to use for calibration.
+    Parameters
+    ----------
+    *table: str | Path | DataFrame
+        The table(s) to calibrate the CaTabRa classifier on. If multiple are given, their columns are merged into a
+        single table. Must have the same format as the table(s) initially passed to function `analyze()`.
+    folder: str | Path
+        The folder containing the CaTabRa classifier to calibrate.
+    split: str, optional
+        Column used for splitting the data into disjoint subsets and calibrating the classifier on only one of them
+        (given by parameter `subset`). Ignored if `subset` is None.
+    subset: str, optional
+        Value in column `split` to consider for calibration. For instance, if the column specified by `split` contains
+        values "train", "val" and "test", and `subset` is set to "val", the classifier is calibrated only on the
+        "val"-entries. In general, note that classifiers should be neither calibrated on the data used for training nor
+        on the data used for evaluating them.
+    sample_weight: str, optional
+        Column with sample weights. If specified and not `""`, must have numeric data type.
+    method: str, optional
+        Calibration method. Must be one of `"sigmoid"`, `"isotonic"` or `"auto"`. `"sigmoid"` should be used for small
+        sample sizes (<< 1000 samples) to avoid overfitting; otherwise, "isotonic" is preferable. `"auto"` automatically
+        selects the calibration method based on the sample size.
+    out: str | Path, optional
+        Directory where to save all generated artifacts. Defaults to a directory located in `folder`, with a name
+        following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it should be
+        replaced; otherwise, it is automatically created.
+    from_invocation: str | Path | dict, optional
+        Dict or path to an invocation.json file. All arguments of this function not explicitly specified are taken from
+        this dict; this also includes the table to use for calibration.
+
+    Notes
+    -----
+    Citing scikit-learn:
+    *"Well calibrated classifiers are probabilistic classifiers for which the output of the `predict_proba()`
+    method can be directly interpreted as a confidence level. For instance, a well calibrated (binary)
+    classifier should classify the samples such that among the samples to which it gave a `predict_proba`-value
+    close to 0.8, approximately 80% actually belong to the positive class."*
     """
 
     calib = CaTabRaCalibration(invocation=from_invocation)
@@ -242,27 +255,41 @@ class CalibrationInvocation(Invocation):
 
 
 class Calibrator(BaseEstimator, TransformerMixin):
+    """
+    Calibrator, which transforms uncalibrated predictions of classification problems to calibrated class
+    probabilities.
+
+    Parameters
+    ----------
+    method: str, default='auto'
+        The method to use for calibration. Can be `"sigmoid"` which corresponds to Platt's method (i.e. a  logistic
+        regression model) or `"isotonic"` which is a non-parametric approach. Can also be `"auto"`, which defaults to
+        `"sigmoid"` if less than 900 samples are provided in `fit()` and to "isotonic" otherwise.
+    """
 
     def __init__(self, method: str = 'auto'):
-        """
-        Calibrator, which transforms uncalibrated predictions of classification problems to calibrated class
-        probabilities.
-        :param method: The method to use for calibration. Can be "sigmoid" which corresponds to Platt's method (i.e. a
-        logistic regression model) or "isotonic" which is a non-parametric approach. Can also be "auto", which defaults
-        to "sigmoid" if less than 900 samples are provided in `fit()` and to "isotonic" otherwise.
-        """
         self.method = method
 
     def fit(self, X, y=None, sample_weight=None) -> 'Calibrator':
         """
         Fit this Calibrator instance based on ground truth labels and uncalibrated prediction probabilities (or scores).
-        :param X: Uncalibrated predictions, array-like of shape `(n_samples,)`, `(n_samples, 1)` or
-        `(n_samples, n_classes)`. In the first two cases, the problem is assumed to be a binary classification problem
-        with `X` containing the probabilities/scores of the positive class.
-        :param y: Ground truth, array-like of shape `(n_samples,)` or `(n_samples, n_labels)` with values among
-        0, ..., `n_classes` - 1 and NaN.
-        :param sample_weight: Sample weight, optional. If given must have shape `(n_samples,)`.
-        :return: This Calibrator instance.
+
+        Parameters
+        ----------
+        X: array-like
+            Uncalibrated predictions, array-like of shape `(n_samples,)`, `(n_samples, 1)` or `(n_samples, n_classes).
+            In the first two cases, the problem is assumed to be a binary classification problem with `X` containing the
+            probabilities/scores of the positive class.
+        y: array-like
+            Ground truth, array-like of shape `(n_samples,)` or `(n_samples, n_labels)` with values among 0, ...,
+            n_classes` - 1 and NaN.
+        sample_weight: array-like, optional
+            Sample weight, optional. If given must have shape `(n_samples,)`.
+
+        Returns
+        -------
+        Calibrator
+            This fitted Calibrator instance.
         """
 
         if isinstance(y, (pd.DataFrame, pd.Series)):
@@ -311,9 +338,16 @@ class Calibrator(BaseEstimator, TransformerMixin):
     def predict(self, X: Union[pd.DataFrame, pd.Series, np.ndarray]) -> Union[pd.DataFrame, pd.Series, np.ndarray]:
         """
         Apply this Calibrator instance to uncalibrated predictions.
-        :param X: Uncalibrated predictions, array-like of shape `(n_samples,)`, `(n_samples, 1)` or
-        `(n_samples, n_classes)`.
-        :return: Calibrated class probabilities, of the same type and shape as `X`.
+
+        Parameters
+        ----------
+        X: DataFrame | Series | ndarray
+            Uncalibrated predictions, array-like of shape `(n_samples,)`, `(n_samples, 1)` or `(n_samples, n_classes)`.
+
+        Returns
+        -------
+        pd.DataFrame | pd.Series | np.ndarray
+            Calibrated class probabilities, of the same type and shape as `X`.
         """
 
         y = Calibrator._check_X(X, n_estimators=len(self.estimators_), multilabel=self.multilabel_).copy()

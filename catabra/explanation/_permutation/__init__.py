@@ -1,7 +1,7 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from ..base import EnsembleExplainer
+from catabra.explanation.base import EnsembleExplainer
 
 
 def permutation_factory(**kwargs):

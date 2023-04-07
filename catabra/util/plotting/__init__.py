@@ -20,13 +20,20 @@ PLOTLY_WARNING = 'plotly is required for creating interactive plots. You can ins
 def save(fig, fn: Union[str, Path], png: bool = False):
     """
     Save a figure or a list of figures to disk.
-    :param fig: The figure(s) to save. May be a Matplotlib figure object, a plotly figure object, or a dict whose
-    values are such figure objects.
-    :param fn: The file or directory. It is recommended to leave the file extension unspecified and simply pass
-    "/path/to/figure" instead of "/path/to/figure.png". The file extension is then determined automatically depending
-    on the type of `fig` and on the value of `png`. If `fig` is a dict, `fn` refers to the parent directory.
-    :param png: Whether to save Matplotlib figures as PNG or as PDF. Ignored if a file extension is specified in `fn`
-    or if `fig` is a plotly figure, which are always saved as HTML.
+
+    Parameters
+    ----------
+    fig:
+        The figure(s) to save. May be a Matplotlib figure object, a plotly figure object, or a dict whose values are
+        such figure objects.
+    fn: str | Path
+        The file or directory. It is recommended to leave the file extension unspecified and simply pass
+        `"/path/to/figure"` instead of `"/path/to/figure.png"`. The file extension is then determined automatically
+        depending on the type of `fig` and on the value of `png`. If `fig` is a dict, `fn` refers to the parent
+        directory.
+    png: bool, default=False
+        Whether to save Matplotlib figures as PNG or as PDF. Ignored if a file extension is specified in `fn` or if
+        `fig` is a plotly figure, which are always saved as HTML.
     """
     fn = make_path(fn)
     if isinstance(fig, dict):

@@ -43,7 +43,15 @@ for _m in ('accuracy', 'balanced_accuracy', 'f1', 'sensitivity', 'specificity', 
 def get_scorer(name: str) -> metrics.Scorer:
     """
     Get scorer by name.
-    :param name: Name of scorer.
-    :return: Scorer object, for usage in autosklearn pipelines.
+
+    Parameters
+    ----------
+    name: str
+        Name of scorer.
+
+    Returns
+    -------
+    metrics.Scorer
+        Scorer object, for usage in autosklearn pipelines.
     """
     return _EXTRA_SCORERS.get(name) or getattr(metrics, name)

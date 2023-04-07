@@ -1,0 +1,1 @@
+Link files to jupyter notebooks outside the sphinx source directory.

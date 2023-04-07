@@ -19,25 +19,37 @@ def apply(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = Non
           print_results: Union[bool, str] = False):
     """
     Apply an existing CaTabRa object (prediction model, OOD-detector, ...) to given data.
-    :param table: The table(s) to apply the CaTabRa object to. If multiple are given, their columns are merged into
-    a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
-    :param folder: The folder containing the CaTabRa object to apply.
-    :param model_id: Optional, ID of the prediction model to apply. If None or "__ensemble__", the sole trained
-    model or the entire ensemble are applied.
-    :param explain: Explain prediction model(s) on the given data. If "__all__", all models specified by `model_id` are
-    explained; otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are
-    applied.
-    :param check_ood: Whether to apply the OOD-detector to the given data. If True, the results of OOD-detection are
-    added to the table containing the model predictions.
-    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
-    with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
-    should be replaced; otherwise, it is automatically created.
-    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
-    :param batch_size: Optional, batch size used for applying the prediction model.
-    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table to apply the CaTabRa object to.
-    :param print_results: Whether to print prediction results. If "auto", results are only printed if the number of
-    samples does not exceed 30.
+
+    Parameters
+    ----------
+    *table: str | Path | DataFrame
+        The table(s) to apply the CaTabRa object to. If multiple are given, their columns are merged into a single
+        table. Must have the same format as the table(s) initially passed to function `analyze()`.
+    folder: str | Path
+        The folder containing the CaTabRa object to apply.
+    model_id: str, optional
+        ID of the prediction model to apply. If `None` or `"__ensemble__"`, the sole trained model or the entire
+        ensemble are applied.
+    explain: "all" | Iterable[str], optional
+        Explain prediction model(s) on the given data. If `"__all__"`, all models specified by `model_id` are explained;
+        otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are applied.
+    check_ood: bool, optional
+        Whether to apply the OOD-detector to the given data. If True, the results of OOD-detection are added to the
+        table containing the model predictions.
+    out: str | Path, optional
+        Directory where to save all generated artifacts. Defaults to a directory located in `folder`, with a name
+        following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it should be
+        replaced; otherwise, it is automatically created.
+    jobs: int, optional
+        Number of jobs to use. Overwrites the `"jobs"` config param.
+    batch_size: int, optional
+        Batch size used for applying the prediction model.
+    from_invocation: dict | str | Path, optional
+        Dict or path to an invocation.json file. All arguments of this function not explicitly specified are taken from
+        this dict; this also includes the table to apply the CaTabRa object to.
+    print_results: bool | str, optional
+        Whether to print prediction results. If "auto", results are only printed if the number of samples does not
+        exceed 30.
     """
     applier = CaTabRaApplication(invocation=from_invocation)
     applier(

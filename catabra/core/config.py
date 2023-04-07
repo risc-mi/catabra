@@ -167,9 +167,17 @@ DEFAULT_CONFIGS = {
 def add_defaults(config: dict, default: Optional[str] = None) -> dict:
     """
     Add default config values into a given config dict.
-    :param config: The base config. Modified in place.
-    :param default: The config with default values. None means `DEFAULT_CONFIG`.
-    :return: The updated config dict.
+
+    Parameters
+    ----------
+    config: dict
+        The base config. Modified in place.
+    default: str
+        The config with default values. None means `DEFAULT_CONFIG`.
+    Returns
+    -------
+    dict
+        The updated config dict.
     """
     default = DEFAULT_CONFIGS.get(default, DEFAULT_CONFIG)
     for k, v in default.items():

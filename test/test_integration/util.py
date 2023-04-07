@@ -13,19 +13,32 @@ def create_synthetic_data(task: str = 'binary_classification', n_samples: int = 
                           seed: Optional[int] = None) -> pd.DataFrame:
     """
     Create a synthetic data with several feature- and label columns with different data types.
-    :param task: Prediction task. Can also be "multioutput_regression", in which case two regression targets are
-    constructed.
-    :param n_samples: Number of samples = number of rows of resulting DataFrame.
-    :param n_groups: Number of groups. Must be between 2 and `n_samples`.
-    :param object_column: Whether to add a column with object data type, containing strings.
-    :param difficulty: Difficulty of the prediction task:
-    * 0: very easy, prediction models should be near perfect
-    * 1: moderately difficult, performance of prediction models should be good
-    * 2: moderately difficult unless samples are weighted by column "_sample_weight", in which case task is easy
-    * 3: random labels, models should not be significantly better than random
-    :param frac_unlabeled: Fraction of unlabeled samples.
-    :param seed: Random seed.
-    :return: DataFrame with features, label(s), and additional columns "_group", "_sample_weight" and "_test".
+
+    Parameters
+    ----------
+    task: str, default='binary_classification'
+        Prediction task. Can also be "multioutput_regression", in which case two regression targets are constructed.
+    n_samples: int, default=50000
+        Number of samples = number of rows of resulting DataFrame.
+    n_groups: int, default=5
+        Number of groups. Must be between 2 and `n_samples`.
+    object_column: bool, default=True
+        Whether to add a column with object data type, containing strings.
+    difficulty: int, default=0
+        Difficulty of the prediction task:
+        * 0: very easy, prediction models should be near perfect
+        * 1: moderately difficult, performance of prediction models should be good
+        * 2: moderately difficult unless samples are weighted by column "_sample_weight", in which case task is easy
+        * 3: random labels, models should not be significantly better than random
+    frac_unlabeled: float, default=0.2
+        Fraction of unlabeled samples.
+    seed: int, optional
+        Random seed.
+
+    Returns
+    -------
+    DataFrame
+        DataFrame with features, label(s), and additional columns "_group", "_sample_weight" and "_test".
     """
 
     assert 2 <= n_groups <= n_samples

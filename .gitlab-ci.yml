@@ -2,6 +2,7 @@ image: dockernexus01.risc-software.at/python:3.9
 
 include:
   - project: 'common/ci-templates'
+    ref:  0.1.9
     file: ['/devops/python/build-and-publish.yml', '/devops/util/util.yml', '/devops/python/test.yml']
 
 stages:

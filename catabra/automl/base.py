@@ -23,9 +23,14 @@ class AutoMLBackend:
     def register(name: str, backend: Callable[..., 'AutoMLBackend']):
         """
         Register a new AutoML backend.
-        :param name: The name of the backend.
-        :param backend: The backend, a function mapping argument-dicts to instances of class `AutoMLBackend` (or
-        subclasses thereof).
+
+        Parameters
+        ----------
+        name: str
+            The name of the backend.
+        backend: Callable[..., AutoMLBackend]
+            The backend, a function mapping argument-dicts to instances of class `AutoMLBackend` (or subclasses
+            thereof).
         """
         AutoMLBackend.__registered[name] = backend
 
@@ -55,8 +60,10 @@ class AutoMLBackend:
 
     @property
     def model_ids_(self) -> list:
-        """List of IDs for accessing individual (constituent) models of the final ensemble. Return [] if no such models
-        exist or cannot be accessed."""
+        """
+        List of IDs for accessing individual (constituent) models of the final ensemble. Return [] if no such models
+        exist or cannot be accessed
+        """
         raise NotImplementedError()
 
     @property
@@ -78,13 +85,17 @@ class AutoMLBackend:
         self._calibrator = value
 
     def summary(self) -> dict:
-        """Summary of trained model(s) and preprocessing pipeline(s). No scores (neither train, nor validation,
-        nor test), only "architectural" information."""
+        """
+        Summary of trained model(s) and preprocessing pipeline(s). No scores (neither train, nor validation,
+        nor test), only "architectural" information.
+        """
         raise NotImplementedError()
 
     def training_history(self) -> pd.DataFrame:
-        """Summary of the model training. Contains at least the final training- and validation scores, and, depending
-        on the backend, also their temporal evolution."""
+        """
+        Summary of the model training. Contains at least the final training- and validation scores, and, depending
+        on the backend, also their temporal evolution.
+        """
         raise NotImplementedError()
 
     def fitted_ensemble(self, ensemble_only: bool = True) -> FittedEnsemble:
@@ -95,21 +106,34 @@ class AutoMLBackend:
             dataset_name: Optional[str] = None, monitor=None) -> 'AutoMLBackend':
         """
         Fit models and/or an ensemble thereof to new data.
-        :param x_train: Features DataFrame. Allowed column data types are numeric (float, int, bool) and categorical.
-        May contain NaN values.
-        :param y_train: Targets DataFrame. Columns must be suitable for the specified prediction task, and must have
-        float data type. May contain NaN values.
-        :param groups: Optional grouping information for internal (cross) validation. If given, must have shape
-        `(n_samples,)`.
-        :param sample_weights: Optional sample weights. If given, must have shape `(n_samples,)`.
-        :param time: The time budget, in minutes, or -1 if no budget is imposed. Overwrites the time budget specified
-        in the config dict.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
-        of jobs specified in the config dict.
-        :param dataset_name: Optional name of the data set.
-        :param monitor: Instance of class `TrainingMonitorBackend` or None. Used for live monitoring of the training
-        process.
-        :return: This AutoML object.
+
+        Parameters
+        ----------
+        x_train: DataFrame
+            Features DataFrame. Allowed column data types are numeric (float, int, bool) and categorical. May contain
+            NaN values.
+        y_train: DataFrame
+            Targets DataFrame. Columns must be suitable for the specified prediction task, and must have float data
+            type. May contain NaN values.
+        groups: ndarray, optional
+            Grouping information for internal (cross) validation. If given, must have shape `(n_samples,)`.
+        sample_weights: ndarray, optional
+            Optional sample weights. If given, must have shape `(n_samples,)`.
+        time: int, optional
+            The time budget, in minutes, or -1 if no budget is imposed. Overwrites the time budget specified in the
+            config dict.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
+            specified in the config dict.
+        dataset_name: str
+            Name of the data set.
+        monitor: TrainingMonitorBackend, optinoal
+            Backend used for live monitoring of the training process.
+
+        Returns
+        -------
+        AutoMLBackend
+            This AutoML object.
         """
         raise NotImplementedError()
 
@@ -117,14 +141,27 @@ class AutoMLBackend:
                 model_id=None, calibrated: bool = 'auto') -> np.ndarray:
         """
         Apply trained models to given data.
-        :param x: Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
-        of jobs specified in the config dict.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
-        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None.
-        :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
+
+        Parameters
+        ----------
+
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
+            specified in the config dict.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        model_id: str, optional
+            The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        calibrated:  bool | 'auto', default='auto'
+            Whether to return calibrated predictions in case of classification tasks. If `"auto"`, calibrated
+            predictions are returned iff `model_id` is None.
+
+        Returns
+        -------
+        ndarray
+            Array of predictions. In case of classification, these are class indicators rather than probabilities.
         """
         raise NotImplementedError()
 
@@ -133,14 +170,26 @@ class AutoMLBackend:
         """
         Apply trained models to given data. In contrast to method `predict()`, this method returns class probabilities
         in case of classification tasks. Does not work for regression tasks.
-        :param x: Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
-        of jobs specified in the config dict.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
-        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None.
-        :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
+            specified in the config dict.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        model_id: str, optional
+            The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        calibrated: bool | 'auto'
+            Whether to return calibrated predictions in case of classification tasks. If `"auto"`, calibrated
+            predictions are returned iff `model_id` is `None`.
+
+        Returns
+        -------
+        ndarray
+            Array of class probabilities, of shape `(n_samples, n_classes)`.
         """
         raise NotImplementedError()
 
@@ -148,12 +197,22 @@ class AutoMLBackend:
             -> Dict[Any, np.ndarray]:
         """
         Apply all trained models to given data, including constituent models and the entire ensemble.
-        :param x: Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
-        of jobs specified in the config dict.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Dict mapping model IDs to prediction-arrays.
-        If existing, the key of the entire ensemble is "__ensemble__".
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
+            specified in the config dict.
+        batch_size: int,optional
+            Batch size, i.e., number of samples processed in parallel.
+
+        Returns
+        -------
+        Dict[Any, np.ndarray]
+            Dict mapping model IDs to prediction-arrays. If existing, the key of the entire ensemble is
+            `"__ensemble__"`.
         """
         raise NotImplementedError()
 
@@ -163,12 +222,21 @@ class AutoMLBackend:
         Apply all trained models to given data, including constituent models and the entire ensemble. In contrast to
         method `predict_all()`, this method returns class probabilities in case of classification tasks. Does not work
         for regression tasks.
-        :param x: Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number
-        of jobs specified in the config dict.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Dict mapping model IDs to probability-arrays.
-        If existing, the key of the entire ensemble is "__ensemble__".
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this AutoML object was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
+            specified in the config dict.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+
+        Returns
+        -------
+        Dict[Any, np.ndarray]
+            Dict mapping model IDs to probability-arrays. If existing, the key of the entire ensemble is "__ensemble__".
         """
         raise NotImplementedError()
 
@@ -180,7 +248,11 @@ class AutoMLBackend:
     def get_versions(self) -> dict:
         """
         Get the versions of all key packages and libraries this AutoML backend depends upon.
-        :return: Dict whose keys are package names and whose values are version strings.
+
+        Returns
+        -------
+        dict
+            Dict whose keys are package names and whose values are version strings.
         """
         raise NotImplementedError()
 

@@ -1,3 +1,5 @@
+# Configuration
+
 ## Configuring CaTabRa
 
 CaTabRa can be configured via *config files*. These config files control the behavior of the CaTabRa command-line
@@ -10,7 +12,7 @@ information, including the default values of the parameters.
 ## General Configuration Parameters
 * `"automl"`: AutoML backend to use. Currently, the only available option is `"auto-sklearn"`
     ([Link](https://automl.github.io/auto-sklearn/master/)), but new backends can be added by subclassing
-    `catabra.automl.base.AutoMLBackend`.
+    [`catabra.automl.base.AutoMLBackend`](https://github.com/risc-mi/catabra/tree/main/catabra/automl/base.py).
 * `"ensemble_size"`: Maximum size of the final ensemble of prediction models. Passed to the AutoML backend.
 * `"ensemble_nbest"`: Maximum number of best single models to use in the final ensemble. Passed to the AutoML
     backend.
@@ -35,7 +37,7 @@ information, including the default values of the parameters.
     of the final prediction results, to obtain summary statistics like mean, standard deviation, etc.
 * `"explainer"`: Explanation backend to use. Currently, the only available option is `"shap"`
     ([Link](https://github.com/slundberg/shap)), but new backends can be added by subclassing
-    `catabra.explanation.base.EnsembleExplainer`.
+    [`catabra.explanation.base.EnsembleExplainer`](https://github.com/risc-mi/catabra/tree/main/catabra/explanation/base.py).
 * `"binary_classification_metrics"`: List of metrics to evaluate when training binary classification models. The first
     metric in the list is the "main" metric optimized by the AutoML backend, the other metrics merely provide insights
     into the training process. Note that when evaluating trained models on new data using command `evaluate`, *all*
@@ -49,7 +51,8 @@ information, including the default values of the parameters.
     Has the same meaning as `"binary_classification_metrics"`.
 * `"ood_class"`: Name of the module or class used for out-of-distribution (OOD) detection, or `None` to disable
     creating OOD-detectors. The possible values depend on the value of config param `"ood_source"`:
-  * If `"ood_source"` is `"internal"`: name of one of the modules in `catabra.ood.internal`.
+  * If `"ood_source"` is `"internal"`: name of one of the modules in
+    [`catabra.ood.internal`](https://github.com/risc-mi/catabra/tree/main/catabra/ood/internal).
   * If `"source"` is `"pyod"`: name of one of the modules in `pyod.models`.
       **Note**: [PyOD](https://github.com/yzhao062/pyod) is not installed by default, but must be installed separately!
   * If `"source"` is `"external"`: full import path consisting of module and class (e.g. `custom.module.CustomOOD`).

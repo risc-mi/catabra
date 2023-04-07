@@ -21,36 +21,52 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
              bootstrapping_metrics: Optional[list] = None, from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
-    :param table: The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into
-    a single table. Must have the same format as the table(s) initially passed to function `analyze()`.
-    :param folder: The folder containing the CaTabRa object to evaluate.
-    :param model_id: Optional, ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained
-    model or the entire ensemble are evaluated.
-    :param explain: Explain prediction model(s). If "__all__", all models specified by `model_id` are explained;
-    otherwise, must be a list of the model ID(s) to explain, which must be a subset of the models that are evaluated.
-    :param glob: Whether to create global instead of local explanations.
-    :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
-    subset is evaluated individually. In contrast to function `analyze()`, the name/values of the column do not need to
-    carry any semantic information about training and test sets.
-    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
-    Sample weights are used both for training and evaluating prediction models.
-    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
-    with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
-    should be replaced; otherwise, it is automatically created.
-    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
-    :param batch_size: Optional, batch size used for applying the prediction model.
-    :param threshold: Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and
-    bootstrapped performance results are reported for this particular threshold. In binary classification this can also
-    be the name of a built-in thresholding strategy, possibly followed by "on" and the split on which to calculate the
-    threshold. Splits must be specified by the name of the subdirectory containing the corresponding evaluation results.
-    See /doc/metrics.md for a list of built-in thresholding strategies.
-    :param bootstrapping_repetitions: Optional, number of bootstrapping repetitions. Overwrites the
-    "bootstrapping_repetitions" config param.
-    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if. Defaults to the list
-    of main metrics specified in the default config. Can also be "__all__", in which case all standard metrics for the
-    current prediction task are computed. Ignored if bootstrapping is disabled.
-    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table on which to evaluate the CaTabRa object.
+
+    Parameters
+    ----------
+    *table:
+        The table(s) to evaluate the CaTabRa object on. If multiple are given, their columns are merged into a single
+        table. Must have the same format as the table(s) initially passed to function `analyze()`.
+    folder: str | PAth
+        The folder containing the CaTabRa object to evaluate.
+    model_id: optional
+        ID of the prediction model to evaluate. If None or "__ensemble__", the sole trained model or the entire ensemble
+        are evaluated.
+    explain: list | str, optional
+        Explain prediction model(s). If `"__all__"`, all models specified by `model_id` are explained; otherwise, must
+        be a list of the model ID(s) to explain, which must be a subset of the models that are evaluated.
+    glob: bool, default=False
+        Whether to create global instead of local explanations.
+    split: str, optional
+        Column used for splitting the data into disjoint subsets. If specified and not `""`, each subset is evaluated
+        individually. In contrast to function `analyze()`, the name/values of the column do not need to carry any
+        semantic information about training and test sets.
+    sample_weight: str, optional
+        Column with sample weights. If specified and not `""`, must have numeric data type. Sample weights are used both
+        for training and evaluating prediction models.
+    out: str | Path, optional
+        Directory where to save all generated artifacts. Defaults to a directory located in `folder`, with a name
+        following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it should be
+        replaced; otherwise, it is automatically created.
+    jobs: int, optional
+        Number of jobs to use. Overwrites the "jobs" config param.
+    batch_size: int, optional
+        Batch size used for applying the prediction model.
+    threshold: float | str, optional
+        Decision threshold for binary- and multilabel classification tasks. Confusion matrix plots and bootstrapped
+        performance results are reported for this particular threshold. In binary classification this can also be the
+        name of a built-in thresholding strategy, possibly followed by "on" and the split on which to calculate the
+        threshold. Splits must be specified by the name of the subdirectory containing the corresponding evaluation
+        results. See /doc/metrics.md for a list of built-in thresholding strategies.
+    bootstrapping_repetitions: int, optional
+        Number of bootstrapping repetitions. Overwrites the `"bootstrapping_repetitions"` config param.
+    bootstrapping_metrics: list, optional
+        Names of metrics for which bootstrapped scores are computed, if. Defaults to the list of main metrics specified
+        in the default config. Can also be `"__all__"`, in which case all standard metrics for the current prediction
+        task are computed. Ignored if bootstrapping is disabled.
+    from_invocation: str | Path | dict, optional
+        Dict or path to an invocation.json file. All arguments of this function not explicitly specified are taken from
+        this dict; this also includes the table on which to evaluate the CaTabRa object.
     """
     evaluator = CaTabRaEvaluation(invocation=from_invocation)
     evaluator(
@@ -495,26 +511,46 @@ def evaluate_split(y_true: pd.DataFrame, y_hat: np.ndarray, encoder, directory=N
                    split: Optional[str] = None, verbose: bool = False) -> Optional[dict]:
     """
     Evaluate a single split, given by ground truth and predictions.
-    :param y_true: Ground truth, encoded DataFrame.
-    :param y_hat: Predictions array.
-    :param encoder: Encoder used for encoding and decoding.
-    :param directory: Directory where to save the evaluation results. If None, results are returned in a dict.
-    :param main_metrics: Main evaluation metrics. None defaults to the metrics specified in the default config.
-    :param y_true_decoded: Decoded ground truth for creating regression plots. If None, `encoder` is applied to decode
-    `y_true`.
-    :param y_hat_decoded: Decoded predictions for creating regression plots. If None, `encoder` is applied to decode
-    `y_hat`.
-    :param sample_weight: Sample weights, optional. If None, uniform weights are used.
-    :param threshold: Decision threshold for binary- and multilabel classification problems.
-    :param static_plots: Whether to create static plots.
-    :param interactive_plots: Whether to create interactive plots.
-    :param bootstrapping_repetitions: Number of bootstrapping repetitions.
-    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
-    `bootstrapping_repetitions` is > 0. Defaults to `main_metrics`. Can also be "__all__", in which case all standard
-    metrics for the current prediction task are computed. Ignored if `bootstrapping_repetitions` is 0.
-    :param split: Name of the current split, or None. Only used for logging.
-    :param verbose: Whether to log key performance metrics.
-    :return: None if `directory` is given, else dict with evaluation results.
+
+    Parameters
+    ----------
+    y_true: DataFrame
+        Ground truth, encoded DataFrame.
+    y_hat: ndarray
+        Predictions array.
+    encoder:
+        Encoder used for encoding and decoding.
+    directory: str | Path
+        Directory where to save the evaluation results. If `None`, results are returned in a dict.
+    main_metrics: list
+        Main evaluation metrics. `None` defaults to the metrics specified in the default config.
+    y_true_decoded: optinal
+        Decoded ground truth for creating regression plots. If None, `encoder` is applied to decode `y_true`.
+    y_hat_decoded: optional
+        Decoded predictions for creating regression plots. If None, `encoder` is applied to decode`y_hat`.
+    sample_weight: ndarray, optional
+        Sample weights, optional. If `None`, uniform weights are used.
+    threshold:
+        Decision threshold for binary- and multilabel classification problems.
+    static_plots:
+        Whether to create static plots.
+    interactive_plots:
+        Whether to create interactive plots.
+    bootstrapping_repetitions:
+        Number of bootstrapping repetitions.
+    bootstrapping_metrics:
+        Names of metrics for which bootstrapped scores are computed, if `bootstrapping_repetitions` is > 0. Defaults to
+        `main_metrics`. Can also be `"__all__"`, in which case all standard metrics for the current prediction task are
+        computed. Ignored if `bootstrapping_repetitions` is 0.
+    split:
+        Name of the current split, or None. Only used for logging.
+    verbose:
+        Whether to log key performance metrics.
+
+    Returns
+    -------
+    dict | None
+        `None` if `directory` is given, else dict with evaluation results.
     """
 
     if directory is None:
@@ -716,14 +752,24 @@ def calc_regression_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                             sample_weight: Optional[np.ndarray] = None) -> pd.DataFrame:
     """
     Calculate all suitable regression metrics for all targets individually, and for their combination.
-    :param y_true: Ground truth. All columns must have numerical data type. Entries may be NaN, in which case only
+
+    Parameters
+    ----------
+    y_true: DataFrame
+        Ground truth. All columns must have numerical data type. Entries may be NaN, in which case only
     non-NaN entries are considered.
-    :param y_hat: Predictions. Must have the same shape as `y_true`. Entries may be NaN, in which case only non-NaN
-    entries are considered.
-    :param sample_weight: Sample weights. If given, must have shape `(len(y_true),)`.
-    :return: DataFrame with one column for each calculated metric, and one row for each column of `y_true` plus an
-    extra row "__overall__". Note that "__overall__" is added even if `y_true` has only one column, in which case the
-    metrics for that column and "__overall__" coincide.
+    y_hat: DataFrame, ndarray
+        Predictions. Must have the same shape as `y_true`. Entries may be NaN, in which case only non-NaN entries are
+        considered.
+    sample_weight: ndarray
+        Sample weights. If given, must have shape `(len(y_true),)`.
+
+    Returns
+    -------
+    DataFrame
+        DataFrame with one column for each calculated metric, and one row for each column of `y_true` plus an extra row
+        "__overall__". Note that "__overall__" is added even if `y_true` has only one column, in which case the metrics
+        for that column and "__overall__" coincide.
     """
     assert y_true.shape == y_hat.shape
     if isinstance(y_hat, pd.DataFrame):
@@ -804,27 +850,41 @@ def calc_binary_classification_metrics(
                  Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
     Calculate all metrics suitable for binary classification tasks.
-    :param y_true: Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
-    :param y_hat: Predictions. Must have the same number of rows as `y_true` and either 1 or 2 columns.
-    :param sample_weight: Sample weights. If given, must have shape `(len(y_true),)`.
-    :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
-    depending on the values of `y_hat` is constructed.
-    :param ensure_thresholds: List of thresholds that must appear among the used thresholds, if `thresholds` is set to
-    None. Ignored if `thresholds` is a list.
-    :param calibration_thresholds: Thresholds to use for calibration curves. If None, a default list depending on the
-    values of `y_hat` is constructed.
-    :return: 5-tuple `(overall, threshold, calibration, roc_curve, pr_curve)`:
-    * `overall` is a dict containing the scores of threshold-independent metrics (e.g., ROC-AUC).
-    * `threshold` is a DataFrame with one column for each threshold-dependent metric, and one row for each decision
-        threshold.
-    * `calibration` is a DataFrame with one row for each threshold-bin and three columns with information about the
-        corresponding bin ranges and fraction of positive samples.
-    * `roc_curve` is the receiver operating characteristic curve, as returned by `sklearn.metrics.roc_curve()`.
-        Although similar information is already contained in `threshold["specificity"]` and `threshold["sensitivity"]`,
-        `roc_curve` is more fine-grained and better suited for plotting.
-    * `pr_curve` is the precision-recall curve, as returned by `sklearn.metrics.precision_recall_curve()`.
-        Although similar information is already contained in `threshold["sensitivity"]` and
-        `threshold["positive_predictive_value"]`, `pr_curve` is more fine-grained and better suited for plotting.
+
+    Parameters
+    ----------
+    y_true: DataFrame
+        Ground truth. Must have 1 column with float data type and values among 0, 1 and NaN.
+    y_hat: DataFrame | ndarray
+        Predictions. Must have the same number of rows as `y_true` and either 1 or 2 columns.
+    sample_weight: ndarray, optional
+        Sample weights. If given, must have shape `(len(y_true),)`.
+    thresholds: list, optional
+        List of thresholds to use for thresholded metrics. If `None`, a default list of thresholds depending on the
+        values of `y_hat` is constructed.
+    ensure_thresholds: list, optional
+        List of thresholds that must appear among the used thresholds, if `thresholds` is set to `None`. Ignored if
+        `thresholds` is a list.
+    calibration_thresholds: ndarray, optional
+        Thresholds to use for calibration curves. If None, a default list depending on the values of `y_hat` is
+        constructed.
+
+    Returns
+    -------
+    Tuple
+        5-tuple `(overall, threshold, calibration, roc_curve, pr_curve)`:
+
+        * `overall` is a dict containing the scores of threshold-independent metrics (e.g., ROC-AUC).
+        * `threshold` is a DataFrame with one column for each threshold-dependent metric, and one row for each decision
+          threshold.
+        * `calibration` is a DataFrame with one row for each threshold-bin and three columns with information about the
+          corresponding bin ranges and fraction of positive samples.
+        * `roc_curve` is the receiver operating characteristic curve, as returned by `sklearn.metrics.roc_curve()`.
+          Although similar information is already contained in `threshold["specificity"]` and
+          `threshold["sensitivity"]`, `roc_curve` is more fine-grained and better suited for plotting.
+        * `pr_curve` is the precision-recall curve, as returned by `sklearn.metrics.precision_recall_curve()`.
+          Although similar information is already contained in `threshold["sensitivity"]` and
+          `threshold["positive_predictive_value"]`, `pr_curve` is more fine-grained and better suited for plotting.
     """
     assert y_true.shape[1] == 1
     assert len(y_true) == len(y_hat)
@@ -914,25 +974,43 @@ def plot_binary_classification(overall: dict, thresholded: pd.DataFrame, thresho
                                interactive: bool = False) -> dict:
     """
     Plot evaluation results of binary classification tasks.
-    :param overall: Overall, non-thresholded performance metrics, as returned by function
-    `calc_binary_classification_metrics()`.
-    :param thresholded: Thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
-    :param threshold: Decision threshold.
-    :param calibration: Calibration curve, as returned by function `calc_binary_classification_metrics()`.
-    :param name: Name of the classified variable.
-    :param neg_label: Name of the negative class.
-    :param pos_label: Name of the positive class.
-    :param roc_curve: ROC-curve, triple `(fpr, tpr, thresholds)` or None.
-    :param pr_curve: Precision-recall-curve, triple `(precision, recall, thresholds)` or None.
-    :param roc_curve_bs: ROC-curves obtained via bootstrapping. None or a pair `(fpr, tpr)`, where both components are
-    equal-length lists of arrays of shape `(n_thresholds,)`.
-    :param pr_curve_bs: Precision-recall-curves obtained via bootstrapping. None or a pair `(precision, recall)`, where
-    both components are equal-length lists of arrays of shape `(n_thresholds,)`.
-    :param calibration_curve_bs: Calibration curves obtained via bootstrapping. None or a single array of shape
-    `(n_thresholds, n_repetitions)`; the thresholds must agree with those in `calibration`.
-    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
-    Matplotlib backend.
-    :return: Dict mapping names to figures.
+
+    Parameters
+    ----------
+    overall: dict
+        Overall, non-thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
+    thresholded: DataFrame
+        Thresholded performance metrics, as returned by function `calc_binary_classification_metrics()`.
+    threshold: float, default=0.5
+        Decision threshold.
+    calibration: DataFrame, optional
+        Calibration curve, as returned by function `calc_binary_classification_metrics()`.
+    name: str, optional
+        Name of the classified variable.
+    neg_label: str, default='negative'
+        Name of the negative class.
+    pos_label: str, default='positive'
+        Name of the positive class.
+    roc_curve: optional
+        ROC-curve, triple `(fpr, tpr, thresholds)` or None.
+    pr_curve: optional
+        Precision-recall-curve, triple `(precision, recall, thresholds)` or None.
+    roc_curve_bs: optional
+        ROC-curves obtained via bootstrapping. None or a pair `(fpr, tpr)`, where both components are equal-length lists
+        of arrays of shape `(n_thresholds,)`.
+    pr_curve_bs: optional
+        Precision-recall-curves obtained via bootstrapping. None or a pair `(precision, recall)`, where both components
+        are equal-length lists of arrays of shape `(n_thresholds,)`.
+    calibration_curve_bs: optional
+        Calibration curves obtained via bootstrapping. None or a single array of shape `(n_thresholds, n_repetitions)`;
+        the thresholds must agree with those in `calibration`.
+    interactive: bool, default=False
+        Whether to create interactive plots using the plotly backend, or static plots using the Matplotlib backend.
+
+    Returns
+    -------
+    dict
+        Dict mapping names to figures.
     """
     if 'n_pos_weighted' in overall:
         pos_prevalence = overall.get('n_pos_weighted', 0) / overall.get('n_weighted', 1)
@@ -1010,14 +1088,25 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
                             labels: Optional[list] = None) -> Tuple[dict, pd.DataFrame, pd.DataFrame]:
     """
     Calculate all metrics suitable for multiclass classification.
-    :param y_true: Ground truth. Must have 1 column with float data type and values among
-    NaN, 0, 1, ..., `n_classes` - 1.
-    :param y_hat: Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
-    :param sample_weight: Sample weights.
-    :param labels: Class names.
-    :return: Triple `(overall, conf_mat, per_class)`, where `overall` is a dict with overall performance metrics
-    (accuracy, F1, etc.), `conf_mat` is the confusion matrix, and `per_class` is a DataFrame with per-class metrics
-    (one row per class, one column per metric).
+
+    Parameters
+    ----------
+    y_true: DataFrame
+        Ground truth. Must have 1 column with float data type and values among NaN, 0, 1, ..., `n_classes` - 1.
+    y_hat: DataFrame | ndarray
+        Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
+    sample_weight: ndarray
+        Sample weights.
+    labels: list
+        Class names.
+
+
+    Returns
+    --------
+    Tuple
+        Triple `(overall, conf_mat, per_class)`, where `overall` is a dict with overall performance metrics (accuracy,
+        F1, etc.), `conf_mat` is the confusion matrix, and `per_class` is a DataFrame with per-class metrics (one row
+        per class, one column per metric).
     """
     assert y_true.shape[1] == 1
     assert len(y_true) == len(y_hat)
@@ -1127,10 +1216,18 @@ def calc_multiclass_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
 def plot_multiclass(confusion_matrix: pd.DataFrame, interactive: bool = False) -> dict:
     """
     Plot evaluation results of multiclass classification tasks.
-    :param confusion_matrix: Confusion matrix, as returned by function `calc_multiclass_metrics()`.
-    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
-    Matplotlib backend.
-    :return: Dict mapping names to figures.
+
+    Parameters
+    ----------
+    confusion_matrix: DataFrame
+        Confusion matrix, as returned by function `calc_multiclass_metrics()`.
+    interactive: bool, default=False
+        Whether to create interactive plots using the plotly backend, or static plots using the Matplotlib backend.
+
+    Returns
+    -------
+    dict
+        Dict mapping names to figures.
     """
     if interactive:
         if plotting.plotly_backend is None:
@@ -1148,24 +1245,37 @@ def calc_multilabel_metrics(y_true: pd.DataFrame, y_hat: Union[pd.DataFrame, np.
         -> Tuple[pd.DataFrame, pd.DataFrame, dict, dict, dict]:
     """
     Calculate all metrics suitable for multilabel classification.
-    :param y_true: Ground truth. Must have `n_classes` columns with float data type and values among 0, 1 and NaN.
-    :param y_hat: Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
-    :param sample_weight: Sample weights. If given, must have shape `(len(y_true),)`.
-    :param thresholds: List of thresholds to use for thresholded metrics. If None, a default list of thresholds
-    depending on the values of `y_hat` is constructed.
-    :param ensure_thresholds: List of thresholds that must appear among the used thresholds, if `thresholds` is set to
-    None. Ignored if `thresholds` is a list.
-    :return: 5-tuple `(overall, threshold, threshold_per_class, roc_curves, pr_curves)`:
-    * `overall` is a DataFrame containing non-thresholded metrics per class and for all classes combined
-        ("__micro__", "__macro__" and "__weighted__"). Weights are the number of positive samples per class.
-    * `threshold` is a DataFrame containing thresholded metrics for different thresholds for all classes combined.
-    * `threshold_per_class` is a dict mapping classes to per-class thresholded metrics.
-    * `roc_curves` is a dict mapping classes to receiver operating characteristic curves, as returned by
-        `sklearn.metrics.roc_curve()`. Although similar information is already contained in `threshold_per_class`,
-        `roc_curves` is more fine-grained and better suited for plotting.
-    * `pr_curve` is a dict mapping classes to precision-recall curves, as returned by
-        `sklearn.metrics.precision_recall_curve()`. Although similar information is already contained in
-        `threshold_per_class`, `pr_curves` is more fine-grained and better suited for plotting.
+
+    Parameters
+    ----------
+    y_true: DataFrame
+        Ground truth. Must have `n_classes` columns with float data type and values among 0, 1 and NaN.
+    y_hat: DataFrame | ndarray
+        Predicted class probabilities. Must have shape `(len(y_true), n_classes)` and values between 0 and 1.
+    sample_weight: ndarray, optional
+        Sample weights. If given, must have shape `(len(y_true),)`.
+    thresholds: list, optional
+        List of thresholds to use for thresholded metrics. If None, a default list of thresholds depending on the values
+        of `y_hat` is constructed.
+    ensure_thresholds: list, optional
+        List of thresholds that must appear among the used thresholds, if `thresholds` is set to None. Ignored if
+        `thresholds` is a list.
+
+    Returns
+    -------
+    Tuple
+        5-tuple `(overall, threshold, threshold_per_class, roc_curves, pr_curves)`:
+
+        * `overall` is a DataFrame containing non-thresholded metrics per class and for all classes combined
+          ("__micro__", "__macro__" and "__weighted__"). Weights are the number of positive samples per class.
+        * `threshold` is a DataFrame containing thresholded metrics for different thresholds for all classes combined.
+        * `threshold_per_class` is a dict mapping classes to per-class thresholded metrics.
+        * `roc_curves` is a dict mapping classes to receiver operating characteristic curves, as returned by
+          `sklearn.metrics.roc_curve()`. Although similar information is already contained in `threshold_per_class`,
+          `roc_curves` is more fine-grained and better suited for plotting.
+        * `pr_curve` is a dict mapping classes to precision-recall curves, as returned by
+          `sklearn.metrics.precision_recall_curve()`. Although similar information is already contained in
+          `threshold_per_class`, `pr_curves` is more fine-grained and better suited for plotting.
     """
     assert len(y_true) == len(y_hat)
     if isinstance(y_hat, pd.DataFrame):
@@ -1329,16 +1439,28 @@ def plot_multilabel(overall: pd.DataFrame, thresholded: dict, threshold: float =
                     pr_curves=None, interactive: bool = False) -> dict:
     """
     Plot evaluation results of multilabel classification tasks.
-    :param overall: Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
-    :param thresholded: Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
-    :param threshold: Decision threshold.
-    :param labels: Class names. None or a DataFrame with `n_class` columns and 2 rows.
-    :param roc_curves: ROC-curves, dict mapping classes to triples `(fpr, tpr, thresholds)` or None.
-    :param pr_curves: Precision-recall-curves, dict mapping classes to triples `(precision, recall, thresholds)` or
-    None.
-    :param interactive: Whether to create interactive plots using the plotly backend, or static plots using the
-    Matplotlib backend.
-    :return: Dict mapping names to figures.
+
+    Parameters
+    ----------
+    overall: DataFrame
+        Overall, non-thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    thresholded: dict
+        Thresholded performance metrics, as returned by function `calc_multilabel_metrics()`.
+    threshold: float, default=0.5
+        Decision threshold.
+    labels: optional
+        Class names. None or a DataFrame with `n_class` columns and 2 rows.
+    roc_curves: optional
+        ROC-curves, dict mapping classes to triples `(fpr, tpr, thresholds)` or None.
+    pr_curves: optional
+        Precision-recall-curves, dict mapping classes to triples `(precision, recall, thresholds)` or None.
+    interactive: bool, default=False
+        Whether to create interactive plots using the plotly backend, or static plots using the Matplotlib backend.
+
+    Returns
+    -------
+    dict
+        Dict mapping names to figures.
     """
     out = {}
     kwargs = {}
@@ -1361,22 +1483,34 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
                  sample_weight: Union[str, np.ndarray] = 'from_predictions') -> Tuple[dict, dict]:
     """
     Calculate performance metrics from raw sample-wise predictions and corresponding ground-truth.
-    :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
-    :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
-    object and calling its `get_encoder()` method.
-    :param threshold: Decision threshold for binary- and multilabel classification problems. In binary classification
-    this can also be the name of a built-in thresholding strategy. See /doc/metrics.md for a list of built-in
-    thresholding strategies.
-    :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform.
-    :param bootstrapping_metrics: Names of metrics for which bootstrapped scores are computed, if
-    `bootstrapping_repetitions` is > 0. Defaults to the list of main metrics specified in the default config. Can also
-    be "__all__", in which case all standard metrics for the current prediction task are computed.
-    Ignored if `bootstrapping_repetitions` is 0.
-    :param sample_weight: Sample weights, one of "from_predictions" (to use sample weights stored in `predictions`),
-    "uniform" (to use uniform sample weights) or an array.
-    :return: Pair `(metrics, bootstrapping)`, where `metrics` is a dict whose values are DataFrames and corresponds
-    exactly to what is by default saved as "metrics.xlsx" when invoking function `evaluate()`, and `bootstrapping` is
-    a dict mapping keys "summary" and "details" to DataFrames or None.
+
+    Parameters
+    ----------
+    predictions: str | Path | DataFrame
+        Sample-wise predictions, as saved in "predictions.xlsx".
+    encoder: Encoder
+        Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader oject and
+        calling its `get_encoder()` method.
+    threshold: float, default=0.5
+        Decision threshold for binary- and multilabel classification problems. In binary classification this can also be
+        the name of a built-in thresholding strategy. See /doc/metrics.md for a list of built-in thresholding
+        strategies.
+    bootstrapping_repetitions: int, default=0
+        Number of bootstrapping repetitions to perform.
+    bootstrapping_metrics: list, optional
+        Names of metrics for which bootstrapped scores are computed, if `bootstrapping_repetitions` is > 0. Defaults to
+        the list of main metrics specified in the default config. Can also be "__all__", in which case all standard
+        metrics for the current prediction task are computed. Ignored if `bootstrapping_repetitions` is 0.
+    sample_weight: str | ndarray, optional
+        Sample weights, one of "from_predictions" (to use sample weights stored in `predictions`), "uniform"
+        (to use uniform sample weights) or an array.
+
+    Returns
+    -------
+    Tuple
+        Pair `(metrics, bootstrapping)`, where `metrics` is a dict whose values are DataFrames and corresponds exactly
+        to what is by default saved as "metrics.xlsx" when invoking function `evaluate()`, and `bootstrapping` is a dict
+        mapping keys "summary" and "details" to DataFrames or None.
     """
 
     y_true, y_hat, weight = _get_y_true_hat_weight_from_predictions(predictions, encoder)
@@ -1457,15 +1591,28 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
     Plot the results of an evaluation. This happens automatically if config params "static_plots" or
     "interactive_plots" are set to True. This function does not save the resulting plots to disk, but instead returns
     them in a (nested) dict. This allows one to further modify / fine-tune them before displaying or saving.
-    :param predictions: Sample-wise predictions, as saved in "predictions.xlsx".
-    :param metrics_: Performance metrics, as saved in "metrics.xlsx".
-    :param encoder: Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader
-    object and calling its `get_encoder()` method.
-    :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
-    :param threshold: Decision threshold for binary- and multilabel classification problems.
-    :param bootstrapping_repetitions: Number of bootstrapping repetitions to perform for adding confidence intervals
-    to ROC-, PR- and calibration curves in binary classification tasks.
-    :return: (Nested) dict of Matplotlib or plotly figure objects, depending on the value of `interactive`.
+
+    Parameters
+    ----------
+    predictions: str | Path | DataFrame
+        Sample-wise predictions, as saved in "predictions.xlsx".
+    metrics_: str | Path | DataFrame | dict
+        Performance metrics, as saved in "metrics.xlsx".
+    encoder: Encoder
+        Encoder, as saved in "encoder.json". Can be conveniently loaded by instantiating a CaTabRaLoader object and
+        calling its `get_encoder()` method.
+    interactive: bool, default=False
+        Whether to create static Matplotlib plots or interactive plotly plots.
+    threshold: float, default=0.5
+        Decision threshold for binary- and multilabel classification problems.
+    bootstrapping_repetitions: int, default=0
+        Number of bootstrapping repetitions to perform for adding confidence intervals to ROC-, PR- and calibration
+        curves in binary classification tasks.
+
+    Returns
+    -------
+    dict
+        (Nested) dict of Matplotlib or plotly figure objects, depending on the value of `interactive`.
     """
     if encoder.task_ == 'regression':
         assert predictions is not None
@@ -1556,19 +1703,31 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
     `calc_regression_metrics()` etc., this function is more "light-weight", for instance in the sense that it only
     computes binary classification metrics for one particular threshold and only returns aggregate results over all
     classes in case of multiclass and multilabel classification. It can also be efficiently combined with bootstrapping.
-    :param args: Ground truth and predictions, array-like of shape `(n_samples,)` or `(n_samples, n_targets)`.
-    Should not contain NA values. Predictions must contain class probabilities rather than classes in case of
-    classification tasks. Either none or both must be specified.
-    :param sample_weight: Sample weight, None or array-like of shape `(n_samples,)`.
-    :param task: Prediction task.
-    :param metric_list: List of metrics to evaluate. Metrics that do not fit to the given prediction task are tacitly
-    skipped.
-    :param threshold: Decision threshold for binary- and multilabel classification problems.
-    :param add_na_results: Whether to add N/A results in the output, e.g., if one of the requested metrics cannot be
-    calculated. If False, these metrics are tacitly skipped.
-    :return: If `args` is pair `(y_true, y_hat)`: dict whose keys are names of metrics and whose values are the results
-    of the respective metrics evaluated on `y_true` and `y_hat`. Otherwise, if `args` is empty, callable which can be
-    applied to `y_true` and `y_hat` (and optionally `sample_weight`).
+
+    Parameters
+    ----------
+    *args:
+        Ground truth and predictions, array-like of shape `(n_samples,)` or `(n_samples, n_targets)`. Should not contain
+        NA values. Predictions must contain class probabilities rather than classes in case of classification tasks.
+        Either none or both must be specified.
+    sample_weight: ndarray, optional
+        Sample weight, None or array-like of shape `(n_samples,)`.
+    task: str, optional
+        Prediction task.
+    metric_list: list, optional
+        List of metrics to evaluate. Metrics that do not fit to the given prediction task are tacitly skipped.
+    threshold: float, default=0.5
+        Decision threshold for binary- and multilabel classification problems.
+    add_na_results: bool, default=True
+        Whether to add N/A results in the output, e.g., if one of the requested metrics cannot be calculated. If False,
+        these metrics are tacitly skipped.
+
+    Returns
+    -------
+    dict | Callable
+        If `args` is pair `(y_true, y_hat)`: dict whose keys are names of metrics and whose values are the results of
+        the respective metrics evaluated on `y_true` and `y_hat`. Otherwise, if `args` is empty, callable which can be
+        applied to `y_true` and `y_hat` (and optionally `sample_weight`).
     """
 
     if len(args) == 0:

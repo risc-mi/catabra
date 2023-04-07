@@ -122,26 +122,22 @@ class StratifiedGroupShuffleSplit(model_selection.StratifiedShuffleSplit):
 
     Parameters
     ----------
-    n_splits : int, default=10
+    n_splits: int, default=10
         Number of re-shuffling & splitting iterations.
-
-    test_size : float or int, default=None
+    test_size: float | int, default=None
         If float, should be between 0.0 and 1.0 and represent the proportion
         of the dataset to include in the test split. If int, represents the
         absolute number of test samples. If None, the value is set to the
         complement of the train size. If ``train_size`` is also None, it will
         be set to 0.1.
-
-    train_size : float or int, default=None
+    train_size: float | int, default=None
         If float, should be between 0.0 and 1.0 and represent the
         proportion of the dataset to include in the train split. If
         int, represents the absolute number of train samples. If None,
         the value is automatically set to the complement of the test size.
-
     random_state : int or RandomState instance, default=None
         Controls the randomness of the training and testing indices produced.
         Pass an int for reproducible output across multiple function calls.
-
     method : str, default="automatic"
         Resampling method to use. Can be "automatic", "exact" and "brute_force".
         If there are many small groups, "brute_force" tends to give reasonable
@@ -149,7 +145,6 @@ class StratifiedGroupShuffleSplit(model_selection.StratifiedShuffleSplit):
         are only few large groups, method "exact" might be preferable.
         "automatic" tries to infer the optimal method based on the number of
         groups.
-
     n_iter : int, default=None
         Number of brute-force iterations. The larger the number, the more
         splits are tried, and hence the better the results get. If None, the
@@ -183,10 +178,8 @@ class StratifiedGroupShuffleSplit(model_selection.StratifiedShuffleSplit):
 
 class StratifiedGroupKFold(_BaseKFold):
     """
-    Copied and adapted from sklearn version 1.0.2, because auto-sklearn
+    Copied and adapted from sklearn version 1.0.2 [1], because auto-sklearn
     requires an older version without this class.
-
-    https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedGroupKFold.html
 
     Changelist:
     - Removed warning if some class has fewer than `n_splits` instances.
@@ -197,14 +190,11 @@ class StratifiedGroupKFold(_BaseKFold):
     ----------
     n_splits : int, default=10
         Number of re-shuffling & splitting iterations.
-
     shuffle : bool, default=False
         Whether to shuffle samples before splitting.
-
     random_state : int or RandomState instance, default=None
         Controls the randomness of the training and testing indices produced.
         Pass an int for reproducible output across multiple function calls.
-
     method : str, default="automatic"
         Resampling method to use. Can be "automatic", "exact" and "brute_force".
         If there are many small groups, "brute_force" tends to give reasonable
@@ -213,11 +203,14 @@ class StratifiedGroupKFold(_BaseKFold):
         "automatic" tries to infer the optimal method based on the number of
         groups.
         Note that "brute_force" is only possible if `shuffle` is set to True.
-
     n_iter : int, default=None
         Number of brute-force iterations. The larger the number, the more
         splits are tried, and hence the better the results get. If None, the
         number of iterations is determined automatically.
+
+    References
+    ----------
+    .. [1] https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedGroupKFold.html
     """
 
     def __init__(self, n_splits=5, shuffle=False, random_state=None, method: str = 'automatic', n_iter: int = None):
