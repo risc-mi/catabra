@@ -12,7 +12,7 @@ build:
     post_install:
       # Install dependencies with dev dependencies group
       # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
-      - poetry install --with dev, optional
+      - poetry install --with dev,optional
 
 sphinx:
   configuration: doc/sphinx-docs/conf.py
