@@ -9,6 +9,7 @@ build:
       # Install poetry
       # https://python-poetry.org/docs/#installing-manually
       - pip install poetry
+      - poetry config virtualenvs.create false
     post_install:
       # Install dependencies with dev dependencies group
       # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
