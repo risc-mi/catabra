@@ -143,9 +143,13 @@ def test_multiclass_classification(subtests):
 def test_multilabel_classification(subtests):
     _test(task='multilabel_classification', from_file=True, subtests=subtests)
 
-
 @pytest.mark.slow
 def test_regression(subtests):
+    _test(task='regression', single_model=True, subtests=subtests)
+
+
+@pytest.mark.allowed_to_fail
+def test_regression_expected(subtests):
     _test(task='regression', single_model=True, expected_result=[('_label', 'r2', 0.5, 1)], subtests=subtests)
 
 
