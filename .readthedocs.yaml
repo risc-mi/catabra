@@ -1,0 +1,18 @@
+version: 2
+
+build:
+  os: "ubuntu-22.04"
+  tools:
+    python: "3.9"
+  jobs:
+    post_create_environment:
+      # Install poetry
+      # https://python-poetry.org/docs/#installing-manually
+      - pip install poetry
+    post_install:
+      # Install dependencies with dev dependencies group
+      # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
+      - poetry install --with dev, optional
+
+sphinx:
+  configuration: doc/sphinx-docs/conf.py
