@@ -114,7 +114,7 @@ class OneHotEncoder(skl_preprocessing.OneHotEncoder):
                 else:
                     drop_idx.append(None)
             if not all(i is None for i in drop_idx):
-                self.drop_idx_ = np.asarray(drop_idx, dtype=np.object)
+                self.drop_idx_ = np.asarray(drop_idx, dtype=object)
 
         return self
 
