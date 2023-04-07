@@ -15,15 +15,16 @@ tqdm.pandas()
 class BinsDetector(SamplewiseOODDetector):
     """
     Simple OOD detector that distributes the training set into equally sized bins.
-    A sample is considered OOD if it falls within one such bin
+    A sample is considered OOD if it falls within a bin with no corresponding training samples.
+
+    Parameters
+    ----------
+    bins: int | DataFrame, optional
+        Number of bins for each column. if int each column uses the same amount of bins. Defaults to 2 * std for each
+        columns.
     """
 
     def __init__(self, subset=1, bins: Union[None, pd.DataFrame, int] = None, random_state: int = None, verbose=True):
-        """
-        :param bins: Number of bins for each column
-        if int each column uses the same amount of bins
-        defaults to 2 * std for each columns
-        """
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._bins: Union[None, int, pd.Series] = bins
         self._num_cols: Optional[np.ndarray] = None

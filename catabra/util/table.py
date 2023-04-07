@@ -13,12 +13,21 @@ def convert_object_dtypes(df: pd.DataFrame, inplace: bool = True, max_categories
     """
     Convert "object" data types in `df` into other data types, if possible. In particular, this includes timedelta,
     datetime, categorical and string types, in that order. String types are not supported in all Pandas versions.
-    :param df: The DataFrame.
-    :param inplace: Whether to modify `df` in place. Note that if no column in `df` can be converted, it is returned
-    as-is even if `inplace` is False.
-    :param max_categories: The maximum number of allowed categories when converting on object column into a categorical
-    column.
-    :return: DataFrame with converted data types.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The DataFrame.
+    inplace: bool, default=True
+        Whether to modify `df` in place. Note that if no column in `df` can be converted, it is returned as-is even if
+        `inplace` is False.
+    max_categories: int, default=100
+        The maximum number of allowed categories when converting on object column into a categorical column.
+
+    Returns
+    -------
+    DataFrame
+        DataFrame with converted data types.
     """
     for c in df.columns:
         s0 = df[c]
@@ -55,9 +64,18 @@ def set_index(df: pd.DataFrame, inplace: bool = True) -> Tuple[pd.DataFrame, Lis
     """
     Set the row index of the given DataFrame to an ID column, unless it contains IDs already, and return a list of
     other potential ID columns.
-    :param df: The DataFrame.
-    :param inplace: Whether to modify `df` in place.
-    :return: Pair `(df, id_cols)`, where `df` is the new DataFrame and `id_cols` is a list of potential ID columns.
+
+    Parameters
+    ----------
+    df:
+        The DataFrame.
+    inplace: bool, default=True
+        Whether to modify `df` in place.
+
+    Returns
+    -------
+    tuple
+        Pair `(df, id_cols)`, where `df` is the new DataFrame and `id_cols` is a list of potential ID columns.
     """
     id_cols = []
     for c in df.columns:
@@ -83,10 +101,17 @@ def set_index(df: pd.DataFrame, inplace: bool = True) -> Tuple[pd.DataFrame, Lis
 def merge_tables(tables: Iterable[Union[pd.DataFrame, str, io.Path]]) -> Tuple[pd.DataFrame, List[str]]:
     """
     Merge the given tables by left-joining them on ID columns.
-    :param tables: The tables to merge, an iterable of DataFrames or paths to tables.
-    Function `convert_object_dtypes()` is automatically applied to tables read from files.
-    :return: The pair `(df, id_cols)`, where `df` is the merged DataFrame and `id_cols` is the list of potential ID
-    columns.
+
+    Parameters
+    ----------
+    tables: Iterable
+        The tables to merge, an iterable of DataFrames or paths to tables. Function `convert_object_dtypes()` is
+        automatically applied to tables read from files.
+
+    Returns
+    -------
+    tuple
+        The pair `(df, id_cols)`, where `df` is the merged DataFrame and `id_cols` is the list of potential ID columns.
     """
     df = None
     id_cols = None
@@ -131,12 +156,22 @@ def merge_tables(tables: Iterable[Union[pd.DataFrame, str, io.Path]]) -> Tuple[p
 def train_test_split(df: pd.DataFrame, by: str) -> Tuple[Dict[str, np.ndarray], Optional[str]]:
     """
     Split the given DataFrame into train- and test set(s), by a given column.
-    :param df: The DataFrame.
-    :param by: The name of the column to split by. Must have bool or categorical data type.
-    :return: Pair `(split_masks, train_key)`, where
-    * `split_masks` is a dict mapping string-keys to masks corresponding to non-overlapping portions of `df`.
-    * `train_key` is the key (in `split_masks`) containing the training set, or None if the training set could not be
-        determined.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The DataFrame.
+    by: str
+        The name of the column to split by. Must have bool or categorical data type.
+
+    Returns
+    -------
+    tuple
+        Pair `(split_masks, train_key)`, where
+
+        * `split_masks` is a dict mapping string-keys to masks corresponding to non-overlapping portions of `df`.
+        * `train_key` is the key (in `split_masks`) containing the training set, or None if the training set could not
+           be determined.
     """
     if by not in df.columns:
         raise ValueError(f'"{by}" is no column of the given DataFrame.')

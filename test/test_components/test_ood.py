@@ -64,10 +64,16 @@ def _load_test_data(dataset: int) -> pd.DataFrame:
 )
 def test_output_sanity(x_shape: int, y_shape: int, datagen):
     """
-    Tests for each ood detector whether the output has the expected shape and values are within a valid range
-    :param x_shape: number of rows
-    :param y_shape: number of cols
-    :param datagen: function that generates random data
+    Tests for each ood detector whether the output has the expected shape and values are within a valid range.
+
+    Parameters
+    ----------
+    x_shape: int
+        Number of rows.
+    y_shape: int
+        Number of cols.
+    datagen:
+        Function that generates random data
     """
     data = pd.DataFrame(datagen(size=(x_shape, y_shape)), columns=[str(nr) for nr in range(y_shape)])
 

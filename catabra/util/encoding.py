@@ -18,25 +18,28 @@ class Encoder(BaseEstimator):
     Encoder for features- and labels DataFrames. Implements the `BaseEstimator` class of sklearn, with methods `fit()`,
     `transform()` and `inverse_transform()`, and can easily be dumped to and loaded from disk.
 
-    Encoding ensures that:
+    Notes
+    -----
+
+    **Encoding ensures that:**
+
     * The data type of every feature column is either float, int, bool, categorical or string (if the installed Pandas
-        version supports it). Time-like columns are converted into float, and object data types raise an exception.
+      version supports it). Time-like columns are converted into float, and object data types raise an exception.
+
     * The data type of every target column is float.
+
         + In regression tasks, this is achieved by converting numerical data types (float, int, bool, time-like) into
-            float, and raising exceptions if other data types are found.
-        + In binary classification, this is achieved by representing the negative class by 0.0 and the positive class
-            by 1.0. If the original data type is categorical, the negative class corresponds to the first category,
-            whereas the positive class corresponds to the second category. If the original data type is not categorical,
-            the positive and negative classes are determined through sklearn's `LabelEncoder`.
+          float, and raising exceptions if other data types are found.
+        + In binary classification, this is achieved by representing the negative class by 0.0 and the positive class by
+          1.0. If the original data type is categorical, the negative class corresponds to the first category, whereas
+          the positive class corresponds to the second category. If the original data type is not categorical the
+          positive and negative classes are determined through sklearn's `LabelEncoder`.
         + In multiclass classification, this is achieved by representing the `i`-th class by `i`.
         + In multilabel classification, this is achieved by representing the presence of a class by 1.0 and its absence
-            by 0.0.
-    * Both features and labels may contain NaN values before encoding. These are simply propagated, meaning that
-        encoded data may contain NaN values as well!
+          by 0.0.
 
-    `inverse_transform()` decodes encoded data. In the case of classification, it is also able to handle Numpy arrays
-    containing class (indices), as returned by `predict()`, as well as class probabilities, as returned by
-    `predict_proba()`.
+    * Both features and labels may contain NaN values before encoding. These are simply propagated, meaning that encoded
+      data may contain NaN values as well!
     """
 
     _YEAR_RES = pd.Timedelta(365.2525, unit='d')
@@ -79,7 +82,11 @@ class Encoder(BaseEstimator):
         """
         Convenience method for getting the names of the targets or, in case of multiclass classification, the names of
         the individual classes.
-        :return: List of target- or class names.
+
+        Returns
+        -------
+        list
+            List of target- or class names.
         """
         if self._task == 'multiclass_classification':
             if self._targets is not None:
@@ -205,11 +212,20 @@ class Encoder(BaseEstimator):
     def transform(self, *, inplace: bool = True, **kwargs: Optional[pd.DataFrame]):
         """
         Transform features- and/or labels DataFrames.
-        :param inplace: Whether to modify the given data in place.
-        :param kwargs: The data to transform, with keys "x" (features), "y" (labels) or "data" (features+labels).
-        :return: The transformed DataFrame(s), either a single DataFrame if only one of "x" or "y" is passed, or a
-        pair of DataFrames in the same order as in the argument dict. If "data" is passed, returns the pair of encoded
-        features and labels.
+
+        Parameters
+        ----------
+        inplace: bool,default=True
+            Whether to modify the given data in place.
+        **kwargs: DataFrame, optional
+            The data to transform, with keys "x" (features), "y" (labels) or "data" (features+labels).
+
+        Returns
+        -------
+        Any
+            The transformed DataFrame(s), either a single DataFrame if only one of "x" or "y" is passed, or a pair of
+             DataFrames in the same order as in the argument dict. If "data" is passed, returns the pair of encoded
+             features and labels.
         """
         out = []
         for k, v in kwargs.items():
@@ -324,11 +340,22 @@ class Encoder(BaseEstimator):
 
     def inverse_transform(self, *, inplace: bool = True, **kwargs: Union[pd.DataFrame, np.ndarray, None]):
         """
-        Back-transform features- and/or labels DataFrames.
-        :param inplace: Whether to modify the given data in place.
-        :param kwargs: The data to transform back, with keys "x" (features) or "y" (labels).
-        :return: The back-transformed DataFrame(s), either a single DataFrame if only one of "x" or "y" is passed, or a
-        pair of DataFrames in the same order as in the argument dict.
+        Back-transform features- and/or labels DataFrames i.e. Decodes encoded data. In the case of classification,
+        it is also able to handle Numpy arrays  containing class (indices), as returned by `predict()`, as well as class
+        probabilities, as returned by `predict_proba()`.
+
+        Parameters
+        ----------
+        inplace: bool, default=True
+            Whether to modify the given data in place.
+        **kwargs: DataFrame, ndarray, optional
+            The data to transform back, with keys "x" (features) or "y" (labels).
+
+        Returns
+        -------
+        Any
+            The back-transformed DataFrame(s), either a single DataFrame if only one of "x" or "y" is passed, or apair
+            of DataFrames in the same order as in the argument dict.
         """
         out = []
 

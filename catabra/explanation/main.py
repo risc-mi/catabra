@@ -21,35 +21,48 @@ def explain(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = N
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Explain an existing CaTabRa object (prediction model) in terms of feature importance.
-    :param table: The table(s) to explain the CaTabRa object on. If multiple are given, their columns are merged into
-    a single table. Must have the same format as the table(s) initially passed to function `analyze()`, possibly
-    without target column(s).
-    :param folder: The folder containing the CaTabRa object to explain.
-    :param model_id: Optional, ID(s) of the prediction model(s) to evaluate. If None or "__ensemble__", all models in
-    the ensemble are explained, if possible. Note that due to technical restrictions not all models might be
-    explainable.
-    :param explainer: Optional, name of the explainer to use. Defaults to the first explainer specified in config param
-    "explainer". Note that only explainers that were fitted to training data during "analyze" can be used, as well as
-    explainers that do not need to be fit to training data (e.g., "permutation").
-    :param split: Optional, column used for splitting the data into disjoint subsets. If specified and not "", each
-    subset is explained individually. In contrast to function `analyze()`, the name/values of the column do not need to
-    carry any semantic information about training and test sets.
-    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
-    Sample weights are used both for training and evaluating prediction models.
-    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in `folder`,
-    with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it
-    should be replaced; otherwise, it is automatically created.
-    :param glob: Whether to explain the CaTabRa object globally. If True, `table` might not have to be specified
-    (depends on explanation backend).
-    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
-    :param batch_size: Optional, batch size used for explaining the prediction model(s).
-    :param aggregation_mapping: Optional, mapping from target column names to lists of source column names in `table`,
-    whose explanations will be aggregated by the explainer's aggregation function. Can be either a dict or a JSON file
-    containing such a dict.
-    Useful for generating joint explanations of certain features, e.g., corresponding to the same variable observed at
-    different times.
-    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table on which to explain the CaTabRa object.
+
+    Parameters
+    ----------
+    *table: str | Path | DataFrame
+        The table(s) to explain the CaTabRa object on. If multiple are given, their columns are merged into a single
+        table. Must have the same format as the table(s) initially passed to function `analyze()`, possibly without
+        target column(s).
+    folder: str | Path
+        The folder containing the CaTabRa object to explain.
+    model_id: optional
+        ID(s) of the prediction model(s) to evaluate. If None or "__ensemble__", all models in the ensemble are
+        explained, if possible. Note that due to technical restrictions not all models might be explainable.
+    explainer: str, optional
+        Name of the explainer to use. Defaults to the first explainer specified in config param `"explainer"`. Note that
+        only explainers that were fitted to training data during "analyze" can be used, as well as explainers that do
+        not need to be fit to training data (e.g., "permutation").
+    split: str, optional
+        Column used for splitting the data into disjoint subsets. If specified and not `""`, each subset is explained
+        individually. In contrast to function `analyze()`, the name/values of the column do not need to carry any
+        semantic information about training and test sets.
+    sample_weight: str, optional
+        Column with sample weights. If specified and not "", must have numeric data type. Sample weights are used both
+        for training and evaluating prediction models.
+    out: str | Path, optional
+        Directory where to save all generated artifacts. Defaults to a directory located in `folder`, with a  name
+        following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it should be
+        replaced; otherwise, it is automatically created.
+    glob: bool, optional
+        Whether to explain the CaTabRa object globally. If True, `table` might not have to be specified (depends on
+        explanation backend).
+    jobs: int, optional
+        Optional, number of jobs to use. Overwrites the "jobs" config param.
+    batch_size: int, optional
+        Optional, batch size used for explaining the prediction model(s).
+    aggregation_mapping: str | dict, optional
+        Optional, mapping from target column names to lists of source column names in `table`, whose explanations will
+        be aggregated by the explainer's aggregation function. Can be either a dict or a JSON file containing such a
+        dict. Useful for generating joint explanations of certain features, e.g., corresponding to the same variable
+        observed at different times.
+    from_invocation: str | Path | dict, optional
+        Dict or path to an invocation.json file. All arguments of this function not explicitly specified are
+        taken from this dict; this also includes the table on which to explain the CaTabRa object.
     """
     expl = CaTabRaExplanation(invocation=from_invocation)
     expl(
@@ -294,21 +307,41 @@ def explain_split(explainer: 'EnsembleExplainer', x: Optional[pd.DataFrame] = No
                   interactive_plots: bool = False, verbose: bool = False) -> Optional[dict]:
     """
     Explain a single data split.
-    :param explainer: Explainer object.
-    :param x: Encoded data to apply `explainer` to, optional unless `glob` is False. Only features, no labels.
-    :param y: Encoded data to apply `explainer` to, optional. Only labels, no features.
-    :param sample_weight: Sample weights, optional. Ignored if `x` is None or `glob` is False.
-    :param directory: Directory where to save the explanations. If None, results are returned in a dict.
-    :param glob: Whether to create global explanations.
-    :param model_id: ID(s) of the model(s) to explain.
-    :param batch_size: Batch size.
-    :param jobs: Number of jobs.
-    :param aggregation_mapping: Mapping from target column name to list of source columns.
-    The source columns' explanations will be aggregated by the explainer's aggregation function.
-    :param static_plots: Whether to create static plots.
-    :param interactive_plots: Whether to create interactive plots.
-    :param verbose: Whether to print intermediate results and progress bars.
-    :return: None if `directory` is given, else dict with evaluation results.
+
+    Parameters
+    ----------
+    explainer: EnsembleExplainer
+        Explainer object.
+    x: DataFrame, optional
+        Encoded data to apply `explainer` to, optional unless `glob` is False. Only features, no labels.
+    y: DataFrame, optional
+        Encoded data to apply `explainer` to, optional. Only labels, no features.
+    sample_weight: ndarray, optional
+        Sample weights, optional. Ignored if `x` is None or `glob` is False.
+    directory: str | Path, optional
+        Directory where to save the explanations. If None, results are returned in a dict.
+    glob: bool, default=False
+        Whether to create global explanations.
+    model_id: optional
+        ID(s) of the model(s) to explain.
+    batch_size: int, optional
+        Batch size.
+    jobs: int, default=1
+        Number of jobs.
+    aggregation_mapping: dict, optional
+        Mapping from target column name to list of source columns. The source columns' explanations will be aggregated
+        by the explainer's aggregation function.
+    static_plots: bool, default=True
+        Whether to create static plots.
+    interactive_plots: bool, default=False
+        Whether to create interactive plots.
+    verbose: bool, default=False
+        Whether to print intermediate results and progress bars.
+
+    Returns
+    -------
+    dict | None
+        None if `directory` is given, else dict with evaluation results.
     """
 
     if directory is None:
@@ -364,14 +397,25 @@ def plot_beeswarms(explanations: Union[dict, str, Path, pd.DataFrame], features:
                    add_sum_of_remaining: bool = True) -> Union[dict, pd.DataFrame]:
     """
     Create beeswarm plots of local explanations.
-    :param explanations: Local explanations to plot, a dict as returned by `EnsembleExplainer.explain()`, i.e., 1-2
-    levels of nesting, values are DataFrames with samples on row index and features on column index.
-    :param features: Encoded feature values corresponding to feature importance scores, optional.
-    :param interactive: Whether to create interactive or static plots.
-    :param title: The title of the plots.
-    :param max_features: Maximum number of features to plot, or None to determine this number automatically.
-    :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
-    :return: Dict with plots or single plot.
+
+    explanations: dict | str | Path | DataFrame
+        Local explanations to plot, a dict as returned by `EnsembleExplainer.explain()`, i.e., 1-2 levels of nesting,
+        values are DataFrames with samples on row index and features on column index.
+    features: DataFrame, optional
+        Encoded feature values corresponding to feature importance scores, optional.
+    interactive: bool, default=False
+        Whether to create interactive or static plots.
+    title: str, optional
+        The title of the plots.
+    max_features: int, optional
+        Maximum number of features to plot, or None to determine this number automatically.
+    add_sum_of_remaining: bool, default=True
+        Whether to add the sum of remaining features, if not all features can be plotted.
+
+    Returns
+    -------
+    dict
+        Dict with plots or single plot.
     """
     if interactive:
         if plotting.plotly_backend is None:
@@ -423,13 +467,25 @@ def plot_bars(explanations: Union[dict, str, Path, pd.DataFrame], interactive: b
         -> Union[dict, pd.DataFrame]:
     """
     Create bar plots of global explanations.
-    :param explanations: Global explanations to plot, a dict as returned by `EnsembleExplainer.explain_global()`, i.e.,
-    values are Series or DataFrames with features on row index and arbitrary column index.
-    :param interactive: Whether to create interactive or static plots.
-    :param title: The title of the plots.
-    :param max_features: Maximum number of features to plot.
-    :param add_sum_of_remaining: Whether to add the sum of remaining features, if not all features can be plotted.
-    :return: Dict with plots or single plot.
+
+    Parameters
+    ----------
+    explanations: dict | str | Path | DataFrame
+        Global explanations to plot, a dict as returned by `EnsembleExplainer.explain_global()`, i.e., values are Series
+        or DataFrames with features on row index and arbitrary column index.
+    interactive: bool, default=False
+        Whether to create interactive or static plots.
+    title: str, optional
+        The title of the plots.
+    max_features: int, default=10
+        Maximum number of features to plot.
+    add_sum_of_remaining: bool, default=True
+        Whether to add the sum of remaining features, if not all features can be plotted.
+
+    Returns
+    -------
+    dict
+        Dict with plots or single plot.
     """
     if interactive:
         if plotting.plotly_backend is None:
@@ -468,11 +524,20 @@ def average_local_explanations(explanations: Union[pd.DataFrame, dict], sample_w
                                **kwargs) -> Union[np.ndarray, pd.DataFrame, dict]:
     """
     Average local explanations to get a global overview of feature importance.
-    :param explanations: Local explanations to average, DataFrame of shape `(*dim, n_samples, n_features)` or a
-    (nested) dict thereof with at most two levels of nesting.
-    :param sample_weight: Sample weights, optional.
-    :return: Averaged explanations, with the same format as what would be returned by method
-    `EnsembleExplainer.explain_global()`. That is, either a single DataFrame, or a dict whose values are DataFrames.
+
+    Parameters
+    ----------
+    explanations: DataFrame | dict
+        Local explanations to average, DataFrame of shape `(*dim, n_samples, n_features)` or a (nested) dict thereof
+        with at most two levels of nesting.
+    sample_weight: ndarray, optional
+        Sample weights, optional.
+
+    Returns
+    -------
+    ndarray | DataFrame | dict
+        Averaged explanations, with the same format as what would be returned by method
+        `EnsembleExplainer.explain_global()`. That is, either a single DataFrame, or a dict whose values are DataFrames.
     """
     if isinstance(explanations, dict):
         if kwargs.get('_require_df', False):

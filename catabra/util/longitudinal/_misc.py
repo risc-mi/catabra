@@ -13,31 +13,47 @@ def group_temporal(df: pd.DataFrame, group_by=None, time_col=None, start_col=Non
     Group intervals wrt. their temporal distance to each other. Intervals can also be isolated points, i.e.,
     single-point intervals of the form `[x, x]`.
 
+    Parameters
+    ----------
+    df: DataFrame
+        DataFrame with intervals.
+    group_by: optional
+        Additional column(s) to group `df` by, optional. If given, the computed grouping refines the given one, in the
+        sense that any two intervals belonging to the same computed group are guaranteed to belong to the same given
+        group, too. Can be the name of a single column or a list of column names and/or row index levels. Strings are
+        interpreted as column names or row index names, integers are interpreted as row index levels.
+    time_col: str, optional
+        Name of the column in `df` containing both start- and end times of single-point intervals. If given, both
+        `start_col` and `stop_col` must be None.
+    start_col: str, optional
+        Name of the column in `df` containing start times of intervals. If given, `time_col` must be None.
+    stop_col: str, optional
+        Name of the column in `df` containing end times of intervals. If given, `time_col` must be None. Note that the
+        function tacitly assumes that no interval ends before it starts, although this is not checked. If this
+        assumption is violated, the returned results may not be correct.
+    distance: optional
+        Maximum allowed distance between two intervals for being put into the same group. Should be non-negative.
+        The distance between two intervals is the single-linkage distance, i.e., the minimum distance between any two
+        points in the respective intervals. This means, for example, that the distance between overlapping intervals is
+        always 0.
+    inclusive: bool, default=False
+        Whether `distance` is inclusive.
+
+    Notes
+    -----
     The returned grouping is the reflexive-transitive closure of the proximity relation induced by `distance`.
-    Formally: Let `R` be the binary relation on the set of intervals in `df` such that `R(I_1, I_2)` holds iff the
-    distance between `I_1` and `I_2` is less than (or equal to) `distance` (and additionally `I_1` and `I_2` belong to
-    the same groups specified by `group_by`). `R` is obviously symmetric, so its reflexive-transitive closure `R*` is
-    an equivalence relation on the set of intervals in `df`. The returned grouping corresponds precisely to this
-    equivalence relation, in the sense that there is one group per equivalence class and vice versa.
+    Formally: Let :math:`R` be the binary relation on the set of intervals in `df` such that :math:`R(I_1, I_2)` holds
+    iff the distance between :math:`I_1` and :math:`I_2` is less than (or equal to) `distance` (and additionally
+    :math:`I_1` and :math:`I_2` belong to the same groups specified by `group_by`). :math:`R` is obviously symmetric,
+    so its reflexive-transitive closure :math:`R^*` is an equivalence relation on the set of intervals in `df`. The
+    returned grouping corresponds precisely to this equivalence relation, in the sense that there is one group per
+    equivalence class and vice versa.
     Note that if two intervals belong to the same group, their distance may still be larger than `distance`.
 
-    :param df: DataFrame with intervals.
-    :param group_by: Additional column(s) to group `df` by, optional. If given, the computed grouping refines the given
-    one, in the sense that any two intervals belonging to the same computed group are guaranteed to belong to the same
-    given group, too. Can be the name of a single column or a list of column names and/or row index levels. Strings
-    are interpreted as column names or row index names, integers are interpreted as row index levels.
-    :param time_col: Name of the column in `df` containing both start- and end times of single-point intervals.
-    If given, both `start_col` and `stop_col` must be None.
-    :param start_col: Name of the column in `df` containing start times of intervals. If given, `time_col` must be None.
-    :param stop_col: Name of the column in `df` containing end times of intervals. If given, `time_col` must be None.
-    Note that the function tacitly assumes that no interval ends before it starts, although this is not checked. If
-    this assumption is violated, the returned results may not be correct.
-    :param distance: Maximum allowed distance between two intervals for being put into the same group. Should be
-    non-negative. The distance between two intervals is the single-linkage distance, i.e., the minimum distance between
-    any two points in the respective intervals. This means, for example, that the distance between overlapping
-    intervals is always 0.
-    :param inclusive: Whether `distance` is inclusive.
-    :return: Series with the same row index as `df`, in the same order, whose values are group indices.
+    Returns
+    -------
+    Series
+        Series with the same row index as `df`, in the same order, whose values are group indices.
     """
 
     assert distance is not None
@@ -132,36 +148,51 @@ def prev_next_values(df: pd.DataFrame, sort_by=None, group_by=None, columns=None
     """
     Find the previous/next values of some columns in DataFrame `df`, for every entry. Additionally, entries can be
     grouped and previous/next values only searched within each group.
-    :param df: The DataFrame.
-    :param sort_by: The column(s) to sort by. Can be the name of a single column or a list of column names and/or row
-    index levels. Strings are interpreted as column names or row index names, integers are interpreted as row index
-    levels.
-    ATTENTION! NA values in columns to sort by are _not_ ignored; rather, they are treated in the same way as Pandas
-    treats such values in `DataFrame.sort_values()`, i.e., they are put at the end.
-    :param group_by: Column(s) to group `df` by, optional. Same values as `sort_by`.
-    :param columns: A dict mapping column names to dicts of the form
 
-        {
-            "prev_name": <prev_name>,
-            "prev_fill": <prev_fill>,
-            "next_name": <next_name>,
-            "next_fill": <next_fill>
-        }
+    Parameters
+    ----------
+    df: DataFrame
+        The DataFrame.
+    sort_by: list | str, optional
+        The column(s) to sort by. Can be the name of a single column or a list of column names and/or row index levels.
+        Strings are interpreted as column names or row index names, integers are interpreted as row index levels.
+        ATTENTION! N/A values in columns to sort by are not ignored; rather, they are treated in the same way as Pandas
+        treats such values in `DataFrame.sort_values()`, i.e., they are put at the end.
+    group_by: list | str, optional
+        Column(s) to group `df` by, optional. Same values as `sort_by`.
+    columns: dict
+        A dict mapping column names to dicts of the form
 
-    `prev_name` and `next_name` are the names of the columns in the result, containing the previous/next values. If any
-    of them is None, the corresponding previous/next values are not computed for that column.
-    `prev_fill` and `next_fill` specify which values to assign to the first/last entry in every group, which does not
-    have any previous/next values.
-    Note that column names not present in `df` are tacitly skipped.
+        ::
 
-    :param first_indicator_name: Name of the column in the result containing boolean indicators whether the
-    corresponding entries come first in their respective groups. If None, no such column is added.
-    :param last_indicator_name: Name of the column in the result containing boolean indicators whether the
-    corresponding entries come last in their respective groups. If None, no such column is added.
-    :param keep_sorted: Whether to keep the result sorted wrt. `group_by` and `sort_by`. If False, the order of rows
-    of the result is identical to that of `df`.
-    :param inplace: If True, the new columns are added to `df`.
-    :return: The modified DataFrame if `inplace` is True, a DataFrame with the requested previous/next values otherwise.
+            {
+                "prev_name": <prev_name>,
+                "prev_fill": <prev_fill>,
+                "next_name": <next_name>,
+                "next_fill": <next_fill>
+            }
+
+        `prev_name` and `next_name` are the names of the columns in the result, containing the previous/next values.
+        If any of them is None, the corresponding previous/next values are not computed for that column.
+        `prev_fill` and `next_fill` specify which values to assign to the first/last entry in every group, which does
+        not have any previous/next values.
+        Note that column names not present in `df` are tacitly skipped.
+    first_indicator_name: str, optional
+        Name of the column in the result containing boolean indicators whether the corresponding entries come first in
+        their respective groups. If None, no such column is added.
+    last_indicator_name: str, optional
+        Name of the column in the result containing boolean indicators whether the corresponding entries come last in
+        their respective groups. If None, no such column is added.
+    keep_sorted: bool, default=False
+        Whether to keep the result sorted wrt. `group_by` and `sort_by`. If False, the order of rows of the result is
+        identical to that of `df`.
+    inplace: bool, default=False
+        If `True`, the new columns are added to `df`.
+
+    Returns
+    -------
+    DataFrame
+        The modified DataFrame if `inplace` is True, a DataFrame with the requested previous/next values otherwise.
     """
 
     if columns is None:

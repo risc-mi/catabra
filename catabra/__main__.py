@@ -525,8 +525,15 @@ def parse_model_id(model_id):
         * "'12'" --> "12"
         * "''" --> ""
 
-    :param model_id: The model-ID to parse, an atom of any type or a list or set thereof.
-    :return: Parsed model-ID(s).
+    Parameters
+    ----------
+        model_id:
+            The model-ID to parse, an atom of any type or a list or set thereof.
+
+    Returns
+    -------
+    str
+        Parsed model-ID(s).
     """
     if isinstance(model_id, (list, set)):
         return model_id.__class__(parse_model_id(m) for m in model_id)

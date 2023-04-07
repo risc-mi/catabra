@@ -14,11 +14,21 @@ from catabra.util.io import Path, convert_rows_to_str, make_path, write_df, writ
 def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
     """
     Calculate descriptive statistics for numeric features for a specific dataframe
-    :param df: The main dataframe.
-    :param target: The target labels; stored in list
-    :param classify: Is true, if classification task. False for regression task
-    :return: Dictionary with statistics (for numeric features) for entire dataset, each target and
-    (in case of classification) each label.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The main dataframe.
+    target: list
+        The target labels; stored in list
+    classify: bool
+        Is true, if classification task. False for regression task
+
+    Returns
+    -------
+    dict
+        Dictionary with statistics (for numeric features) for entire dataset, each target and (in case of
+        classification) each label.
     """
     df = df.copy()
     dict_stat = {'overall': df.describe().T}
@@ -58,10 +68,20 @@ def calc_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> d
 def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '') -> pd.DataFrame:
     """
     Calculate descriptive statistics for non-numeric features for a specific dataframe
-    :param df: The main dataframe.
-    :param target: The target labels; stored in list
-    :param name_: Name of the label. Used for naming the columns
-    :return: Returns a dataframe with statistics (for non-numeric features)
+
+    Parameters
+    ----------
+    df: DataFrame
+        The main dataframe.
+    target: list
+        The target labels; stored in list
+    name_: str, default=''
+        Name of the label. Used for naming the columns
+
+    Returns
+    -------
+    DataFrame
+        Returns a dataframe with statistics (for non-numeric features)
     """
     df_stat_cat = pd.DataFrame()
     for col_ in target + [c for c in df.columns if c not in target]:
@@ -82,11 +102,21 @@ def create_non_numeric_statistics(df: pd.DataFrame, target: list, name_: str = '
 def calc_non_numeric_statistics(df: pd.DataFrame, target: list, classify: bool) -> dict:
     """
     Calculate non-numeric descriptive statistics
-    :param df: The main dataframe.
-    :param target: The target labels; stored in list
-    :param classify: Is true, if classification task. False for regression task
-    :return: Dictionary with descriptive statistics (for non-numeric features) for overall dataset,
-    each target and (in case of classification) each label.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The main dataframe.
+    target: list
+        The target labels; stored in list
+    classify: bool
+        Is true, if classification task. False for regression task
+
+    Returns
+    -------
+    dict
+        Dictionary with descriptive statistics (for non-numeric features) for overall dataset, each target and (in case
+        of classification) each label.
     """
     dict_non_num_stat = {'overall': create_non_numeric_statistics(df, [t_ for t_ in target if classify])}
 
@@ -118,11 +148,19 @@ def save_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
                                 corr_threshold: int = 200):
     """
     Calculate and save descriptive statistics including correlation information to disk.
-    :param df: The main dataframe.
-    :param target: The target labels; stored in list
-    :param classify: Is true, if classification task. False for regression task
-    :param fn: The directory where to save the statistics files
-    :param corr_threshold: Maximum number of columns for which a correlation-DataFrame is computed.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The main dataframe.
+    target: list
+        The target labels; stored in list.
+    classify: bool
+        Is true, if classification task. False for regression task
+    fn: str | Path
+        The directory where to save the statistics files
+    corr_threshold: int, default=200
+        Maximum number of columns for which a correlation-DataFrame is computed.
     """
     fn = make_path(fn)
 
@@ -145,11 +183,22 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
         -> Tuple[dict, dict, Optional[pd.DataFrame]]:
     """
     Calculate and return descriptive statistics including correlation information
-    :param df: The main dataframe.
-    :param target: The target labels; stored in list
-    :param classify: Is true, if classification task. False for regression task
-    :param corr_threshold: Maximum number of columns for which a correlation-DataFrame is computed.
-    :return: Tuple of numeric and non-numeric statistics (separate dictionaries) and correlation-DataFrame
+
+    Parameters
+    ----------
+    df: DataFrame
+        The main dataframe.
+    target: list
+        The target labels; stored in list
+    classify: bool
+        Is true, if classification task. False for regression task
+    corr_threshold: int, default=200
+        Maximum number of columns for which a correlation-DataFrame is computed.
+
+    Returns
+    -------
+    tuple
+        Tuple of numeric and non-numeric statistics (separate dictionaries) and correlation-DataFrame
     """
     if classify:
         convert = [c for c in target if df[c].dtype.name != 'category']
@@ -167,15 +216,23 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
 def mann_whitney_u(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
     """
     Mann-Whitney U test for testing whether two samples are equal (more precisely: have equal median). Only applicable
-    to numerical observations; categorical observations should be treated with the chi square test.
+    to numerical observations; categorical observations should be treated with the chi square test. The Mann-Whitney U
+    test is a special case of the Kruskal-Wallis H test, which works for more than two samples.
 
-    The Mann-Whitney U test is a special case of the Kruskal-Wallis H test, which works for more than two samples.
+    Parameters
+    ----------
+    x: ndarray | Series
+        First sample, array-like with numerical values.
+    y: ndarray | Series
+        Second sample, array-like with numerical values.
+    **kwargs:
+        Keyword arguments passed to `scipy.stats.mannwhitneyu()`.
 
-    :param x: First sample, array-like with numerical values.
-    :param y: Second sample, array-like with numerical values.
-    :param kwargs: Keyword arguments passed to `scipy.stats.mannwhitneyu()`.
-    :return: p-value. Smaller values mean that `x` and `y` are distributed differently.
-    Note that this test is symmetric between `x` and `y`.
+    Returns
+    -------
+    float
+        P-value. Smaller values mean that `x` and `y` are distributed differently. Note that this test is symmetric
+        between `x` and `y`.
     """
     args = []
     for a in (x, y):
@@ -208,11 +265,21 @@ def chi_square(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series],
     """
     Chi square test for testing whether a sample of categorical observations is distributed according to another sample
     of categorical observations.
-    :param x: First sample, array-like with categorical values.
-    :param y: Second sample, array-like with categorical values.
-    :param kwargs: Keyword arguments passed to `scipy.stats.chisquare()`.
-    :return: p-value. Smaller values mean that `x` is distributed differently from `y`.
-    Note that this test is *not* symmetric between `x` and `y`!
+
+    Parameters
+    ----------
+    x: ndarray | Series
+        First sample, array-like with categorical values.
+    y: ndarray, Series
+        Second sample, array-like with categorical values.
+    **kwargs:
+        Keyword arguments passed to `scipy.stats.chisquare()`.
+
+    Returns
+    -------
+    float
+        p-value. Smaller values mean that `x` is distributed differently from `y`.  Note that this test is *not*
+        symmetric between `x` and `y`!
     """
     if not isinstance(x, pd.Series):
         x = pd.Series(x)

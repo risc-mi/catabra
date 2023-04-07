@@ -48,8 +48,12 @@ for _d in (Path(__file__).parent / 'addons').iterdir():
 def get_addons() -> Tuple[tuple, tuple]:
     """
     Get all successfully and unsuccessfully loaded add-on modules.
-    :return: Pair `(success, failure)`, where `success` is a tuple of pairs `(name, version_dict)` and `failure` is a
-    tuple of pairs `(name, exception)`.
+
+    Returns
+    -------
+    Tuple[tuple, tuple]
+        Pair `(success, failure)`, where `success` is a tuple of pairs `(name, version_dict)` and `failure` is a tuple
+        of pairs `(name, exception)`.
     """
     return tuple(_addons_success), tuple(_addons_failure)
 
@@ -59,8 +63,10 @@ _monitors = {}
 
 
 class _EnsembleLoggingHandler(py_logging.Handler):
-    """Logging handler for printing _comprehensible_ messages whenever a new ensemble has been fit.
-    Solution is a bit hacky and can easily break if some internals of auto-sklearn change."""
+    """
+    Logging handler for printing _comprehensible_ messages whenever a new ensemble has been fit.
+    Solution is a bit hacky and can easily break if some internals of auto-sklearn change.
+    """
 
     def __init__(self, metric: str = 'cost', optimum: str = '0.', sign: str = '-1.', start_time: str = '0.',
                  monitor_name=None, **kwargs):
@@ -107,7 +113,9 @@ setattr(py_logging, '_AutoSklearnHandler', _EnsembleLoggingHandler)
 
 
 class _SMACLoggingCallback(IncorporateRunResultCallback):
-    """Callback for logging model training and printing messages whenever a new model has been trained."""
+    """
+    Callback for logging model training and printing messages whenever a new model has been trained.
+    """
 
     def __init__(self, main_metric: Optional[Tuple[str, float, float]],
                  other_metrics: Iterable[Tuple[str, float, float]], estimator_name: str, start_time: float = 0.,
@@ -190,8 +198,15 @@ def strip_autosklearn(obj):
     """
     Strip all autosklearn components from a given object. That means, if the given object contains an instance of an
     autosklearn class, which is a mere wrapper for an sklearn class, only the corresponding sklearn object is retained.
-    :param obj: The object to process.
-    :return: The processed object, which may be `obj` itself if `obj` does not contain any autosklearn components.
+
+    Parameters
+    ----------
+    obj:
+        The object to process.
+
+    Returns
+    -------
+    The processed object, which may be `obj` itself if `obj` does not contain any autosklearn components.
     Note that there is no guarantee that all autosklearn components occurring in `obj` are found, meaning some could
     still remain in the output.
     """

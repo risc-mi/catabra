@@ -19,111 +19,124 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F82
     Resample data in EAV (entity-attribute-value) format wrt. explicitly passed windows of arbitrary (possibly
     infinite) length.
 
-    :param df: The DataFrame to resample, in EAV format. That means, must have columns `value_col` (contains observed
-    values), `time_col` (contains observation times), `attribute_col` (optional; contains attribute identifiers) and
-    `entity_col` (optional; contains entity identifiers). Must have one column index level.
-    Data types are arbitrary, as long as observation times and entity identifiers can be compared wrt. `<` and `<=`
-    (e.g., float, int, time delta, date time). Entity identifiers must not be NA. Observation times may be NA, but such
-    entries are ignored entirely.
-    `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
-    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
-    very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already, the
-    calling function should better take care of this; see
-    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+    Parameters
+    ----------
+    df: pd.DataFrame | dask.dataframe.DataFrame
+        The DataFrame to resample, in EAV format. That means, must have columns `value_col` (contains observed values),
+        `time_col` (contains observation times), `attribute_col` (optional; contains attribute identifiers) and
+        `entity_col` (optional; contains entity identifiers). Must have one column index level. Data types are
+        arbitrary, as long as observation times and entity identifiers can be compared wrt. `<` and `<=` (e.g., float,
+        int, time delta, date time). Entity identifiers must not be NA. Observation times may be NA, but such entries
+        are ignored entirely. `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be
+        None and entities should already be on the row index, with known divisions. Otherwise, the row index is set to
+        `entity_col`, which can be very costly both in terms of time and memory. Especially if `df` is known to be
+        sorted wrt. entities already, the calling function should better take care of this; see
+        https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+    windows: pd.DataFrame | dask.dataframe.DataFrame
+        The target windows into which `df` is resampled. Must have two column index levels and columns `(time_col,
+        "start")` (optional; contains start times of each window), `(time_col, "stop")` (optional; contains end times of
+        each window), `(entity_col, "")` (optional; contains entity identifiers) and `(window_group_col, "")` (optional;
+        contains information for creating groups of mutually disjoint windows). Start- and end times may be NA, but such
+        windows are deemed invalid and by definition do not contain any observations. At least one of the two
+        endpoint-columns must be given; if one is missing it is assumed to represent +/- inf. `windows` can be a Dask
+        DataFrame as well. In that case, however, `entity_col` must not be None and entities should already be on the
+        row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be very costly both
+        in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already, the calling
+        function should better take care of this; see
+        https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+    agg: dict
+        The aggregations to apply. Must be a dict mapping attribute identifiers to lists of aggregation functions,
+        which are applied to all observed values of the respective attribute in each specified window. Supported
+        aggregation functions are:
 
-    :param windows: The target windows into which `df` is resampled. Must have two column index levels and columns
-    `(time_col, "start")` (optional; contains start times of each window), `(time_col, "stop")` (optional; contains end
-    times of each window), `(entity_col, "")` (optional; contains entity identifiers) and `(window_group_col, "")`
-    (optional; contains information for creating groups of mutually disjoint windows). Start- and end times may be NA,
-    but such windows are deemed invalid and by definition do not contain any observations.
-    At least one of the two endpoint-columns must be given; if one is missing it is assumed to represent +/- inf.
-    `windows` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
-    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
-    very costly both in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already,
-    the calling function should better take care of this; see
-    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+        * ``"mean"``: Empirical mean of observed non-NA values
+        * ``"min"``: Minimum of observed non-NA values; equivalent to "p0"
+        * ``"max"``: Maximum of observed non-NA values; equivalent to "p100"
+        * ``"median"``: Median of observed non-NA values; equivalent to "p50"
+        * ``"std"``: Empirical standard deviation of observed non-NA values
+        * ``"var"``: Empirical variance of observed non-NA values
+        * ``"sum"``: Sum of observed non-NA values
+        * ``"prod"``: Product of observed non-NA values
+        * ``"skew"``: Skewness of observed non-NA values
+        * ``"mad"``: Mean absolute deviation of observed non-NA values
+        * ``"sem"``: Standard error of the mean of observed non-NA values
+        * ``"size"``: Number of observations, including NA values
+        * ``"count"``: Number of non-NA observations
+        * ``"nunique"``: Number of unique observed non-NA values
+        * ``"mode"``: Mode of observed non-NA values, i.e., most frequent value; ties are broken randomly but
+          reproducibly
+        * ``"mode_count"``: Number of occurrences of mode
+        * ``"pxx"``: Percentile of observed non-NA values; `xx` is an arbitrary float in the interval [0, 100]
+        * ``"rxx"``: `xx`-th observed value (possibly NA), starting from 0; negative indices count from the end
+        * ``"txx"``: Time of `xx`-th observed value; negative indices count from the end
+        * ``"callable"``: Function that takes as input a DataFrame `in` and returns a new DataFrame `out`.
+          See Notes for details.
 
-    :param agg: The aggregations to apply. Must be a dict mapping attribute identifiers to lists of aggregation
-    functions, which are applied to all observed values of the respective attribute in each specified window.
-    Supported aggregation functions are:
-        * "mean": Empirical mean of observed non-NA values
-        * "min": Minimum of observed non-NA values; equivalent to "p0"
-        * "max": Maximum of observed non-NA values; equivalent to "p100"
-        * "median": Median of observed non-NA values; equivalent to "p50"
-        * "std": Empirical standard deviation of observed non-NA values
-        * "var": Empirical variance of observed non-NA values
-        * "sum": Sum of observed non-NA values
-        * "prod": Product of observed non-NA values
-        * "skew": Skewness of observed non-NA values
-        * "mad": Mean absolute deviation of observed non-NA values
-        * "sem": Standard error of the mean of observed non-NA values
-        * "size": Number of observations, including NA values
-        * "count": Number of non-NA observations
-        * "nunique": Number of unique observed non-NA values
-        * "mode": Mode of observed non-NA values, i.e., most frequent value; ties are broken randomly but reproducibly
-        * "mode_count": Number of occurrences of mode
-        * "pxx": Percentile of observed non-NA values; `xx` is an arbitrary float in the interval [0, 100]
-        * "rxx": `xx`-th observed value (possibly NA), starting from 0; negative indices count from the end
-        * "txx": Time of `xx`-th observed value; negative indices count from the end
-        * callable: Function that takes as input a DataFrame `in` and returns a new DataFrame `out`.
-            `in` has two columns `time_col` and `value_col` (in that order). Its row index specifies which entries
-            belong to the same observation window: entries with the same row index value belong to the same window,
-            entries with different row index values belong to distinct windows. Observation times are guaranteed to be
-            non-NA, values may be NA. Note, however, that `in` is _not_ necessarily sorted wrt. its row index and/or
-            observation times! Also note that the entities the observations in `in` stem from (if `entity_col` is
-            specified) are not known to the function.
-            `out` should have one row per row index value of `in` (with the same row index value), and an arbitrary
-            number of columns with arbitrary names and dtypes. Columns should be consistent in every invocation of the
-            function.
-            The reason why the function is not applied to each row-index-value group individually is that some
-            aggregations can be implemented efficiently using sorting rather than grouping.
-            The function should be stateless and must not modify `in` in place.
+    entity_col: str, optional
+        Name of the column in `df` and `windows` containing entity identifiers. If None, all entries are assumed to
+        belong to the same entity. Note that entity identifiers may also be on the row index.
+    time_col: str, optional
+        Name of the column in `df` containing observation times, and also name of column(s) in `windows` containing
+        start- and end times of the windows. Note that despite its name the data type of the column is arbitrary, as
+        long as its values can be compared wrt. `<` and `<=`.
+    attribute_col: str, optional
+        Name of the column in `df` containing attribute identifiers. If None, all entries are assumed to belong to the
+        same attribute; in that case `agg` may only contain one single item.
+    value_col: str, optional
+        Name of the column in `df` containing the observed values.
+    include_start: bool, default=True
+        Whether start times of observation windows are part of the windows.
+    include_stop: bool, default=False
+        Whether end times of observation windows are part of the windows.
+    optimize: str, default='time'
+        Whether to optimize runtime or memory requirements. If set to "time", the function returns faster but requires
+        more memory; if set to "memory", the runtime is longer but memory consumption is reduced to a minimum. If
+        "time", global variable `MAX_ROWS` can be used to adjust the time-memory tradeoff: increasing it increases
+        memory consumption while reducing runtime. Note that this parameter is only relevant for computing non-rank-like
+        aggregations, since rank-like aggregations ("rxx", "txx") can be efficiently computed anyway.
 
-            Example 1: A simple aggregation which calculates the fraction of values between 0 and 1 in every window
-            could be passed as
+    Returns
+    -------
+    pd.DataFrame | dask.dataframe.DataFrame
+        Resampled data. Like `windows`, but with one additional column for each requested aggregation.
+        Order of columns is arbitrary, order of rows is exactly as in `windows` -- unless `windows` is a Dask DataFrame,
+        in which case the order of rows may differ. The output is a (lazy) Dask DataFrame if `windows` is a Dask
+        DataFrame, and a Pandas DataFrame otherwise, regardless of what `df` is.
 
-                lambda x: x[value_col].between(0, 1).groupby(level=0).mean().to_frame('frac_between_0_1')
+    Notes
+    -----
+    When passing a callable to `agg`, it is expected to take as input a DataFrame `in` and return a new DataFrame `out`.
+    `in` has two columns `time_col` and `value_col` (in that order). Its row index specifies which entries belong to
+    the same observation window: entries with the same row index value belong to the same window, entries with
+    different row index values belong to distinct windows. Observation times are guaranteed to be non-N/A, values may
+    be N/A. Note, however, that `in` is not necessarily sorted wrt. its row index and/or observation times! Also note
+    that the entities the observations in `in` stem from (if `entity_col` is specified) are not known to the function.
+    `out` should have one row per row index value of `in` (with the same row index value), and an arbitrary number of
+    columns with arbitrary names and dtypes. Columns should be consistent in every invocation of the function.
+    The reason why the function is not applied to each row-index-value group individually is that some aggregations can
+    be implemented efficiently using sorting rather than grouping. The function should be stateless and must not modify
+    `in` in place.
 
-            Example 2: A more sophisticated aggregation which fits a linear regression to the observations in every
-            window and returns the slope of the resulting regression line could be defined as
+    * Example 1: A simple aggregation which calculates the fraction of values between 0 and 1 in every window could be
+      passed as
 
-                def slope(x):
-                    tmp = pd.DataFrame(
-                        index=x.index,
-                        data={time_col: x[time_col].dt.total_seconds(), value_col: x[value_col]}
-                    )
-                    return tmp[tmp[value_col].notna()].groupby(level=0).apply(
-                        lambda g: scipy.stats.linregress(g[time_col], y=g[value_col]).slope
-                    ).to_frame('slope')
+      ::
 
-    :param entity_col: Name of the column in `df` and `windows` containing entity identifiers. If None, all entries
-    are assumed to belong to the same entity. Note that entity identifiers may also be on the row index.
+        lambda x: x[value_col].between(0, 1).groupby(level=0).mean().to_frame('frac_between_0_1')
 
-    :param time_col: Name of the column in `df` containing observation times, and also name of column(s) in `windows`
-    containing start- and end times of the windows. Note that despite its name the data type of the column is
-    arbitrary, as long as its values can be compared wrt. `<` and `<=`.
+    * Example 2: A more sophisticated aggregation which fits a linear regression to the observations in every window
+      and returns the slope of the resulting regression line could be defined as
 
-    :param attribute_col: Name of the column in `df` containing attribute identifiers. If None, all entries are assumed
-    to belong to the same attribute; in that case `agg` may only contain one single item.
+      ::
 
-    :param value_col: Name of the column in `df` containing the observed values.
-
-    :param include_start: Whether start times of observation windows are part of the windows.
-
-    :param include_stop: Whether end times of observation windows are part of the windows.
-
-    :param optimize: Whether to optimize runtime or memory requirements. If set to "time", the function returns faster
-    but requires more memory; if set to "memory", the runtime is longer but memory consumption is reduced to a minimum.
-    If "time", global variable `MAX_ROWS` can be used to adjust the time-memory tradeoff: increasing it increases
-    memory consumption while reducing runtime.
-    Note that this parameter is only relevant for computing non-rank-like aggregations, since rank-like aggregations
-    ("rxx", "txx") can be efficiently computed anyway.
-
-    :return: Resampled data. Like `windows`, but with one additional column for each requested aggregation.
-    Order of columns is arbitrary, order of rows is exactly as in `windows` -- unless `windows` is a Dask DataFrame, in
-    which case the order of rows may differ.
-    The output is a (lazy) Dask DataFrame if `windows` is a Dask DataFrame, and a Pandas DataFrame otherwise,
-    regardless of what `df` is.
+          def slope(x):
+            tmp = pd.DataFrame(
+                index=x.index,
+                data={time_col: x[time_col].dt.total_seconds(), value_col: x[value_col]}
+            )
+            return tmp[tmp[value_col].notna()].groupby(level=0).apply(
+                lambda g: scipy.stats.linregress(g[time_col], y=g[value_col]).slope
+            ).to_frame('slope')
     """
 
     assert df.columns.nlevels == 1
@@ -408,93 +421,103 @@ def resample_interval(
     """
     Resample interval-like data wrt. explicitly passed windows of arbitrary (possibly infinite) length. "Interval-like"
     means that each observation is characterized by a start- and stop time rather than a singular timestamp (as in EAV
-    data). A typical example of interval-like data are medication records, since medications can be administered over
-    longer time periods.
+    data).
 
-    The only supported resampling aggregation is summing the observed values per time window, scaled by the fraction
-    of the length of the intersection of observation interval and time window divided by the total length of the
-    observation interval: Let `W = [s, t]` be a time window and let `I = [a, b]` be an observation interval with
-    observed value `v`. Then `I` contributes to `W` the value
+    Parameters
+    ----------
+    df: pd.DataFrame, dask.dataframe.DataFrame
+        The DataFrame to resample. Must have columns `value_col` (contains observed values), `start_col` (optional;
+        contains start times), `stop_time` (optional; contains end times), `attribute_col` (optional; contains attribute
+        identifiers) and `entity_col` (optional; contains entity identifiers). Must have one column index level. Data
+        types are arbitrary, as long as times and entity identifiers can be compared wrt. `<` and `<=` (e.g., float,
+        int, time delta, date time). Entity identifiers must not be NA. Values must be numeric (float, int, bool).
+        Observation times and observed values may be NA, but such entries are ignored entirely. Although both
+        `start_col` and `stop_col` are optional, at least one must be present. Missing start- and end columns are
+        interpreted as -/+ inf. All intervals are closed, i.e., start- and end times are included. This is especially
+        relevant for entries whose start time equals their end time.
+        `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
+        already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
+        very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already,
+        the calling function should better take care of this; see
+        https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+    windows: pd.DataFrame, dask.dataframe.DataFrame
+        The target windows into which `df` is resampled. Must have either one or two columns index level(s). If it has
+        one column index level, must have columns `start_col` (optional; contains start times of each window),
+        `stop_col` (optional; contains end times of each window) and `entity_col` (optional; contains entity
+        identifiers). If it has two column index levels, the columns must be `(time_col, "start")`,
+        `(time_col, "stop")` and `(entity_col, "")`. Start- and end times may be NA, but such windows are deemed
+        invalid and by definition do not overlap with any observation intervals. At least one of the two
+        endpoint-columns must be present; if one is missing it is assumed to represent -/+ inf. All time windows are
+        closed, i.e., start- and end times are included. `windows` can be a Dask DataFrame as well. In that case,
+        however, `entity_col` must not be None and entities should already be on the row index, with known divisions.
+        Otherwise, the row index is set to `entity_col`, which can be very costly both in terms of time and memory.
+        Especially if `windows` is known to be sorted wrt. entities already, the calling function should better take
+        care of this; see
+        https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+    attributes: list, optional
+        The attributes to consider. Must be a list-like of attribute identifiers. None defaults to the list of all such
+        identifiers present in column `attribute_col`. If `attribute_col` is None but `attributes` is not, it must be a
+        singleton list.
+    entity_col: str, optional
+        Name of the column in `df` and `windows` containing entity identifiers. If None, all entries are assumed to
+        belong to the same entity. Note that entity identifiers may also be on the row index.
+    start_col: str, optional
+        Name of the column in `df` (and `windows` if it has only one column index level) containing start times. If
+        None, all start times are assumed to be -inf. Note that despite its name the data type of the column is
+        arbitrary, as long as its values can be compared wrt. `<` and `<=`.
+    stop_col: str, optional
+        Name of the column in `df` (and `windows` if it has only one column index level) containing end times. If None,
+        all end times are assumed to be +inf. Note that despite its name the data type of the column is arbitrary, as
+        long as its values can be compared wrt. `<` and `<=`.
+    attribute_col: str, optional
+        Name of the column in `df` containing attribute identifiers. If None, all entries are assumed to belong to the
+        same attribute.
+    value_col: str, optional
+        Name of the column in `df` containing the observed values.
+    time_col: list | str, optional
+        Name of the column(s) in `windows` containing start- and end times of the windows. Only needed if `windows`
+        has two column index levels, because otherwise these two columns must be called `start_col` and `stop_col`,
+        respectively.
+    epsilon:
+        The value to set :math:`W_I` to if :math:`I` is infinite and :math:`W \\cap I` is non-empty and finite;
+        see Notes for details.
 
-                   |W n I|
-        W_I = v * ---------         (1)
-                     |I|
-
-    The overall value of `W` is the sum of `W_I` over all intervals. Of course, all this is computed separately for
-    each entity-attribute combination.
-    Some remarks on Eq. (1) are in place:
-        * If `v` is NA, `W_I` is set to 0.
-        * If `a = b` both numerator and denominator are 0. In this case the fraction is defined as 1 if `a in W`
-            (i.e., `s <= a <= t`) and 0 otherwise.
-        * If `I` is infinite and `W n I` is non-empty but finite, `W_I` is set to `epsilon * sign(v)`.
-            Note that `W n I` is non-empty even if it is of the form `[x, x]`. This leads to the slightly
-            counter-intuitive situation that `W_I = epsilon` if `I` is infinite, and `W_I = 0` if `I` is finite.
-        * If `I` and `W n I` are both infinite, the fraction is defined as 1. This is regardless of whether `W n I`
-            equals `I` or whether it is a proper subset of it.
-
-    :param df: The DataFrame to resample. Must have columns `value_col` (contains observed values), `start_col`
-    (optional; contains start times), `stop_time` (optional; contains end times), `attribute_col` (optional; contains
-    attribute identifiers) and `entity_col` (optional; contains entity identifiers). Must have one column index level.
-    Data types are arbitrary, as long as times and entity identifiers can be compared wrt. `<` and `<=`
-    (e.g., float, int, time delta, date time). Entity identifiers must not be NA. Values must be numeric (float, int,
-    bool). Observation times and observed values may be NA, but such entries are ignored entirely.
-    Although both `start_col` and `stop_col` are optional, at least one must be present. Missing start- and end
-    columns are interpreted as -/+ inf.
-    All intervals are closed, i.e., start- and end times are included. This is especially relevant for entries whose
-    start time equals their end time.
-    `df` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
-    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
-    very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already, the
-    calling function should better take care of this; see
-    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
-
-    :param windows: The target windows into which `df` is resampled. Must have either one or two columns index level(s).
-    If it has one column index level, must have columns `start_col` (optional; contains start times of each window),
-    `stop_col` (optional; contains end times of each window) and `entity_col` (optional; contains entity identifiers).
-    If it has two column index levels, the columns must be `(time_col, "start")`, `(time_col, "stop")` and
-    `(entity_col, "")`. Start- and end times may be NA, but such windows are deemed invalid and by definition do not
-    overlap with any observation intervals.
-    At least one of the two endpoint-columns must be present; if one is missing it is assumed to represent -/+ inf.
-    All time windows are closed, i.e., start- and end times are included.
-    `windows` can be a Dask DataFrame as well. In that case, however, `entity_col` must not be None and entities should
-    already be on the row index, with known divisions. Otherwise, the row index is set to `entity_col`, which can be
-    very costly both in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already,
-    the calling function should better take care of this; see
-    https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
-
-    :param attributes: The attributes to consider. Must be a list-like of attribute identifiers. None defaults to the
-    list of all such identifiers present in column `attribute_col`. If `attribute_col` is None but `attributes` is not,
-    it must be a singleton list.
-
-    :param entity_col: Name of the column in `df` and `windows` containing entity identifiers. If None, all entries
-    are assumed to belong to the same entity. Note that entity identifiers may also be on the row index.
-
-    :param start_col: Name of the column in `df` (and `windows` if it has only one column index level) containing start
-    times. If None, all start times are assumed to be -inf. Note that despite its name the data type of the column is
-    arbitrary, as long as its values can be compared wrt. `<` and `<=`.
-
-    :param stop_col: Name of the column in `df` (and `windows` if it has only one column index level) containing end
-    times. If None, all end times are assumed to be +inf. Note that despite its name the data type of the column is
-    arbitrary, as long as its values can be compared wrt. `<` and `<=`.
-
-    :param attribute_col: Name of the column in `df` containing attribute identifiers. If None, all entries are assumed
-    to belong to the same attribute.
-
-    :param value_col: Name of the column in `df` containing the observed values.
-
-    :param time_col: Name of the column(s) in `windows` containing start- and end times of the windows. Only needed if
-    `windows` has two column index levels, because otherwise these two columns must be called `start_col` and
-    `stop_col`, respectively.
-
-    :param epsilon: The value to set `W_I` to if `I` is infinite and `W n I` is non-empty and finite; see Eq. (1) and
-    the subsequent remarks for details.
-
-    :return: Resampled data. Like `windows`, but with one additional column for each attribute, and same number of
+    Returns
+    -------
+    Resampled data. Like `windows`, but with one additional column for each attribute, and same number of
     column index levels.
     Order of columns is arbitrary, order of rows is exactly as in `windows` -- unless `windows` is a Dask DataFrame, in
     which case the order of rows may differ.
     The output is a (lazy) Dask DataFrame if `windows` is a Dask DataFrame, and a Pandas DataFrame otherwise,
     regardless of what `df` is.
+
+    Notes
+    -----
+    A typical example of interval-like data are medication records, since medications can be administered over
+    longer time periods.
+
+    The only supported resampling aggregation is summing the observed values per time window, scaled by the fraction
+    of the length of the intersection of observation interval and time window divided by the total length of the
+    observation interval: Let :math:`W = [s, t]` be a time window and let :math:`I = [a, b]` be an observation interval
+    with observed value :math:`v`. Then :math:`I` contributes to :math:`W` the value
+
+
+    :math:`W_I = v * \\frac{|W \\cap I|}{|I|}`
+
+    The overall value of :math:`W` is the sum of :math:`W_I` over all intervals. Of course, all this is computed
+    separately for each entity-attribute combination.
+    Some remarks on the above equation are in place:
+
+    * If :math:`v` is N/A, :math:`W_I` is set to 0.
+    * If :math:`a = b` both numerator and denominator are 0. In this case the fraction is defined as 1 if
+      :math:`a \\in W` (i.e., :math:`s \\leq a \\leq t`) and 0 otherwise.
+    * If :math:`I` is infinite and :math:`W \\cap I` is non-empty but finite, :math:`W_I` is set to
+      :math:`epsilon * sign(v)`.
+      Note that :math:`W \\cap I` is non-empty even if it is of the form :math:`[x, x]`. This leads to the slightly
+      counter-intuitive situation that :math:`W_I = epsilon` if :math:`I` is infinite, and :math:`W_I = 0` if :math:`I`
+      is finite.
+    * If :math:`I` and :math:`W \\cap I` are both infinite, the fraction is defined as 1. This is regardless of whether
+      :math:`W \\cap I` equals :math:`I` or whether it is a proper subset of it.
     """
 
     # Meaningful aggregations besides "sum" are
@@ -700,17 +723,28 @@ def partition_series(s: pd.Series, n, shuffle: bool = True) -> pd.Series:
     """
     Partition a given Series into as few groups as possible, such that the sum of the series' values in each group does
     not exceed a given threshold.
-    :param s: The series to partition. The data type should allow for taking sums and comparing elements, and all
-    values are assumed to be non-negative.
-    :param n: The threshold, of the same data type as `s`.
-    :param shuffle: Whether to randomly shuffle `s` before generating the partition. If False, this function is
-    deterministic.
-    :return: A new series with the same index as `s`, with values from 0 to `g - 1` specifying the group ID of each
-    entry (`g` is the total number of groups).
 
-    Note that the partitions returned by this function may not be optimal, since finding optimal partitions is
-    computationally difficult.
-    Also note that `s` may contain entries whose value exceeds `n`; such entries are put into singleton groups.
+    Parameters
+    ----------
+    s: Series
+        The series to partition. The data type should allow for taking sums and comparing elements, and all values are
+        assumed to be non-negative.
+    n:
+        The threshold, of the same data type as `s`.
+    shuffle: bool, default=True
+        Whether to randomly shuffle `s` before generating the partition. If False, this function is deterministic.
+
+    Returns
+    -------
+    Series
+        A new series with the same index as `s`, with values from 0 to `g - 1` specifying the group ID of each entry
+        (`g` is the total number of groups).
+
+    Notes
+    -----
+    The partitions returned by this function may not be optimal, since finding optimal partitions is
+    computationally difficult. Also note that `s` may contain entries whose value exceeds `n`; such entries are put
+    into singleton groups.
     """
 
     out = pd.Series(index=s.index, data=0, dtype=np.int64)
@@ -747,12 +781,23 @@ def grouped_mode(series: pd.Series) -> pd.DataFrame:
     common values in a group, the "first" is chosen, i.e., the result is always one single value.
     NaN values are ignored, i.e., the most frequent value of a group is NaN iff all values of the group are NaN.
 
-    Very fast method to compute grouped mode, based on https://stackoverflow.com/a/38216118. Using built-in `mode()`
+    Very fast method to compute grouped mode, based on [1]. Using built-in `mode()`
     function is not possible, because returns list of most common values. Work-around a la `lambda x: x.mode()[0]` is
     **terribly** slow.
 
-    :param series: The Series to aggregate. The number of row index levels is arbitrary.
-    :return: The mode-aggregated DataFrame with columns "mode" and "count"
+    Parameters
+    ----------
+    series: Series
+        The Series to aggregate. The number of row index levels is arbitrary.
+
+    Returns
+    -------
+    DataFrame
+        The mode-aggregated DataFrame with columns "mode" and "count"
+
+    References
+    ----------
+    .. [1] https://stackoverflow.com/a/38216118
     """
 
     group_levels = list(range(series.index.nlevels + 1))
@@ -777,14 +822,25 @@ def inner_or_cross_join(left: pd.DataFrame, right: pd.DataFrame, on=None) -> pd.
     """
     Return the inner join or cross join of two DataFrames, depending on whether to column to join on actually occurs
     in the DataFrames.
-    :param left: The first DataFrame.
-    :param right: The second DataFrame.
-    :param on: The column to join on, or None.
-    :return: If `on` is not None and occurs in `left`, return the inner join of `left` (column `on`) and
-    `right` (row index).
-    Otherwise, return the cross join of `left` and `right`; in that case , the index of the result corresponds to the
-    (replicated) index of `left` and the index of `right` is completely ignored.
 
+    Parameters
+    ----------
+    left: DataFrame
+        The first DataFrame.
+    right: DataFrame
+        The second DataFrame.
+    on: str, optional
+        The column to join on, or None.
+
+    Returns
+    -------
+    DataFrame
+        If `on` is not None and occurs in `left`, return the inner join of `left` (column `on`) and`right` (row index).
+        Otherwise, return the cross join of `left` and `right`; in that case , the index of the result corresponds to
+        the (replicated) index of `left` and the index of `right` is completely ignored.
+
+    Notes
+    -----
     Functionally, the cross join operation is equivalent to joining `left` and `right` on a constantly-valued column:
     >>> left["join_column"] = 0
     >>> right.index = 0

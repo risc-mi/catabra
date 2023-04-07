@@ -16,17 +16,33 @@ from catabra.util import logging
 class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
     """
     Base class for out-of-distribution detection
+
+    Parameters
+    ----------
+    subset: float, default=1
+        Fraction of samples to use for training: [0,1].
+    random_state: int, optional
+        State for functions working with randomness. If not given initialized randomly.
+    verbose: bool, default=False
+        Whether to print log messages
     """
 
     @classmethod
     def create(cls, name: str, source: str = 'internal', kwargs=None) -> 'OODDetector':
         """
         factory method for creating OODDetector subclasses or PyOD classes from strings
-        :param name: if source is 'internal' name of OODDetector module in snake_case;
-                     if source is 'pyod' name of pyod detector module in snake_case;
-                     if source is 'external' full path to the OODDetector (module1.module2.CustomOOD)
-        :param source: whether to use internal class (from CaTaBra) or classes from pyod. ['internal, 'pyod']
-        :param kwargs: keyword arguments for the detector class
+
+        Parameters:
+        -----------
+        name: str
+            If source is `'internal'` name of OODDetector module in snake_case; if source is `'pyod'` name of pyod
+            detector module in snake_case; if source is `'external'` full path to the OODDetector
+            (e.g. module1.module2.CustomOOD)
+        source: str, default='internal'
+            Whether to use internal class (from CaTaBra) , classes from pyod or a custom class. One of ['internal,
+            'pyod', 'external']
+        kwargs: optional
+            keyword arguments for the detector class
         """
         if kwargs is None:
             kwargs = {}
@@ -107,36 +123,46 @@ class OODDetector(BaseEstimator, ClassifierMixin, abc.ABC):
             logging.log('Out-of-distribution detector fitted.')
 
     @abstractmethod
-    def _predict_transformed(self, X):
+    def _predict_transformed(self, X: pd.DataFrame):
         pass
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame):
         X_trans = self._transform(X)
         return self._predict_transformed(X_trans)
 
     @abstractmethod
-    def _predict_proba_transformed(self, X):
+    def _predict_proba_transformed(self, X: pd.DataFrame):
         pass
 
-    def predict_proba(self, X):
+    def predict_proba(self, X: pd.DataFrame):
         """
+
         Get o.o.d. probabilities of the given samples. Note that despite its name, this function does not necessarily
         return probabilities between 0 and 1, but in any case larger values correspond to an increased likelihood of
         being o.o.d.
-        :param X: The data to analyze.
-        :return: O.o.d. probabilities.
+
+        Parameters
+        ----------
+        X: DataFrame
+            The data to analyze.
+
+        Returns:
+        -------
+            O.o.d. probabilities. Shape depends on subtype (FeaturewiseOODDetector, SamplewiseOODDetector or
+            OverallOODDetector)
         """
         X_trans = self._transform(X)
         logging.log('Predicting out-of-distribution samples.')
         return self._predict_proba_transformed(X_trans)
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Types of OOD detectors
-
-# Subclasses defining return type of
-# TODO: add pytest for returning expected shape
+# Subclasses defining return types of OOD detectors
 
 class SamplewiseOODDetector(OODDetector, abc.ABC):
+    """
+    OOD detector that works on a per sample basis.
+    Predictions are of the shape `(n_samples,)`.
+    """
 
     def _predict_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
@@ -146,6 +172,11 @@ class SamplewiseOODDetector(OODDetector, abc.ABC):
 
 
 class FeaturewiseOODDetector(OODDetector, abc.ABC):
+    """
+    OOD detector that works on a per column basis.
+    Predictions are of the shape `(n_selected_cols,)`, where `n_selected_cols` are the number of columns returned after
+    applying `_transform` to the data.
+    """
 
     def _predict_transformed(self, X: pd.DataFrame) -> pd.Series:
         pass
@@ -155,6 +186,10 @@ class FeaturewiseOODDetector(OODDetector, abc.ABC):
 
 
 class OverallOODDetector(OODDetector, abc.ABC):
+    """
+    OOD detector that works on a full data set basis.
+    Predictions are `int`, or `float` in the proba case.
+    """
 
     def _predict_transformed(self, X: pd.DataFrame) -> int:
         pass

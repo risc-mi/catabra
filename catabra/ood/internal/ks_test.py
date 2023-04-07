@@ -13,11 +13,14 @@ from catabra.ood.base import FeaturewiseOODDetector
 
 class KSTest(FeaturewiseOODDetector):
     """
-    Two sample Kolmogorov-Smirnov test.
-    Refer to: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
+    Two sample Kolmogorov-Smirnov test [1].
     Hypothesis test for the following question:
     "How likely is it that we would see two sets of samples like this if they were drawn from the same (but unknown)
     probability distribution?"
+
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
     """
 
     def __init__(self, subset=1, p_val=0.05, random_state: int=None, verbose=True):

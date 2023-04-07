@@ -11,7 +11,11 @@ def make_standard_transformer() -> NumCatTransformer:
     """
     Construct a transformer that scales numerical and time-like columns to the range [0, 1], one-hot encodes
     categorical columns, and imputes missing numerical values with -1 (after scaling).
-    :return: Instance of class `NumCatTransformer`.
+
+    Returns
+    -------
+    NumCatTransformer
+        Instance of class `NumCatTransformer`.
     """
     return NumCatTransformer(
         num_transformer=make_pipeline(

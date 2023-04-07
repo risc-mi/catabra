@@ -83,12 +83,12 @@ Invoking the two commands generates a bunch of results, most notably
 
 * the trained classifier
 * descriptive statistics of the underlying data<br>
-  <img src="doc/figures/breast_cancer_descriptive.png" width="600px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_descriptive.png" width="600px" />
 * performance metrics in tabular and graphical form<br>
-  <img src="doc/figures/breast_cancer_confusion_matrix.png" width="200px" />
-  <img src="doc/figures/breast_cancer_threshold_metric.png" width="400px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_confusion_matrix.png" width="200px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_descriptive.png" width="400px" />
 * feature importance scores in tabular and graphical form<br>
-  <img src="doc/figures/breast_cancer_beeswarm.png" width="600px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_beeswarm.png" width="600px" />
 * ... and many more.
 
 ## Examples
@@ -144,8 +144,8 @@ Invoking the two commands generates a bunch of results, most notably
 
 ## Documentation
 
-Directory [doc/](https://github.com/risc-mi/catabra/tree/main/doc) documents a couple of specific aspects of CaTabRa, like its
-command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
+Directory [doc/](https://github.com/risc-mi/catabra/tree/main/doc/md) documents a couple of specific aspects of CaTabRa,
+like its  command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
 
 Detailed API documentation is currently in preparation.
 

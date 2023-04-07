@@ -8,11 +8,20 @@ from typing import Iterable, Optional, Union
 def fresh_name(name, lst: Iterable):
     """
     Create a fresh name based on `name`, i.e., a name that does not appear in `lst`.
-    :param name: An arbitrary object. If a list, tuple or set, all elements of `name` are processed individually, and
-    they are ensured to be distinct from each other.
-    :param lst: A list-like structure.
-    :return: If `name` does not appear in `lst`, `name` is returned as-is. Otherwise, a numeric suffix is added to the
-    string representation of `name`.
+
+    Parameters
+    ----------
+    name:
+        An arbitrary object. If a list, tuple or set, all elements of `name` are processed individually, an they are
+        ensured to be distinct from each other.
+    lst: Iterable
+        A list-like structure.
+
+    Returns
+    -------
+    Any
+        If `name` does not appear in `lst`, `name` is returned as-is. Otherwise, a numeric suffix is added to the string
+        representation of `name`.
     """
     if isinstance(name, (list, tuple, set)):
         cstr = type(name)
@@ -42,11 +51,22 @@ def fresh_name(name, lst: Iterable):
 def repr_list(lst: Union[list, tuple], limit: Optional[int] = 50, delim: str = ', ', brackets: bool = True) -> str:
     """
     Return a string representation of some list, limiting the displayed items to a certain number.
-    :param lst: The list.
-    :param limit: The maximum number of displayed items.
-    :param delim: The item delimiter.
-    :param brackets: Whether to add brackets.
-    :return: String representation of `lst`.
+
+    Parameters
+    ----------
+    lst: list | tuple
+        The list.
+    limit: int, default=50
+        The maximum number of displayed items.
+    delim: str, default=', '
+        The item delimiter.
+    brackets: bool, default=True
+        Whether to add brackets.
+
+    Returns
+    -------
+    str
+        String representation of `lst`.
     """
     if limit is not None and len(lst) > limit:
         ell = '...'
@@ -66,10 +86,19 @@ def repr_timedelta(delta, subsecond_resolution: int = 0) -> str:
     """
     Return a string representation of some time delta.
     Minutes and seconds are always displayed, hours and days only if needed. Format is "d days hh:mm:ss".
-    :param delta: Time delta to represent, either a float or an object with a `total_seconds()` method (e.g., a pandas
-    Timedelta instance). Floats are assumed to be given in seconds.
-    :param subsecond_resolution: The subsecond resolution to display, i.e., number of decimal places.
-    :return: String representation of `delta`.
+
+    Parameters
+    ----------
+    delta:
+        Time delta to represent, either a float or an object with a `total_seconds()` method (e.g., a pandas Timedelta
+        instance). Floats are assumed to be given in seconds.
+    subsecond_resolution: int, default=0
+        The subsecond resolution to display, i.e., number of decimal places.
+
+    Returns
+    -------
+    str
+        String representation of `delta`.
     """
     assert subsecond_resolution >= 0
     if hasattr(delta, 'total_seconds'):
