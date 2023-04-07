@@ -1,26 +1,26 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from pathlib import Path
-from typing import Union, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
+from scipy.stats import ks_2samp
 from tqdm import tqdm
 
-from ..base import FeaturewiseOODDetector
-from ..utils import make_standard_transformer
-from catabra.util import io
-from scipy.stats import ks_2samp
+from catabra.ood.base import FeaturewiseOODDetector
 
 
 class KSTest(FeaturewiseOODDetector):
     """
-    Two sample Kolmogorov-Smirnov test.
-    Refer to: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
+    Two sample Kolmogorov-Smirnov test [1].
     Hypothesis test for the following question:
     "How likely is it that we would see two sets of samples like this if they were drawn from the same (but unknown)
     probability distribution?"
+
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
     """
 
     def __init__(self, subset=1, p_val=0.05, random_state: int=None, verbose=True):

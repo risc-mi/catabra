@@ -1,8 +1,8 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from ..base import TrainingMonitorBackend
-from ...util import logging, plotting
+from catabra.monitoring.base import TrainingMonitorBackend
+from catabra.util import logging, plotting
 
 
 def plotly_factory(**kwargs):

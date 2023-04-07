@@ -3,11 +3,11 @@
 
 from typing import Union
 
-from . import _matplotlib as mpl_backend
 from catabra.util.io import Path, make_path
+from catabra.util.plotting import _matplotlib as mpl_backend  # noqa F401
 
 try:
-    from . import _plotly as plotly_backend
+    from catabra.util.plotting import _plotly as plotly_backend
 except ModuleNotFoundError:
     plotly_backend = None
 
@@ -20,13 +20,20 @@ PLOTLY_WARNING = 'plotly is required for creating interactive plots. You can ins
 def save(fig, fn: Union[str, Path], png: bool = False):
     """
     Save a figure or a list of figures to disk.
-    :param fig: The figure(s) to save. May be a Matplotlib figure object, a plotly figure object, or a dict whose
-    values are such figure objects.
-    :param fn: The file or directory. It is recommended to leave the file extension unspecified and simply pass
-    "/path/to/figure" instead of "/path/to/figure.png". The file extension is then determined automatically depending
-    on the type of `fig` and on the value of `png`. If `fig` is a dict, `fn` refers to the parent directory.
-    :param png: Whether to save Matplotlib figures as PNG or as PDF. Ignored if a file extension is specified in `fn`
-    or if `fig` is a plotly figure, which are always saved as HTML.
+
+    Parameters
+    ----------
+    fig:
+        The figure(s) to save. May be a Matplotlib figure object, a plotly figure object, or a dict whose values are
+        such figure objects.
+    fn: str | Path
+        The file or directory. It is recommended to leave the file extension unspecified and simply pass
+        `"/path/to/figure"` instead of `"/path/to/figure.png"`. The file extension is then determined automatically
+        depending on the type of `fig` and on the value of `png`. If `fig` is a dict, `fn` refers to the parent
+        directory.
+    png: bool, default=False
+        Whether to save Matplotlib figures as PNG or as PDF. Ignored if a file extension is specified in `fn` or if
+        `fig` is a plotly figure, which are always saved as HTML.
     """
     fn = make_path(fn)
     if isinstance(fig, dict):
@@ -44,12 +51,13 @@ def save(fig, fn: Union[str, Path], png: bool = False):
             for name, f in fig.items():
                 save(f, fn / name, png=png)
     elif hasattr(fig, 'savefig'):
-        if fn.suffix == '':
-            fn = fn.with_suffix('.png' if png else '.pdf')
+        if fn.suffix not in ('.eps', '.jpeg', '.jpg', '.pdf', '.pgf', '.png', '.ps', '.raw', '.rgba', '.svg',
+                             '.svgz', '.tif', '.tiff'):
+            fn = fn.parent / (fn.name + ('.png' if png else '.pdf'))
         fig.savefig(fn, bbox_inches='tight')
     elif hasattr(fig, 'write_html'):
-        if fn.suffix == '':
-            fn = fn.with_suffix('.html')
+        if fn.suffix != '.html':
+            fn = fn.parent / (fn.name + '.html')
         fig.write_html(fn, include_plotlyjs='cdn', include_mathjax='cdn', full_html=True)
     else:
         raise ValueError(f'Cannot save figure of type {type(fig)}.')

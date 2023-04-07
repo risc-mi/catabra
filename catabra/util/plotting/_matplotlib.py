@@ -2,24 +2,38 @@
 #  All rights reserved.
 
 from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from . import _common
+from catabra.util.plotting import _common
 
 
 def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History', ax=None, figsize='auto',
                      legend=None, **kwargs):
     """
     Plot training history, with timestamps on x- and metrics on y-axis.
-    :param x: Timestamps, array of shape `(n,)`.
-    :param ys: Metrics, array of shape `(n,)`.
-    :param title: The title of the figure.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size.
-    :param legend: Names of the individual curves. None or a list of string with the same length as `ys`.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    x: ndarray
+        Timestamps, array of shape `(n,)`.
+    ys: ndarray
+        Metrics, array of shape `(n,)`.
+    title: str, optional
+        The title of the figure.
+    ax: optional
+        An existing axis, or None.
+    figsize: default='auto'.
+        Figure size.
+    legend: optional
+        Names of the individual curves. None or a list of string with the same length as `ys`.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
     if not isinstance(ys, list):
         ys = [ys]
@@ -64,16 +78,30 @@ def regression_scatter(y_true: np.ndarray, y_hat: np.ndarray, sample_weight: Opt
                        cmap='Blues', ax=None, figsize='auto'):
     """
     Create a scatter plot with results of a regression task, using the default Matplotlib backend.
-    :param y_true: Ground truth, array of shape `(n,)`. May contain NaN values.
-    :param y_hat: Predictions, array of shape `(n,)`. Must have same data type as `y_true`, and may also contain NaN
-    values.
-    :param sample_weight: Sample weights.
-    :param name: Name of the target variable.
-    :param title: The title of the resulting figure.
-    :param cmap: The color map for coloring points according to `sample_weight`.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size. If "auto", the 'optimal' figure size is determined automatically.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    y_true: ndarray
+        Ground truth, array of shape `(n,)`. May contain NaN values.
+    y_hat: ndarray
+        Predictions, array of shape `(n,)`. Must have same data type as `y_true`, and may also contain NaN values.
+    sample_weight: ndarray, optional
+        Sample weights.
+    name: str, optional
+        Name of the target variable.
+    title: str, default='Truth-Prediction Plot'
+        The title of the resulting figure.
+    cmap: default='Blues'
+        The color map for coloring points according to `sample_weight`.
+    ax: optional
+        An existing axis, or None.
+    figsize: default='auto'
+        Figure size. If "auto", the 'optimal' figure size is determined automatically.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
     assert len(y_true) == len(y_hat)
     assert y_true.dtype == y_hat.dtype
@@ -115,15 +143,27 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
                      cmap='Blues', ax=None, figsize='auto'):
     """
     Plot a confusion matrix with Matplotlib.
-    :param cm: The confusion matrix to plot. A DataFrame whose rows correspond to true classes and whose columns
-    correspond to predicted classes. If the last class is called "__total__", it is assumed to contain row- or
-    column totals.
-    :param name: Name of the target variable.
-    :param title: The title of the resulting figure.
-    :param cmap: The color map.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size. If "auto", the 'optimal' figure size is determined automatically.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    cm: DataFrame
+        The confusion matrix to plot. A DataFrame whose rows correspond to true classes and whose columns correspond to
+        predicted classes. If the last class is called "__total__", it is assumed to contain row- or column totals.
+    name: str, optional
+        Name of the target variable.
+    title: str, default='Confusion Matrix'
+        The title of the resulting figure.
+    cmap: default='Blues'
+        The color map.
+    ax: optional
+        An existing axis, or None.
+    figsize: default='auto'
+        Figure size. If "auto", the 'optimal' figure size is determined automatically.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
     if cm.index[-1] != '__total__':
         cm = pd.concat([cm, pd.DataFrame(data={c: cm[c].sum() for c in cm.columns}, index=['__total__'])],
@@ -185,25 +225,42 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     return ax.figure
 
 
-def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None, figsize=(5, 5),
-                 roc: bool = True, legend=None, positive_prevalence: float = -1., **kwargs):
+def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Optional[str] = 'auto', ax=None,
+                 figsize=(5, 5), roc: bool = True, legend=None, positive_prevalence: float = -1., **kwargs):
     """
     Plot ROC or PR curve(s).
-    :param xs: The x-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
-    they correspond to the false positive rates, in the case of PR curves they correspond to recall.
-    :param ys: The y-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves
-    they correspond to the true positive rates, in the case of PR curves they correspond to precision.
-    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
-    intervals, and the like. None or a list of arrays of shape `(2, n)`.
-    :param name: Name of the target variable.
-    :param title: The title of the figure. If "auto", the title is either "Receiver Operating Characteristic" or
-    "Precision-Recall Curve" depending on the value of `roc`.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size.
-    :param roc: Whether ROC- or PR curves are plotted.
-    :param legend: Names of the individual curves. None or a list of string with the same length as `xs` and `ys`.
-    :param positive_prevalence: Prevalence of the positive class. Only relevant for PR curves.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    xs:
+        The x-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves they
+        correspond to the false positive rates, in the case of PR curves they correspond to recall.
+    ys:
+        The y-coordinates of the curve(s), either a single array or a list of arrays. In the case of ROC curves they
+        correspond to the true positive rates, in the case of PR curves they correspond to precision.
+    deviation: optional
+        y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence intervals, and
+        the like. None or a list of arrays of shape `(2, n)`.
+    name: str, optional
+        Name of the target variable.
+    title: str, default='auto'
+        The title of the figure. If "auto", the title is either "Receiver Operating Characteristic" or "Precision-Recall
+        Curve" depending on the value of `roc`.
+    ax: optional
+        An existing axis, or None.
+    figsize: default=(5,5)
+        Figure size.
+    roc: bool, default=True
+        Whether ROC- or PR curves are plotted.
+    legend: optional
+        Names of the individual curves. None or a list of string with the same length as `xs` and `ys`.
+    positive_prevalence: float, default=-1
+        Prevalence of the positive class. Only relevant for PR curves.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
     if not isinstance(xs, list):
         xs = [xs]
@@ -260,17 +317,33 @@ def threshold_metric_curve(th: np.ndarray, ys, threshold: Optional[float] = None
                            title: Optional[str] = 'Threshold-Metric Plot', ax=None, figsize=(10, 5), legend=None):
     """
     Plot threshold-vs.-metric curves, with thresholds on the x- and corresponding thresholded metrics on the y-axis.
-    :param th: The thresholds, a single array of shape `(n,)`.
-    :param ys: The y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
-    :param threshold: Actual decision threshold used for making predictions, or None. If given, a dashed vertical line
-    is drawn to indicate the threshold.
-    :param name: Name of the target variable.
-    :param title: The title of the figure.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size.
-    :param legend: Names of the individual curves. None or a list of string with the same length as `ys`.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    th: ndarray
+        The thresholds, a single array of shape `(n,)`.
+    ys:
+        The y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
+    threshold: float, optional
+        Actual decision threshold used for making predictions, or None. If given, a dashed vertical line
+        is drawn to indicate the threshold.
+    name: str, optional
+        Name of the target variable.
+    title: str, default='Threshold-Metric Plot'
+        The title of the figure.
+    ax:
+        An existing axis, or None.
+    figsize: default=(10,5)
+        Figure size.
+    legend: optional
+        Names of the individual curves. None or a list of string with the same length as `ys`.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
+
     if not isinstance(ys, list):
         ys = [ys]
     if ax is None:
@@ -309,17 +382,33 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
                       title: Optional[str] = 'Calibration Curve', ax=None, figsize=(5, 5), legend=None, **kwargs):
     """
     Plot calibration curves.
-    :param th_lower: Lower/left ends of threshold bins, array of shape `(n,)`.
-    :param th_upper: Upper/right ends of threshold bins, array of shape `(n,)`.
-    :param ys: y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
-    :param deviation: y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence
-    intervals, and the like. None or a list of arrays of shape `(2, n)`.
-    :param name: Name of the target variable.
-    :param title: The title of the figure.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size.
-    :param legend: Names of the individual curves. None or a list of strings with the same length as `ys`.
-    :return: Matplotlib figure object.
+
+    Parameters
+    ----------
+    th_lower: ndarray
+        Lower/left ends of threshold bins, array of shape `(n,)`.
+    th_upper: ndarray
+        Upper/right ends of threshold bins, array of shape `(n,)`.
+    ys:
+        y-coordinates of the curve(s), either a single array or a list of arrays of shape `(n,)`.
+    deviation: optional
+        y-coordinates of deviations of the curve(s), indicating errors, standard deviations, confidence intervals, and
+        the like. None or a list of arrays of shape `(2, n)`.
+    name: str, optional
+        Name of the target variable.
+    title: str, default='Calibration Curve'
+        The title of the figure.
+    ax: optional
+        An existing axis, or None.
+    figsize: default=(5,5)
+        Figure size.
+    legend: optional
+        Names of the individual curves. None or a list of strings with the same length as `ys`.
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
     if not isinstance(ys, list):
         ys = [ys]
@@ -366,18 +455,34 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
     Create a beeswarm plot, inspired by (and largely copied from) the shap package [1]. This plot type is very useful
     for displaying local feature importance scores for a set of samples.
 
-    [1] https://github.com/slundberg/shap/blob/master/shap/plots/_beeswarm.py
+    Parameters
+    ----------
+    values: DataFrame
+        Values to plot, a DataFrame whose columns correspond to the rows in the plot.
+    colors: DataFrame | Series, optional
+        Optional, colors of the points. A DataFrame with the same shape and column names as `values`, or a Series with
+        the same number of rows as `values`.
+    color_name: str, optional
+        Name of the color bar; only relevant if `colors` is provided.
+    title: str, optional
+        Title of the figure.
+    x_label: str, optional
+        Label of the x-axis.
+    ax: optional
+        An existing axis, or None.
+    figsize: default='auto'
+        Figure size or "auto".
+    cmap: str, default='red_blue'
+        Name of a color map.
 
-    :param values: Values to plot, a DataFrame whose columns correspond to the rows in the plot.
-    :param colors: Optional, colors of the points. A DataFrame with the same shape and column names as `values`, or a
-    Series with the same number of rows as `values`.
-    :param color_name: Name of the color bar; only relevant if `colors` is provided.
-    :param title: Title of the figure.
-    :param x_label: Label of the x-axis.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size or "auto".
-    :param cmap: Name of a color map.
-    :return: Matplotlib figure object.
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
+
+    References
+    ----------
+    .. [1] https://github.com/slundberg/shap/blob/master/shap/plots/_beeswarm.py
     """
 
     assert all(values[c].dtype.kind in 'ifb' for c in values.columns)
@@ -460,21 +565,34 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
                    x_label: Optional[str] = None, ax=None, figsize='auto', **kwargs):
     """
     Create a horizontal bar plot.
-    :param values: Values to plot, a DataFrame whose rows correspond to the rows in the plot and whose columns
-    correspond to grouped bars.
-    :param groups: Optional, grouping of columns. If given, group names must be mapped to lists of columns in `values`.
-    For instance, if `values` has columns "label1_>0", "label1_<0" and "label2", then `groups` might be set to
+
+    Parameters
+    ----------
+    values: Series, DataFrame
+        Values to plot, a DataFrame whose rows correspond to the rows in the plot and whose columns correspond to
+        grouped bars.
+    groups: dict, optional
+        Optional, grouping of columns. If given, group names must be mapped to lists of columns in `values`. For
+        instance, if `values` has columns "label1_>0", "label1_<0" and "label2", then `groups` might be set to
 
         {
             "label1": ["label1_>0", "label1_<0"],
             "label2": ["label2"]
         }
 
-    :param title: Title of the figure.
-    :param x_label: Label of the x-axis.
-    :param ax: An existing axis, or None.
-    :param figsize: Figure size or "auto".
-    :return: Matplotlib figure object.
+    title: str, optional
+        Title of the figure.
+    x_label: str, optional
+        Label of the x-axis.
+    ax: optional
+        An existing axis, or None.
+    figsize: default='auto'
+        Figure size or "auto".
+
+    Returns
+    -------
+    Any
+        Matplotlib figure object.
     """
 
     n_features = len(values)
@@ -520,7 +638,7 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
     # add text
     xlen = ax.get_xlim()[1] - ax.get_xlim()[0]
     bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
-    width, height = bbox.width, bbox.height
+    width = bbox.width
     bbox_to_xscale = xlen / width
     for i, (g, columns) in enumerate(groups.items()):
         ypos_offset = -((i - len(groups) / 2) * bar_width + bar_width / 2)

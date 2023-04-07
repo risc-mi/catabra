@@ -1,10 +1,11 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Tuple
-import pandas as pd
-import numpy as np
 import re
+from typing import Optional, Tuple
+
+import numpy as np
+import pandas as pd
 
 
 def resample_eav_slow(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None, entity_col=None, time_col=None,
@@ -43,7 +44,7 @@ def resample_eav_slow(df: pd.DataFrame, windows: pd.DataFrame, agg: dict = None,
     new_data = {}
     for i in range(len(windows)):
         if entity_col is None:
-            mask = np.ones(len(df), dtype=np.bool)
+                mask = np.ones(len(df), dtype='bool')
         else:
             mask = df_entities == windows_entities[i]
         if windows_start is not None:
@@ -146,11 +147,11 @@ def resample_interval_slow(df: pd.DataFrame, windows: pd.DataFrame, attributes: 
         try:
             df_inf = np.isposinf(df_dur)
         except:     # noqa
-            df_inf = np.zeros(len(df), dtype=np.bool)
+            df_inf = np.zeros(len(df), dtype='bool')
     else:
         df_dur = None
         df_nonzero_dur = None
-        df_inf = np.ones(len(df), dtype=np.bool)
+        df_inf = np.ones(len(df), dtype='bool')
         if start_col in df.columns:
             df_na |= df[start_col].isna()
         else:
@@ -187,7 +188,7 @@ def resample_interval_slow(df: pd.DataFrame, windows: pd.DataFrame, attributes: 
             continue
 
         if entity_col is None:
-            entity_mask = np.ones(len(df), dtype=np.bool)
+            entity_mask = np.ones(len(df), dtype='bool')
         else:
             entity_mask = df_entities == windows_entities[i]
         for a in attributes:
@@ -228,7 +229,7 @@ def resample_interval_slow(df: pd.DataFrame, windows: pd.DataFrame, attributes: 
                 try:
                     inter_inf = np.isposinf(inter_dur)
                 except:     # noqa
-                    inter_inf = np.zeros(len(df0), dtype=np.bool)
+                    inter_inf = np.zeros(len(df0), dtype='bool')
                 if df_dur is None:
                     # all observation intervals are infinite
                     vs[~inter_inf] = epsilon * np.sign(vs[~inter_inf])

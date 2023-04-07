@@ -3,10 +3,11 @@
 
 import importlib
 import inspect
+
 import pandas as pd
 
 try:
-    import pyod
+    import pyod  # noqa F401
 except ImportError:
     raise ImportError(
         'Package pyod is required for out-of-distribution detection with class PyODDetector. You can install it either'
@@ -14,14 +15,27 @@ except ImportError:
         ' Visit https://github.com/yzhao062/pyod for details.'
     )
 
-from .utils import make_standard_transformer
-from .base import SamplewiseOODDetector
+from catabra.ood.base import SamplewiseOODDetector
+from catabra.ood.utils import make_standard_transformer
 
 
 class PyODDetector(SamplewiseOODDetector):
     """
-    class to transform pyod ood class into a OODDetector
-    Requires sbo to be installed.
+    class to transform PyOD ood class into a CaTabRa OODDetector
+    Requires pyod to be installed.
+
+    Parameters
+    ----------
+    name: str
+        Name of the module the detector class is in. Given in snake_case format.
+    subset: float
+        Proportion of samples to use  [0,1]
+    transformer:
+        Transformer to apply to data before fitting the detector. Must implement `fit(X)` and `transform(X)`.
+    verbose: bool, default=False
+        Whether to log the detection steps.
+    **kwargs:
+        Keyword arguments for the specific pyod detector.
     """
 
     @property
@@ -29,13 +43,6 @@ class PyODDetector(SamplewiseOODDetector):
         return self._pyod_detector
 
     def __init__(self, name: str, subset: float = 1, transformer=make_standard_transformer, verbose=False, **kwargs):
-        """
-        :param: name: name of the module the detector class is in. Given in snake_case format.
-        :param: subset: proportion of features to use  [0,1]
-        :param transformer: transformer to apply to data before fitting the detector
-        :param verbose:  whether to log the detection steps
-        :param kwargs: keyword arguments for the specific pyod detector
-        """
         super().__init__(subset=subset, verbose=verbose)
         # class paths are given in the form: pyod.detector_name.DetectorName
         module = importlib.import_module('pyod.models.' + name)

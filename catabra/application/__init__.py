@@ -1,7 +1,6 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from .main import CaTabRaApplication, apply
+from catabra.application.main import apply, CaTabRaApplication
 
-
-__all__ = ['CaTabRaApplication', 'apply']
+__all__ = ['apply', 'CaTabRaApplication']

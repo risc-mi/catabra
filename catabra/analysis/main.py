@@ -1,20 +1,22 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Iterable, Type, Tuple
 from pathlib import Path
+from typing import Iterable, Optional, Tuple, Type, Union
+
 import numpy as np
 import pandas as pd
 
-from ..ood.base import OODDetector
-from ..util import table as tu, io, logging, plotting, statistics
-from ..util import common as cu
-from ..core.base import Invocation, CaTabRaBase
-from ..core import config as cfg
-from ..util.encoding import Encoder
-from ..automl.base import AutoMLBackend
-from ..monitoring.base import TrainingMonitorBackend
-from ..core.paths import CaTabRaPaths
+from catabra.automl.base import AutoMLBackend
+from catabra.core import config as cfg
+from catabra.core.base import CaTabRaBase, Invocation
+from catabra.core.paths import CaTabRaPaths
+from catabra.monitoring.base import TrainingMonitorBackend
+from catabra.ood.base import OODDetector
+from catabra.util import common as cu
+from catabra.util import io, logging, plotting, statistics
+from catabra.util import table as tu
+from catabra.util.encoding import Encoder
 
 
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
@@ -26,38 +28,53 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
-    the remaining ones.
-    Wrapper for Analyzer.__call__
-    :param table: The table(s) to analyze. If multiple are given, their columns are merged into a single table.
-    :param classify: Optional, column(s) to classify. If more than one, a multilabel classification problem is
-    solved, which means that each of these columns can take on only two distinct values.
-    Must be None if `regress` is given.
-    :param regress: Optional, column(s) to regress. Must have numerical or time-like data type.
-    Must be None if `classify` is given.
-    :param group: Optional, column used for grouping samples for internal (cross) validation. If not specified or set
-    to "", and the row index of the given table has a name, group by row index.
-    :param split: Optional, column used for splitting the data into train- and test set. If specified and not "",
-    descriptive statistics, OOD-detectors and prediction models are generated based exclusively on the training split
-    and then automatically evaluated on the test split. The name and/or values of the column must contain the string
-    "train", "test" or "val", to clearly indicate what is the training- and what is the test data.
-    :param sample_weight: Optional, column with sample weights. If specified and not "", must have numeric data type.
-    Sample weights are used both for training and evaluating prediction models.
-    :param ignore: Optional, list of columns to ignore when training prediction models. Automatically includes `group`
-    and `split`, but may contain further columns.
-    :param calibrate: Optional, value in column `split` defining the subset to calibrate the trained classifier on. If
-    None, no calibration happens. Ignored in regression tasks or if `split` is not specified.
-    :param time: Optional, time budget for model training, in minutes. Some AutoML backends require a fixed budget,
-    others might not. Overwrites the "time_limit" config param.
-    :param out: Optional, directory where to save all generated artifacts. Defaults to a directory located in the
-    parent directory of `table`, with a name following a fixed naming pattern. If `out` already exists, the user is
-    prompted to specify whether it should be replaced; otherwise, it is automatically created.
-    :param config: Optional, configuration dict or path to JSON file containing such a dict. Merged with the default
-    configuration specified via `default_config`. Empty string means that the default configuration is used.
-    :param default_config: Default configuration to use, one of "full", "", "basic", "interpretable" or None.
-    :param monitor: Training monitor to use.
-    :param jobs: Optional, number of jobs to use. Overwrites the "jobs" config param.
-    :param from_invocation: Optional, dict or path to an invocation.json file. All arguments of this function not
-    explicitly specified are taken from this dict; this also includes the table to analyze.
+    the remaining ones.  Wrapper for Analyzer.__call__.
+
+    Parameters
+    ----------
+    *table : str | Path | DataFrame
+        The table(s) to analyze. If multiple are given, their columns are merged into a single table.
+    classify: Iterable[str | Path | pd.DataFrame], optional
+        Column(s) to classify. If more than one, a multilabel classification problem is solved, which means
+        that each of these columns can take on only two distinct values. Must be `None` if regress` is given.
+    regress: Iterable[str | Path | pd.DataFrame], optional
+        Column(s) to regress. Must have numerical or time-like data type. Must be `None` if `classify` is given.
+    group: str, optional
+        Column used for grouping samples for internal (cross) validation. If not specified or set to `""`, and the row
+        index of the given table has a name, group by row index.
+    split: str, optional
+        Column used for splitting the data into train- and test set. If specified and not `""`,
+        descriptive statistics, OOD-detectors and prediction models are generated based exclusively on the training
+        split and then automatically evaluated on the test split. The name and/or values of the column must contain the
+        string `"train"`, `"test"` or `"val"`, to clearly indicate what is the training- and what is the test data.
+    sample_weight: str, optional
+        Column with sample weights. If specified and not `""`, must have numeric data type. Sample weights are used both
+        for training and evaluating prediction models.
+    ignore: Iterable[str], optional
+        List of columns to ignore when training prediction models. Automatically includes `group`and `split`, but may
+        contain further columns.
+    calibrate: str, optional
+        Value in column `split` defining the subset to calibrate the trained classifier on. If `None`, no calibration
+        happens. Ignored in regression tasks or if `split` is not specified.
+    time: int, optional
+        Time budget for model training, in minutes. Some AutoML backends require a fixed budget, others might not.
+        Overwrites the `time_limit` config param.
+    out: str | Path, optional
+        Directory where to save all generated artifacts. Defaults to a directory located in the parent directory of
+        `table`, with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify
+        whether it should be replaced; otherwise, it is automatically created.
+    config: dict | str | Path, optional
+        Configuration dict or path to JSON file containing such a dict. Merged with the default configuration
+        specified via `default_config`. Empty string means that the default configuration is used.
+    default_config: str, optional
+        Default configuration to use, one of `full`, `""`, `basic`, `interpretable` or `None`.
+    monitor: str, optional
+        Training monitor to use.
+    jobs: int
+        Number of jobs to use. Overwrites the `"jobs"` config param.
+    from_invocation: dict | str | Path, optional
+        dict or path to an invocation.json file. All arguments of this function not explicitly specified are taken from
+        this dict; this also includes the table to analyze.
     """
 
     analyzer = CaTabRaAnalysis(invocation=from_invocation)
@@ -292,7 +309,7 @@ class CaTabRaAnalysis(CaTabRaBase):
             io.dump(ood, self._invocation.out / CaTabRaPaths.OODModel)
 
     def _make_explainer(self, backend: AutoMLBackend, encoder: Encoder, x_train, y_train,
-                        versions) -> Optional['EnsembleExplainer']:
+                        versions) -> Optional['EnsembleExplainer']: # noqa F821
         from ..explanation import EnsembleExplainer
         explainers = self._config.get('explainer') or []
         if not isinstance(explainers, (list, set, tuple)):
@@ -321,7 +338,7 @@ class CaTabRaAnalysis(CaTabRaBase):
                     io.dump(explainer.params_, self._invocation.out / explainer.name / 'params.joblib')
                     versions.update(explainer.get_versions())
             except Exception as ex:  # noqa
-                logging.warn(f'Error when creating explainer; skipping\n' + str(ex))
+                logging.warn('Error when creating explainer; skipping\n' + str(ex))
 
         if unknown:
             logging.warn('Unknown explanation backend(s) specified. Choose among ' +
@@ -437,10 +454,19 @@ class CaTabRaAnalysis(CaTabRaBase):
     def plot_training_history(hist: Union[pd.DataFrame, str, Path], interactive: bool = False) -> dict:
         """
         Plot the evolution of performance scores during model training.
-        :param hist: The history to plot, as saved in "training_history.xlsx".
-        :param interactive: Whether to create static Matplotlib plots or interactive plotly plots.
-        :return: Dict with single key "training_history", which is mapped to a Matplotlib or plotly figure object.
-        The sole reason for returning a dict is consistency with other plotting functions.
+
+        Parameters
+        ----------
+        hist: DataFrame | str | Path
+            The history to plot, as saved in "training_history.xlsx".
+        interactive: bool, default=False
+            Whether to create static Matplotlib plots or interactive plotly plots.
+
+        Returns
+        -------
+        dict
+            Dict with single key "training_history", which is mapped to a Matplotlib or plotly figure object. The sole
+            reason for returning a dict is consistency with other plotting functions.
         """
 
         if isinstance(hist, (str, Path)):

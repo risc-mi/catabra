@@ -1,16 +1,21 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Callable
+import importlib
 import time
 from pathlib import Path
-import importlib
+from typing import Callable, Optional
 
 
 class TrainingMonitorBackend:
     """
-    Simple abstraction layer for training monitor backends, which allows to include other backends besides plotly in
-    the future.
+    Base class of training monitor backends, i.e., Simple abstraction layer for training monitor backends, which allows
+    to include other backends besides plotly in the future.
+
+    Parameters
+    ----------
+    text_pattern: str, optional
+    folder: str, optional
     """
 
     __registered = {}
@@ -19,8 +24,13 @@ class TrainingMonitorBackend:
     def register(name: str, backend: Callable[..., 'TrainingMonitorBackend']):
         """
         Register a new training monitor backend.
-        :param name: The name of the backend.
-        :param backend: The backend, a function mapping argument-dicts to instances of class `TrainingMonitorBackend`
+
+        Parameters
+        ----------
+        name: str
+            The name of the backend.
+        backend: Callable
+            The backend, a function mapping argument-dicts to instances of class `TrainingMonitorBackend`
         (or subclasses thereof).
         """
         TrainingMonitorBackend.__registered[name] = backend
@@ -35,11 +45,6 @@ class TrainingMonitorBackend:
         raise NotImplementedError()
 
     def __init__(self, text_pattern: Optional[str] = None, folder: Optional[str] = None):
-        """
-        Base class of training monitor backends, i.e.,
-        :param text_pattern:
-        :param folder:
-        """
         self._start_time = None
         self._text_pattern = text_pattern
         self._folder = folder
@@ -90,14 +95,22 @@ class TrainingMonitorBackend:
                step: Optional[int] = None, text: Optional[str] = None, **metrics: float):
         """
         Update this training monitor instance by logging performance metrics of a new training iteration.
-        :param event: Name of the event that triggered this call, optional.
-        :param timestamp: Timestamp of the update. None defaults to the current timestamp.
-        :param elapsed_time: Total elapsed time of the update since training started. None defaults to the difference
-        between `timestamp` and the start time of this training monitor instance.
-        :param step: Step (iteration) of the update. None defaults to the total number of steps of `event` recorded so
-        far.
-        :param text: Additional text recorded with the update, optional.
-        :param metrics: Metrics to be logged, and their values.
+
+        Parameters
+        ----------
+        event: optional
+            Name of the event that triggered this call.
+        timestamp: float, optional
+            Timestamp of the update. None defaults to the current timestamp.
+        elapsed_time: float, optional
+            Total elapsed time of the update since training started. None defaults to the difference between `timestamp`
+            and the start time of this training monitor instance.
+        step: int, optional
+            Step (iteration) of the update. None defaults to the total number of steps of `event` recorded so far.
+        text: str, optional
+            Additional text recorded with the update, optional.
+        **metrics: float
+            Metrics to be logged, and their values.
         """
         if timestamp is None:
             timestamp = time.time()
@@ -131,4 +144,4 @@ class TrainingMonitorBackend:
 
 for _d in Path(__file__).parent.iterdir():
     if _d.is_dir() and (_d / '__init__.py').exists():
-        importlib.import_module('.' + _d.stem, package=__package__)
+        importlib.import_module('catabra.monitoring.' + _d.stem, package=__package__)

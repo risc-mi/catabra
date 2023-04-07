@@ -1,14 +1,15 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional
+from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 from plotly import express as px
-from plotly import io as pio
 from plotly import graph_objects as go
+from plotly import io as pio
 
-from . import _common
+from catabra.util.plotting import _common
 
 
 def _get_color(i: int, template: Optional[str] = None) -> str:
@@ -193,7 +194,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     x_class = mg[0].flatten()
     y_class = mg[1][::-1].flatten()
 
-    text = ['<b>{}</b>'.format(np.round(t, 2), 100 * t / n_samples) for t in z]
+    text = ['<b>{}</b>'.format((np.round(t, 2), 100 * t / n_samples) for t in z)]
     text += ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), a) if t > 0 else '<b>{}</b>'.format(np.round(t, 2))
              for t, a in zip(part_totals, part_acc)]
 
@@ -391,7 +392,8 @@ def roc_pr_curve(xs, ys, deviation=None, name: Optional[str] = None, title: Opti
         yaxis=dict(title='True positive rate' if roc else 'Precision', scaleanchor='x',
                    range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(xs) > 1 or any(lbl is not None for lbl in legend) or any(lbl is not None for lbl in deviation_legend)
+        showlegend=len(xs) > 1 or any(lbl is not None for lbl in legend) or
+                   any(lbl is not None for lbl in deviation_legend)
     )
     return fig
 
@@ -500,7 +502,8 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         xaxis=dict(title='Threshold', constrain='domain'),
         yaxis=dict(title='Fraction of positive class', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend) or any(lbl is not None for lbl in deviation_legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+                   or any(lbl is not None for lbl in deviation_legend)
     )
     return fig
 
@@ -566,7 +569,8 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
                 c_gray = ['#777777'] * len(x_gray)
         if colored is not None:
             x_colored, y_colored = colored[:2]
-            c_colored = (cmap((np.clip(colored[2], colored[3], colored[4]) - colored[3]) / (colored[4] - colored[3]))[:, :3] * 255).astype(np.uint8)
+            c_colored = (cmap((np.clip(colored[2], colored[3], colored[4]) - colored[3]) /
+                              (colored[4] - colored[3]))[:, :3] * 255).astype(np.uint8)
             c_colored = [f'rgb({c[0]},{c[1]},{c[2]})' for c in c_colored]
 
         if gray is None:

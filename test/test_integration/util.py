@@ -2,6 +2,7 @@
 #  All rights reserved.
 
 from typing import Optional
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
@@ -12,19 +13,32 @@ def create_synthetic_data(task: str = 'binary_classification', n_samples: int = 
                           seed: Optional[int] = None) -> pd.DataFrame:
     """
     Create a synthetic data with several feature- and label columns with different data types.
-    :param task: Prediction task. Can also be "multioutput_regression", in which case two regression targets are
-    constructed.
-    :param n_samples: Number of samples = number of rows of resulting DataFrame.
-    :param n_groups: Number of groups. Must be between 2 and `n_samples`.
-    :param object_column: Whether to add a column with object data type, containing strings.
-    :param difficulty: Difficulty of the prediction task:
-    * 0: very easy, prediction models should be near perfect
-    * 1: moderately difficult, performance of prediction models should be good
-    * 2: moderately difficult unless samples are weighted by column "_sample_weight", in which case task is easy
-    * 3: random labels, models should not be significantly better than random
-    :param frac_unlabeled: Fraction of unlabeled samples.
-    :param seed: Random seed.
-    :return: DataFrame with features, label(s), and additional columns "_group", "_sample_weight" and "_test".
+
+    Parameters
+    ----------
+    task: str, default='binary_classification'
+        Prediction task. Can also be "multioutput_regression", in which case two regression targets are constructed.
+    n_samples: int, default=50000
+        Number of samples = number of rows of resulting DataFrame.
+    n_groups: int, default=5
+        Number of groups. Must be between 2 and `n_samples`.
+    object_column: bool, default=True
+        Whether to add a column with object data type, containing strings.
+    difficulty: int, default=0
+        Difficulty of the prediction task:
+        * 0: very easy, prediction models should be near perfect
+        * 1: moderately difficult, performance of prediction models should be good
+        * 2: moderately difficult unless samples are weighted by column "_sample_weight", in which case task is easy
+        * 3: random labels, models should not be significantly better than random
+    frac_unlabeled: float, default=0.2
+        Fraction of unlabeled samples.
+    seed: int, optional
+        Random seed.
+
+    Returns
+    -------
+    DataFrame
+        DataFrame with features, label(s), and additional columns "_group", "_sample_weight" and "_test".
     """
 
     assert 2 <= n_groups <= n_samples
@@ -51,8 +65,11 @@ def create_synthetic_data(task: str = 'binary_classification', n_samples: int = 
             multi_modal=_multi_modal(rng, rng.normal(0, 0.5, size=n_samples), rng.normal(7, 4, size=n_samples),
                                      rng.normal(-3, 1, size=n_samples)),
             datetime=pd.Timestamp(0) + pd.Series(
-                np.linspace(0, 100, n_samples) - 2 * np.sin(np.linspace(0, 100, n_samples))) * pd.Timedelta(12, unit='h'),
-            timedelta=(rng.chisquare(3, size=n_samples) * rng.laplace(0.5, 2, size=n_samples)) * pd.Timedelta(1, unit='m'),
+                np.linspace(0, 100, n_samples) - 2 * np.sin(np.linspace(0, 100, n_samples))
+            ) * pd.Timedelta(12, unit='h'),
+            timedelta=(
+                rng.chisquare(3, size=n_samples) * rng.laplace(0.5, 2, size=n_samples)
+            ) * pd.Timedelta(1, unit='m'),
             bool=rng.choice([False, True], p=[0.83, 0.17], size=n_samples),
             int=rng.zipf(1.5, size=n_samples),
             cat_2=pd.Categorical.from_codes(rng.choice(2, p=[0.61, 0.39], size=n_samples), categories=['X', 'Y']),
@@ -67,7 +84,7 @@ def create_synthetic_data(task: str = 'binary_classification', n_samples: int = 
     if object_column:
         syn_df['object'] = ['A' + str(i) for i in rng.randint(1000000, 9999999, size=n_samples)]
 
-    # assign random train-test split
+    # assign random train-tests split
     split = GroupShuffleSplit(n_splits=1, train_size=0.8, random_state=rng)
     train, _ = list(split.split(syn_df.index, groups=syn_df['_group']))[0]
     syn_df['_test'] = True
@@ -127,7 +144,7 @@ def create_synthetic_data(task: str = 'binary_classification', n_samples: int = 
 
             syn_df['_label_binary'] = label_binary
 
-            # can be predicted easily from features, ROC-AUC on test set is approx. 1
+            # can be predicted easily from features, ROC-AUC on tests set is approx. 1
             syn_df['_label_bool'] = syn_df['bool'].astype(np.float32)
 
         else:

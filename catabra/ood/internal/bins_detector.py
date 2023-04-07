@@ -1,28 +1,30 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, List, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-tqdm.pandas()
 
 from catabra.ood.base import SamplewiseOODDetector
+
+tqdm.pandas()
 
 
 class BinsDetector(SamplewiseOODDetector):
     """
     Simple OOD detector that distributes the training set into equally sized bins.
-    A sample is considered OOD if it falls within one such bin
+    A sample is considered OOD if it falls within a bin with no corresponding training samples.
+
+    Parameters
+    ----------
+    bins: int | DataFrame, optional
+        Number of bins for each column. if int each column uses the same amount of bins. Defaults to 2 * std for each
+        columns.
     """
 
-    def __init__(self, subset=1, bins: Union[None, pd.DataFrame, int]=None, random_state: int=None, verbose=True):
-        """
-        :param bins: Number of bins for each column
-        if int each column uses the same amount of bins
-        defaults to 2 * std for each columns
-        """
+    def __init__(self, subset=1, bins: Union[None, pd.DataFrame, int] = None, random_state: int = None, verbose=True):
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._bins: Union[None, int, pd.Series] = bins
         self._num_cols: Optional[np.ndarray] = None
@@ -57,7 +59,7 @@ class BinsDetector(SamplewiseOODDetector):
         progress = tqdm(total=len(self._num_cols))
 
         def _get_empty_bins(col: pd.Series):
-            bins = int(self._bins[col.name] if isinstance(self._bins, pd.Series) else self._bins)
+            bins = int(max(2, self._bins[col.name] if isinstance(self._bins, pd.Series) else self._bins))
             cnts, edges = np.histogram(col.dropna(), bins)
             zero_bins = np.where(np.array(cnts) == 0)[0]
             empties = list(zip(edges[zero_bins], edges[zero_bins + 1]))
@@ -111,5 +113,5 @@ class BinsDetector(SamplewiseOODDetector):
             return np.hstack([left_edge, right_edge])
 
         stacked = X.apply(_is_in_bin)
-        left, right = stacked.iloc[:X.shape[0],:], stacked.iloc[X.shape[0]:,:]
+        left, right = stacked.iloc[:X.shape[0], :], stacked.iloc[X.shape[0]:, :]
         return left.reset_index().drop('index', axis=1), right.reset_index().drop('index', axis=1)

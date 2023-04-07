@@ -1,11 +1,11 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, List
-import time
 import os
 import sys
+import time
 import traceback
+from typing import List, Optional
 
 from catabra.util.common import repr_timedelta
 
@@ -25,12 +25,21 @@ def warn(*msg, **kwargs):
 def prompt(msg: str, accepted: Optional[List[str]] = None, allow_headless: bool = True) -> str:
     """
     Prompt the user for input.
-    :param msg: The message to be printed.
-    :param accepted: List of accepted inputs. Must be lower-case. If None, all inputs are accepted.
-    :param allow_headless: What to do in headless mode. If True, the first element in `accepted` is returned if
-    `accepted` is a list and "" is returned if `accepted` is None. If False, a RunTimeError is raised.
-    :return: The input of the user, an element of `accepted` if `accepted` is a list, or arbitrary if `accepted` is
-    None.
+
+    Parameters
+    ----------
+    msg: str
+        The message to be printed.
+    accepted: list, optional
+        List of accepted inputs. Must be lower-case. If None, all inputs are accepted.
+    allow_headless: bool, default=True
+        What to do in headless mode. If True, the first element in `accepted` is returned if `accepted` is a list and
+        "" is returned if `accepted` is None. If False, a RunTimeError is raised.
+
+    Returns
+    -------
+    str
+        The input of the user, an element of `accepted` if `accepted` is a list, or arbitrary if `accepted` is None.
     """
     if Headless.headless():
         if allow_headless:
@@ -64,13 +73,20 @@ def progress_bar(iterable, desc: Optional[str] = None, total: Optional[int] = No
     """
     Show a simple progress bar when iterating over a given iterable. This works similar to package `tqdm`, but in
     contrast to `tqdm` also works when mirroring messages to a file.
-    :param iterable: The iterable.
-    :param desc: Description to add to the beginning of the progress bar, optional.
-    :param total: Total number of elements in `iterable` if `iterable` does not implement the `__len__()` method.
-    :param disable: Whether to disable the progress bar. If True, the behavior is equivalent to not calling this
-    function at all.
-    :param meter_width: The width of the meter, in characters. Should not be too long to make the whole progress bar
-    fit into a single line. Might have to be decreased if `desc` is a long text.
+
+    Parameters
+    ----------
+    iterable:
+        The iterable.
+    desc: str, optional
+        Description to add to the beginning of the progress bar, optional.
+    total: int, optional
+        Total number of elements in `iterable` if `iterable` does not implement the `__len__()` method.
+    disable: bool, default=False
+        Whether to disable the progress bar. If True, the behavior is equivalent to not calling this function at all.
+    meter_width: int, default=40
+        The width of the meter, in characters. Should not be too long to make the whole progress bar fit into a single
+        line. Might have to be decreased if `desc` is a long text.
     """
     if disable:
         for obj in iterable:
@@ -178,10 +194,17 @@ class LogHide:
     def __init__(self, enabled: bool = True):
         """
         creates a new log_hide, use in a with statement to hide console output (stdout/stderr)
-        example:
-            with LogHide(verbosity < spam_me):
-                call_verbose_package()
-        :param enabled: if False, the instance turns into a dummy object not actually doing anything, this is useful for optionally hiding output
+
+        Examples
+        --------
+        >>> with LogHide(verbosity < spam_me):
+        >>>     call_verbose_package()
+
+        Parameters
+        ----------
+        enabled: bool, default=True
+            If False, the instance turns into a dummy object not actually doing anything, this is useful for optionally
+            hiding output
         """
         self._enabled = enabled
         self._active = False
@@ -209,15 +232,21 @@ class LogHide:
 
 class LogMirror:
     """
-    used to temporary mirror both stderr and stdout to a log file
-    Based on http://www.tentech.ca/2011/05/stream-tee-in-python-saving-stdout-to-file-while-keeping-the-console-alive/
-    Based on https://gist.github.com/327585 by Anand Kunal
-    example:
-        with LogMirror("log.txt"):
-            log("writing to log.txt and the console")
-            err("works with errors as well")
-            warn("and in case you need warnings")
-            print("no need to use the custom log functions")
+    Used to temporary mirror both stderr and stdout to a log file. Based on [1] and [2].
+
+    Examples
+    --------
+    >>> with LogMirror("log.txt"):
+    >>>     log("writing to log.txt and the console")
+    >>>     err("works with errors as well")
+    >>>     warn("and in case you need warnings")
+    >>>     print("no need to use the custom log functions")
+
+
+    References
+    ----------
+    .. [1] http://www.tentech.ca/2011/05/stream-tee-in-python-saving-stdout-to-file-while-keeping-the-console-alive/
+    .. [2] https://gist.github.com/327585 by Anand Kunal
     """
     def __init__(self, log_path: str, mode: str = 'w'):
         self._log_path = log_path
@@ -259,12 +288,12 @@ class LogMirror:
             try:
                 callable2 = getattr(self._stream2, self.__missing_method_name)
                 callable2(*args, **kwargs)
-            except:
+            except:     # noqa
                 pass
 
             # Emit method call to stream 1
             try:
                 callable1 = getattr(self._stream1, self.__missing_method_name)
                 return callable1(*args, **kwargs)
-            except:
+            except:     # noqa
                 pass

@@ -1,10 +1,11 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Tuple
-from functools import partial
-import warnings
 import sys
+import warnings
+from functools import partial
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn import metrics as skl_metrics
@@ -127,9 +128,17 @@ def to_score(func):
     Convenience function for converting a metric into a (possibly different) metric that returns scores (i.e., higher
     values correspond to better results). That means, if the given metric returns scores already, it is returned
     unchanged. Otherwise, it is negated.
-    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc. Note that in case of classification
-    metrics, both thresholded and non-thresholded metrics are accepted.
-    :return: Either `func` itself or `-func`.
+
+    Parameters
+    ----------
+    func:
+        The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc. Note that in case of classification metrics,
+        both thresholded and non-thresholded metrics are accepted.
+
+    Returns
+    -------
+    Any
+        Either `func` itself or `-func`.
     """
 
     func_th = maybe_thresholded(func, threshold=0.5)
@@ -158,12 +167,20 @@ def to_score(func):
 def get(name):
     """
     Retrieve a metric function given by its name.
-    :param name: The name of the requested metric function. It may be of the form "`name` @ `threshold`", where `name`
-    is the name of a thresholded classification metric (e.g., "accuracy") and `threshold` is the desired threshold.
-    Furthermore, some synonyms are recognized as well, most notably "precision" for "positive_predictive_value" and
-    "recall" for "sensitivity". `threshold` can also be the name of a thresholding strategy; see function
-    `thresholded()` for details.
-    :return: Metric function (callable).
+
+    Parameters
+    ----------
+    name:
+        The name of the requested metric function. It may be of the form "`name` @ `threshold`", where `name` is the
+        name of a thresholded classification metric (e.g., "accuracy") and `threshold` is the desired threshold.
+        Furthermore, some synonyms are recognized as well, most notably "precision" for "positive_predictive_value" and
+        "recall" for "sensitivity". `threshold` can also be the name of a thresholding strategy; see function
+        `thresholded()` for details.
+
+    Returns
+    -------
+    Any
+        Metric function (callable).
     """
     if isinstance(name, str):
         s = name.split('@', 1)
@@ -242,19 +259,32 @@ class _bootstrapped(_OperatorBase):     # noqa
              size: Union[int, float] = 1., **kwargs):
         """
         Convenience function for converting a metric into its bootstrapped version.
-        :param func: The metric to convert, e.g., `roc_auc`, `accuracy`, `mean_squared_error`, etc.
-        :param n_repetitions: Number of bootstrapping repetitions to perform. If 0, `func` is returned unchanged.
-        :param agg: Aggregation to compute of bootstrapping results.
-        :param seed: Random seed.
-        :param replace: Whether to resample with replacement. If False, this does not actually correspond to
-        bootstrapping.
-        :param size: The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given
-        data. Bootstrapping normally assumes that resampled data have the same number of samples as the original data,
-        so this parameter should be set to 1.
-        :param kwargs: Additional keyword arguments that are passed to `func` upon application. Note that only
-        arguments that do not need to be resampled can be passed here; in particular, this excludes `sample_weight`.
-        :return: New metric that, when applied to `y_true` and `y_hat`, resamples the data, evaluates the metric on
-        each resample, and returns som aggregation (typically average) of the results thus obtained.
+
+        Parameters
+        ----------
+        func:
+            The metric to convert, e.g., `roc_auc`, `accuracy`, `mean_squared_error`, etc.
+        n_repetitions: int, default=100
+            Number of bootstrapping repetitions to perform. If 0, `func` is returned unchanged.
+        agg: default='mean'
+            Aggregation to compute of bootstrapping results.
+        seed: int, optional
+            Random seed.
+        replace: bool, default=True
+            Whether to resample with replacement. If False, this does not actually correspond to bootstrapping.
+        size: int | float, default=1.
+            The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given data.
+            Bootstrapping normally assumes that resampled data have the same number of samples as the original data, so
+            this parameter should be set to 1.
+        **kwargs:
+            Additional keyword arguments that are passed to `func` upon application. Note that only arguments that do
+            not need to be resampled can be passed here; in particular, this excludes `sample_weight`.
+
+        Returns
+        -------
+        Any
+            New metric that, when applied to `y_true` and `y_hat`, resamples the data, evaluates the metric on each
+            resample, and returns som aggregation (typically average) of the results thus obtained.
         """
         if n_repetitions <= 0:
             if kwargs:
@@ -332,24 +362,36 @@ pr_auc_weighted = _weighted_average(pr_auc)
 def balance_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> Tuple[float, float]:
     """
     Compute the balance score and -threshold of a binary classification problem.
-    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
-    contain NaN.
-    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
-    to the positive class. Range is arbitrary.
-    :param sample_weight: Sample weights.
-    :return: Pair `(balance_score, balance_threshold)`, where `balance_threshold` is the decision threshold that
-    minimizes the difference between sensitivity and specificity, i.e., it is defined as
 
-        arg min_t |sensitivity(y_true, y_score >= t) - specificity(y_true, y_score >= t)|
+    Parameters
+    ----------
+    y_true:
+        Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not contain
+        NaN.
+    y_score:
+        Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs to the
+        positive class. Range is arbitrary.
+    sample_weight: ndarray, optional
+        Sample weights.
 
-    `balance_score` is the corresponding sensitivity value, which by definition is approximately equal to specificity
-    and can furthermore be shown to be approximately equal to accuracy and balanced accuracy, too.
+    Returns
+    -------
+    tuple
+        Pair `(balance_score, balance_threshold)`, where `balance_threshold` is the decision threshold that minimizes
+        the difference between sensitivity and specificity, i.e., it is defined as
+
+        .. math::
+            min_t |sensitivity(y_true, y_score >= t) - specificity(y_true, y_score >= t)|
+
+        `balance_score` is the corresponding sensitivity value, which by definition is approximately equal to
+        specificity and can furthermore be shown to be approximately equal to accuracy and balanced accuracy, too.
     """
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0., 0.
@@ -387,18 +429,27 @@ def balance_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = Non
 def prevalence_score_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> Tuple[float, float]:
     """
     Compute the prevalence score and -threshold of a binary classification problem.
-    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
-    contain NaN.
-    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
-    to the positive class. Range is arbitrary.
-    :param sample_weight: Sample weights, optional.
-    :return: Pair `(prevalence_score, prevalence_threshold)`, where `prevalence_threshold` is the decision threshold
-    that minimizes the difference between the number of positive samples in `y_true` (`m`) and the number of predicted
-    positives. In other words, the threshold is set to the `m`-th largest value in `y_score`.
-    If `sample_weight` is given, the threshold minimizes the difference between the total weight of all positive
-    samples and the total weight of all samples predicted positive.
-    `prevalence_score` is the corresponding sensitivity value, which can be shown to be approximately equal to positive
-    predictive value and F1.
+
+    Parameters
+    ----------
+    y_true:
+        Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not contain
+        NaN.
+    y_score:
+        Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs to the
+        positive class. Range is arbitrary.
+    sample_weight: ndarray
+        Sample weights, optional.
+
+    Returns
+    -------
+    tuple
+        Pair `(prevalence_score, prevalence_threshold)`, where `prevalence_threshold` is the decision threshold that
+        minimizes the difference between the number of positive samples in `y_true` (`m`) and the number of predicted
+        positives. In other words, the threshold is set to the `m`-th largest value in `y_score`. If `sample_weight`
+        is given, the threshold minimizes the difference between the total weight of all positive samples and the total
+        weight of all samples predicted positive. `prevalence_score` is the corresponding sensitivity value, which can
+        be shown to be approximately equal to positive predictive value and F1.
     """
     th = prevalence_threshold(y_true, y_score, sample_weight=sample_weight)
     return sensitivity(y_true, y_score >= th, sample_weight=sample_weight), th
@@ -410,10 +461,11 @@ def prevalence_score(y_true, y_score, sample_weight: Optional[np.ndarray] = None
 
 def prevalence_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = None) -> float:
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0.
@@ -442,27 +494,38 @@ def zero_one_threshold(y_true, y_score, sample_weight: Optional[np.ndarray] = No
     Although a popular strategy for selecting decision thresholds, [1] advocates maximizing informedness (aka Youden
     index) instead, which is equivalent to maximizing balanced accuracy.
 
-    [1] https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1444894/
+    Parameters
+    ----------
+    y_true:
+        Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not contain
+        NaN.
+    y_score:
+        Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs to the
+        positive class. Range is arbitrary.
+    sample_weight: ndarray, optional
+        Sample weights.
+    specificity_weight: float, default=1.
+        The relative weight of specificity wrt. sensitivity. 1 means that sensitivity and specificity are weighted
+        equally, a value < 1 means that sensitivity is weighted stronger than specificity, and a value > 1 means that
+        specificity is weighted stronger than sensitivity. See the formula below for details.
 
-    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
-    contain NaN.
-    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
-    to the positive class. Range is arbitrary.
-    :param sample_weight: Sample weights, optional.
-    :param specificity_weight: The relative weight of specificity wrt. sensitivity. 1 means that sensitivity and
-    specificity are weighted equally, a value < 1 means that sensitivity is weighted stronger than specificity, and
-    a value > 1 means that specificity is weighted stronger than sensitivity. See the formula below for details.
-    :return: Decision threshold that minimizes the Euclidean distance between the point `(0, 1)` and the point
-    `(1 - specificity, sensitivity)`, i.e.,
+    Returns
+    -------
+    float
+        Decision threshold that minimizes the Euclidean distance between the point `(0, 1)` and the point
+        `(1 - specificity, sensitivity)`, i.e., arg min_t (1 - sensitivity(y_true, y_score >= t)) ** 2 +
+        specificity_weight * (1 - specificity(y_true, y_score >= t)) ** 2
 
-        arg min_t (1 - sensitivity(y_true, y_score >= t)) ** 2 +
-                  specificity_weight * (1 - specificity(y_true, y_score >= t)) ** 2
+    References
+    ----------
+    .. [1] https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1444894/
     """
     if len(y_true) != len(y_score):
-        raise ValueError('Found input variables with inconsistent numbers of samples: %r' % [len(y_true), len(y_score)])
+        raise ValueError('Found input variables with inconsistent numbers of samples: %i, %i'
+                         % (len(y_true), len(y_score)))
     elif sample_weight is not None and len(y_true) != len(sample_weight):
         raise ValueError(
-            'Length of `sample_weight` differs from length of `y_true`: %r' % [len(y_true), len(sample_weight)]
+            'Length of `sample_weight` differs from length of `y_true`: %i, %i' % (len(y_true), len(sample_weight))
         )
     elif len(y_true) == 0:
         return 0.
@@ -495,20 +558,30 @@ def argmax_score_threshold(func, y_true, y_score, sample_weight: Optional[np.nda
     Compute the decision threshold that maximizes a given binary classification metric or callable.
     Since in most built-in classification metrics larger values indicate better results, there is no analogous
     `argmin_score_threshold()`.
-    :param func: The metric or function ot maximize. If a string, function `get()` is called on it.
-    :param y_true: Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not
-    contain NaN.
-    :param y_score: Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs
-    to the positive class. Range is arbitrary.
-    :param sample_weight: Sample weights, optional.
-    :param discretize: Discretization steps for limiting the number of calls to `func`. If None, no discretization
-    happens, i.e., all unique values in `y_score` are tried.
-    :param kwargs: Additional keyword arguments passed to `func`.
-    :return: Pair `(score, threshold)`, where `threshold` is the decision threshold that maximizes `func`, i.e.,
 
-        arg max_t func(y_true, y_score >= t)
+    Parameters
+    ----------
+    func:
+        The metric or function ot maximize. If a string, function `get()` is called on it.
+    y_true:
+        Ground truth, with 0 representing the negative class and 1 representing the positive class. Must not contain
+        NaN.
+    y_score:
+        Predicted scores, i.e., the higher a score the more confident the model is that the sample belongs to the
+        positive class. Range is arbitrary.
+    sample_weight: ndarray, optional
+        Sample weights.
+    discretize: default=100
+        Discretization steps for limiting the number of calls to `func`. If None, no discretization happens, i.e., all
+        unique values in `y_score` are tried.
+    **kwargs:
+        Additional keyword arguments passed to `func`.
 
-    `score` is the corresponding value of `func`.
+    Returns
+    -------
+    tuple
+        Pair `(score, threshold)`, where `threshold` is the decision threshold that maximizes `func`, i.e., arg max_t
+        func(y_true, y_score >= t) `score` is the corresponding value of `func`.
     """
     if isinstance(func, str):
         func = get(func)
@@ -539,9 +612,17 @@ def argmax_threshold(func, y_true, y_score, **kwargs) -> float:
 def get_thresholding_strategy(name: str):
     """
     Retrieve a thresholding strategy for binary classification, given by its name.
-    :param name: The name of the thresholding strategy, like "balance", "prevalence" or "zero_one".
-    :return: Thresholding strategy (callable) that can be applied to `y_true`, `y_score` and `sample_weight`, and that
-    returns a single scalar threshold.
+
+    Parameters
+    ----------
+    name: str
+        The name of the thresholding strategy, like "balance", "prevalence" or "zero_one".
+
+    Returns
+    -------
+    Any
+        Thresholding strategy (callable) that can be applied to `y_true`, `y_score` and `sample_weight`, and that
+        returns a single scalar threshold.
     """
     if name == 'balance':
         return balance_threshold
@@ -564,16 +645,26 @@ def calibration_curve(y_true: np.ndarray, y_score: np.ndarray, sample_weight: Op
     Compute the calibration curve of a binary classification problem. The predicated class probabilities are binned and,
     for each bin, the fraction of positive samples is determined. These fractions can then be plotted against the
     midpoints of the respective bins. Ideally, the resulting curve will be monotonic increasing.
-    :param y_true: Ground truth, array of shape `(n,)` with values among 0 and 1. Values must not be NaN.
-    :param y_score: Predicated probabilities of the positive class, array of shape `(n,)` with arbitrary non-NaN values;
-    in particular, the values do not necessarily need to correspond to probabilities or confidences.
-    :param sample_weight: Sample weight.
-    :param thresholds: The thresholds used for binning `y_score`. If None, suitable thresholds are determined
-    automatically.
-    :return: Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and
-    `fractions` is the corresponding array of fractions of positive samples in each bin, of shape `(m - 1,)`. Note that
-    the `i`-th bin corresponds to the half-open interval `[thresholds[i], thresholds[i + 1])` if `i < m - 2`, and to
-    the closed interval `[thresholds[i], thresholds[i + 1]]` otherwise (in other words: the last bin is closed).
+
+    Parameters
+    ----------
+    y_true: ndarray
+        Ground truth, array of shape `(n,)` with values among 0 and 1. Values must not be NaN.
+    y_score: ndarray
+        Predicated probabilities of the positive class, array of shape `(n,)` with arbitrary non-NaN values; in
+        particular, the values do not necessarily need to correspond to probabilities or confidences.
+    sample_weight: ndarray, optional
+        Sample weight.
+    thresholds: ndarray, optional
+        The thresholds used for binning `y_score`. If None, suitable thresholds are determined automatically.
+
+    Returns
+    -------
+    tuple
+        Pair `(fractions, thresholds)`, where `thresholds` is the array of thresholds of shape `(m,)`, and `fractions`
+        is the corresponding array of fractions of positive samples in each bin, of shape `(m - 1,)`. Note that the
+        `i`-th bin corresponds to the half-open interval `[thresholds[i], thresholds[i + 1])` if `i < m - 2`, and to the
+        closed interval `[thresholds[i], thresholds[i + 1]]` otherwise (in other words: the last bin is closed).
     """
     assert y_true.shape == y_score.shape
     if thresholds is None:
@@ -592,13 +683,25 @@ def roc_pr_curve(y_true: np.ndarray, y_score: np.ndarray, *, pos_label: Union[in
     """
     Convenience function for computing ROC- and precision-recall curves simultaneously, with only one call to
     function `_binary_clf_curve()`.
-    :param y_true: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
-    :param y_score: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
-    :param pos_label: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
-    :param sample_weight: Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
-    :param drop_intermediate: Same as in `sklearn.metrics.roc_curve()`.
-    :return: 6-tuple `(fpr, tpr, thresholds_roc, precision, recall, thresholds_pr)`, i.e., the concatenation of the
-    return values of functions `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+
+    Parameters
+    ----------
+    y_true: ndarray
+        Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    y_score: ndarray
+        Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    pos_label: int | str, optional
+        Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    sample_weight: ndarray, optional
+        Same as in `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
+    drop_intermediate: bool, default=True
+        Same as in `sklearn.metrics.roc_curve()`.
+
+    Returns
+    -------
+    tuple
+        6-tuple `(fpr, tpr, thresholds_roc, precision, recall, thresholds_pr)`, i.e., the concatenation of the return
+        values of functions `sklearn.metrics.roc_curve()` and `sklearn.metrics.precision_recall_curve()`.
     """
 
     fps, tps, thresholds = skl_metrics._ranking._binary_clf_curve(
@@ -705,9 +808,17 @@ def multiclass_proba_to_pred(y: np.ndarray) -> np.ndarray:
     probability. If two or more classes have the same highest probabilities, the last one is returned. This behavior is
     consistent with binary classification problems, where the positive class is returned if both classes have equal
     probabilities and the default threshold of 0.5 is used.
-    :param y: Class probabilities, of shape `(n_classes,)` or `(n_samples, n_classes)`. The values of `y` can be
-    arbitrary, they don't need to be between 0 and 1. `n_classes` must be >= 1.
-    :return: Predicted class indices, either single integer or array of shape `(n_samples,)`.
+
+    Parameters
+    ----------
+    y: ndarray
+        Class probabilities, of shape `(n_classes,)` or `(n_samples, n_classes)`. The values of `y` can be arbitrary,
+        they don't need to be between 0 and 1. `n_classes` must be >= 1.
+
+    Returns
+    -------
+    ndarray
+        Predicted class indices, either single integer or array of shape `(n_samples,)`.
     """
     if y.ndim == 1:
         return len(y) - np.argmax(y[::-1]) - 1
@@ -720,13 +831,22 @@ class thresholded(_OperatorBase):
     """
     Convenience class for converting a classification metric that can only be applied to class predictions into a
     metric that can be applied to probabilities. This proceeds by specifying a fixed decision threshold.
-    :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
-    :param threshold: The decision threshold. In binary classification this can also be the name of a thresholding
-    strategy that is accepted by function `get_thresholding_strategy()`.
-    :param kwargs: Additional keyword arguments that are passed to `func` upon application.
-    :return: New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)`
-    in case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case
-    of multiclass classification.
+
+    Parameters
+    ----------
+    func:
+        The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
+    threshold: float | str, default=0.5
+        The decision threshold. In binary classification this can also be the name of a thresholding strategy that is
+        accepted by function `get_thresholding_strategy()`.
+    **kwargs:
+        Additional keyword arguments that are passed to `func` upon application.
+
+    Returns
+    -------
+        New metric that, when applied to `y_true` and `y_score`, returns `func(y_true, y_score >= threshold)`
+        in case of binary- or multilabel classification, and `func(y_true, multiclass_proba_to_pred(y_score))` in case
+        of multiclass classification.
     """
 
     def __init__(self, func, threshold: Union[float, str] = 0.5, **kwargs):
@@ -763,10 +883,20 @@ class thresholded(_OperatorBase):
         Convenience function for converting a classification metric into its "thresholded" version IF NECESSARY.
         That means, if the given metric can be applied to class probabilities, it is returned unchanged. Otherwise,
         `thresholded(func, threshold)` is returned.
-        :param func: The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
-        :param threshold: The decision threshold.
-        :param kwargs: Additional keyword arguments that shall be passed to `func` upon application.
-        :return: Either `func` itself or `thresholded(func, threshold)`.
+
+        Parameters
+        ----------
+        func:
+            The metric to convert, e.g., `accuracy`, `balanced_accuracy`, etc.
+        threshold: float | str, default=0.5
+            The decision threshold.
+        **kwargs:
+            Additional keyword arguments that shall be passed to `func` upon application.
+
+        Returns
+        -------
+        Any
+            Either `func` itself or `thresholded(func, threshold)`.
         """
 
         if not isinstance(func, cls):

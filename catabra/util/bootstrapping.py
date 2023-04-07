@@ -1,34 +1,45 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional
 from functools import partial
+from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 
 
 class Bootstrapping:
+    """
+    Class for performing bootstrapping [1], i.e., repeatedly sample with replacement from given data and evaluate
+    statistics on each resample to obtain mean, standard deviation, etc. for more robust estimates.
+
+    Parameters
+    ----------
+    *args: DataFrame | Series | ndarray
+        Data, non-empty sequence of DataFrames, Series or arrays of the same length.
+    kwargs: dict, optional
+        Additional keyword arguments passed to the function `fn` computing the statistics. Like `args`, the values
+        of the dict must be DataFrames, Series or arrays of the same length as the elements of `args`.
+    fn: optional
+        The statistics to compute. Must be None, a function that takes the given `args` as input and returns a
+        scalar/array/DataFrame/Series or a (nest) dict/tuple thereof, or a (nested) dict/tuple of such functions.
+    seed: int, optional
+        Random seed.
+    replace: bool, default=True
+        Whether to resample with replacement. If False, this does not actually correspond to bootstrapping.
+    size: int | float, default=1.
+        The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given data.
+        Bootstrapping normally assumes that resampled data have the same number of samples as the original data, so
+        this parameter should be set to 1.
+
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Bootstrapping_(statistics)
+    """
 
     def __init__(self, *args: Union[pd.DataFrame, pd.Series, np.ndarray], kwargs: Optional[dict] = None,
                  fn=None, seed=None, replace: bool = True, size: Union[int, float] = 1.):
-        """
-        Perform bootstrapping [1], i.e., repeatedly sample with replacement from given data and evaluate statistics
-        on each resample to obtain mean, standard deviation, etc. for more robust estimates.
 
-        [1] https://en.wikipedia.org/wiki/Bootstrapping_(statistics)
-
-        :param args: Data, non-empty sequence of DataFrames, Series or arrays of the same length.
-        :param kwargs: Additional keyword arguments passed to the function `fn` computing the statistics. Like `args`,
-        the values of the dict must be DataFrames, Series or arrays of the same length as the elements of `args`.
-        :param fn: The statistics to compute. Must be None, a function that takes the given `args` as input and returns
-        a scalar/array/DataFrame/Series or a (nest) dict/tuple thereof, or a (nested) dict/tuple of such functions.
-        :param seed: Optional, random seed.
-        :param replace: Whether to resample with replacement. If False, this does not actually correspond to
-        bootstrapping.
-        :param size: The size of the resampled data. If <= 1, it is multiplied with the number of samples in the given
-        data. Bootstrapping normally assumes that resampled data have the same number of samples as the original data,
-        so this parameter should be set to 1.
-        """
         self._args = args
         assert self._args
         assert all(isinstance(a, (pd.Series, pd.DataFrame, np.ndarray)) for a in self._args)
@@ -58,9 +69,14 @@ class Bootstrapping:
         """
         Run bootstrapping for a given number of repetitions, and store the results in a list. Results are appended to
         results from previous runs!
-        :param n_repetitions: Number of repetitions.
-        :param sample_indices: Optional, pre-computed sample indices to use in each repetition. If not None,
-        `n_repetitions` is ignored and `sample_indices` must have shape `(n, size)`.
+
+        Parameters
+        ----------
+        n_repetitions: int, default=100
+            Number of repetitions.
+        sample_indices: ndarray, optional
+            Pre-computed sample indices to use in each repetition. If not None, n_repetitions` is ignored and
+            `sample_indices` must have shape `(n, size)`.
         """
         if sample_indices is not None:
             assert sample_indices.ndim == 2
@@ -88,8 +104,16 @@ class Bootstrapping:
     def subsample(self, seed: Optional[int] = None) -> np.ndarray:
         """
         Construct a subsample.
-        :param seed: Random seed to use.
-        :return: Array with subsample indices.
+
+        Parameters
+        ----------
+        seed: int, optional
+            Random seed to use.
+
+        Returns
+        -------
+        ndarray
+            Array with subsample indices.
         """
 
         # create new random state to make result independent of previous calls to this method
@@ -119,15 +143,27 @@ class Bootstrapping:
     def get_sample_indices(self) -> np.ndarray:
         """
         Get sample indices used for resampling the data.
-        :return: Array of shape `(n_runs, size)`.
+
+        Returns
+        -------
+        ndarray
+            Array of shape `(n_runs, size)`.
         """
         return np.stack(self._idx, axis=0) if self._idx else None
 
     def agg(self, func):
         """
         Compute aggregate statistics of the results of the individual runs, like mean, standard deviation, etc.
-        :param func: The aggregation function to apply.
-        :return: Aggregated results.
+
+        Parameters
+        ----------
+        func:
+            The aggregation function to apply.
+
+        Returns
+        -------
+        Any
+            Aggregated results.
         """
         if isinstance(func, str):
             func = getattr(np, func)
@@ -163,7 +199,11 @@ class Bootstrapping:
     def dataframe(self, keys=None) -> Optional[pd.DataFrame]:
         """
         Construct a DataFrame with all results, if possible. Only works for (dicts/tuples of) scalar values.
-        :return: DataFrame whose columns correspond to individual metrics and whose rows correspond to runs, or None.
+
+        Returns
+        -------
+        DataFrame
+            DataFrame whose columns correspond to individual metrics and whose rows correspond to runs, or None.
         """
         if isinstance(self._results, list):
             if all(np.isscalar(r) for r in self._results):
@@ -190,7 +230,11 @@ class Bootstrapping:
         """
         Describe the results of the individual runs by computing a predefined set of statistics, similar to pandas'
         `describe()` method. Only works for (dicts/tuples of) scalar values.
-        :return: DataFrame or Series with descriptive statistics.
+
+        Returns
+        -------
+        Series | DataFrame
+            DataFrame or Series with descriptive statistics.
         """
         df = self.dataframe(keys=keys)
         if df is None:

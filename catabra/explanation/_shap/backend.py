@@ -1,16 +1,26 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, List
 from multiprocessing import Pool
+from typing import Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 import shap
 
+from catabra.automl.fitted_ensemble import (
+    FittedEnsemble,
+    FittedModel,
+    get_prediction_function,
+)
+from catabra.explanation.base import (
+    EnsembleExplainer,
+    IdentityTransformationExplainer,
+    TransformationExplainer,
+)
+from catabra.util.logging import progress_bar
+
 from .kernel_explainer import CustomKernelExplainer
-from ...util.logging import progress_bar
-from ..base import TransformationExplainer, IdentityTransformationExplainer, EnsembleExplainer
-from ...automl.fitted_ensemble import FittedEnsemble, FittedModel, get_prediction_function
 
 
 class SHAPEnsembleExplainer(EnsembleExplainer):
@@ -304,45 +314,57 @@ class SHAPExplainer:
     def explain(self, x, jobs: int = 1, batch_size: Optional[int] = None) -> np.ndarray:
         """
         Explain the estimator on a given set of samples.
-        :param x: Samples to explain, array-like of shape `(n_samples, n_features)`.
-        :param jobs: The number of jobs to use.
-        :param batch_size: The batch size to use.
-        :return: SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction
-        task:
-        * Regression: Shape is `([n_targets], n_samples, n_features)`, where the first axis is only present if there
-            are multiple targets. Features with positive scores contribute to increasing the model output, features
-            with negative scores contribute to decreasing it. The overall contribution of a feature is proportional to
-            its magnitude.
-        * Binary classification: Shape is `(n_samples, n_features)`. Features with positive scores are indicators for
-            the positive class, features with negative scores are indicators for the negative class. Note, however,
-            that the overall contribution of a feature might _not_ be proportional to its magnitude, i.e., a feature
-            with score -1 can be as important as a feature with score +2 (in the same sample).
-            Reason: non-linear logistic function applied to the raw model output when explaining class probabilities.
-        * Multiclass classification: Shape is `(n_classes, n_samples, n_features)`. Features with positive scores for
-            some class are indicators in favor of that class, features with negative scores are indicators against the
-            class. Analogous to binary classification, the overall importance of a feature might _not_ be proportional
-            to its magnitude.
-        * Multilabel classification: Shape is `(n_classes, n_samples, n_features)`, with the same meaning as in
-            binary classification for each class individually.
+
+        Parameters
+        ----------
+        x: ndarray
+            Samples to explain, array-like of shape `(n_samples, n_features)`.
+        jobs: int, default=1
+            The number of jobs to use.
+        batch_size: int, optional
+            The batch size to use.
+
+        Returns
+        -------
+        ndarray
+            SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction task:
+            * Regression: Shape is `([n_targets], n_samples, n_features)`, where the first axis is only present if there
+              are multiple targets. Features with positive scores contribute to increasing the model output, features
+              with negative scores contribute to decreasing it. The overall contribution of a feature is proportional
+              to its magnitude.
+            * Binary classification: Shape is `(n_samples, n_features)`. Features with positive scores are indicators
+              for the positive class, features with negative scores are indicators for the negative class. Note,
+              however, that the overall contribution of a feature might _not_ be proportional to its magnitude, i.e.,
+              a feature with score -1 can be as important as a feature with score +2 (in the same sample). Reason:
+              non-linear logistic function applied to the raw model output when explaining class probabilities.
+            * Multiclass classification: Shape is `(n_classes, n_samples, n_features)`. Features with positive scores
+              for some class are indicators in favor of that class, features with negative scores are indicators against
+              the class. Analogous to binary classification, the overall importance of a feature might _not_ be
+              proportional to its magnitude.
+            * Multilabel classification: Shape is `(n_classes, n_samples, n_features)`, with the same meaning as in
+              binary classification for each class individually.
+
+        Notes
+        -----
+
+        Defining property of Shapley values ("local accuracy"): sample-wise scores sum to the difference between the
+        model output for the current sample and the average/expected model output. What exactly "model output" means
+        depends on the task, the model and the explanation method, but in any case it must be array-like of shape
+        `(n_samples,)` or `(n_samples, n_outputs)`:
+            * KernelExplainer: model output is whatever passed function returns, e.g., `predict_proba()`.
+            * regression tasks: model output is predicted value, i.e., as returned by `predict()`.
+            * TreeExplainer with `model_output="raw"`: model output depends on model.
+        In case of multiple outputs, shap returns a list of scores, one for each output -- regardless of the prediction
+        task!
+
+        From the definition of Shapley values another important property can be derived: Let `g_1`, ..., `g_n` be
+        functions that map from R^m into R, and let `w_1`, ..., `w_n` be weights.
+        If `w_1 * g_1(x) + ... + w_n * g_n(x)` is constant, then the Shapley values `phi_i_j(x)` (for `1 <= i <= n`
+        and `1 <= j <= m`) satisfy `w_1 * phi_1_j(x) + ... + w_n * phi_n_j(x) = 0` for all `1 <= j <= m` and all `x`.
+        In particular, if `g_1`, ..., `g_n` correspond to the individual class probabilities in a binary- or multiclass
+        problem, and hence satisfy `g_1(x) + ... + g_n(x) = 1`, then `phi_1_j(x) + ... + phi_n_j(x) = 0`.
+
         """
-
-        # Defining property of Shapley values ("local accuracy"): sample-wise scores sum to the difference between the
-        # model output for the current sample and the average/expected model output. What exactly "model output" means
-        # depends on the task, the model and the explanation method, but in any case it must be array-like of shape
-        # `(n_samples,)` or `(n_samples, n_outputs)`:
-        #   * KernelExplainer: model output is whatever passed function returns, e.g., `predict_proba()`.
-        #   * regression tasks: model output is predicted value, i.e., as returned by `predict()`.
-        #   * TreeExplainer with `model_output="raw"`: model output depends on model.
-        # In case of multiple outputs, shap returns a list of scores, one for each output -- regardless of the
-        # prediction task!
-
-        # From the definition of Shapley values another important property can be derived: Let `g_1`, ..., `g_n` be
-        # functions that map from R^m into R, and let `w_1`, ..., `w_n` be weights.
-        # If `w_1 * g_1(x) + ... + w_n * g_n(x)` is constant, then the Shapley values `phi_i_j(x)` (for `1 <= i <= n`
-        # and `1 <= j <= m`) satisfy
-        # `w_1 * phi_1_j(x) + ... + w_n * phi_n_j(x) = 0` for all `1 <= j <= m` and all `x`.
-        # In particular, if `g_1`, ..., `g_n` correspond to the individual class probabilities in a binary- or
-        # multiclass problem, and hence satisfy `g_1(x) + ... + g_n(x) = 1`, then `phi_1_j(x) + ... + phi_n_j(x) = 0`.
 
         s = self._explainer.shap_values(x, **self._params.get('call_kwargs', {}))
         if isinstance(s, list):
@@ -381,21 +403,31 @@ class SHAPExplainer:
         """
         Explain the estimator globally w.r.t. a given set of samples. This amounts to explaining the given samples
         and then averaging the obtained SHAP values.
-        :param x: Samples to explain, array-like of shape `(n_samples, n_features)`.
-        :param sample_weight: Sample weights. None or array of shape `(n_samples,)`.
-        :param jobs: The number of jobs to use.
-        :param batch_size: The batch size to use.
-        :return: SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction
-        task:
-        * Regression: Shape is `(2, [n_targets], n_features)`, where the second axis is only present if there are
-            multiple targets.
-        * Binary classification: Shape is `(2, n_features)`.
-        * Multiclass- and multilabel classification: Shape is `(2, n_classes, n_features)`.
-        In any case, the first axis distinguishes between positive (index 0) and negative (index 1) contributions.
-        Averaging happens by dividing through the total number of samples, such that `result[0] + result[1]` is the
-        average feature importance and `result[0] - result[1]` is the average _absolute_ feature importance.
 
-        See method `explain()` for details.
+        Parameters
+        ----------
+        x:
+            Samples to explain, array-like of shape `(n_samples, n_features)`.
+        sample_weight: ndarray, optional
+            Sample weights. None or array of shape `(n_samples,)`.
+        jobs: int, default=1
+            The number of jobs to use.
+        batch_size: int
+            The batch size to use.
+
+        Returns
+        --------
+        ndarray
+            SHAP feature importance scores, numerical array whose shape and meaning depends on the prediction task:
+            * Regression: Shape is `(2, [n_targets], n_features)`, where the second axis is only present if there are
+                multiple targets.
+            * Binary classification: Shape is `(2, n_features)`.
+            * Multiclass- and multilabel classification: Shape is `(2, n_classes, n_features)`.
+            In any case, the first axis distinguishes between positive (index 0) and negative (index 1) contributions.
+            Averaging happens by dividing through the total number of samples, such that `result[0] + result[1]` is the
+            average feature importance and `result[0] - result[1]` is the average _absolute_ feature importance.
+
+            See method `explain()` for details.
         """
         if x is None:
             raise ValueError(f'{self.__class__.__name__} requires samples for global explanations.')
@@ -432,7 +464,9 @@ class MultiOutputExplainer(shap.Explainer):
 
 
 class OneVsRestExplainer(MultiOutputExplainer):
-    """Explainer for OneVsRestClassifier models, can be used for multiclass classification only."""
+    """
+    Explainer for OneVsRestClassifier models, can be used for multiclass classification only.
+    """
 
     def __init__(self, model, **kwargs):
         kwargs['proba'] = True

@@ -1,17 +1,21 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from sklearn.pipeline import make_pipeline
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
 
-from ..util.preprocessing import NumCatTransformer, MinMaxScaler, OneHotEncoder
+from catabra.util.preprocessing import MinMaxScaler, NumCatTransformer, OneHotEncoder
 
 
 def make_standard_transformer() -> NumCatTransformer:
     """
     Construct a transformer that scales numerical and time-like columns to the range [0, 1], one-hot encodes
     categorical columns, and imputes missing numerical values with -1 (after scaling).
-    :return: Instance of class `NumCatTransformer`.
+
+    Returns
+    -------
+    NumCatTransformer
+        Instance of class `NumCatTransformer`.
     """
     return NumCatTransformer(
         num_transformer=make_pipeline(

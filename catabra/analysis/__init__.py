@@ -1,7 +1,6 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from .main import CaTabRaAnalysis, analyze
+from catabra.analysis.main import analyze, CaTabRaAnalysis
 
-
-__all__ = ['CaTabRaAnalysis', 'analyze']
+__all__ = ['analyze', 'CaTabRaAnalysis']

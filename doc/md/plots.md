@@ -27,7 +27,7 @@ Training history plots visualize the evolution of model performance during train
 * all configured performance metrics on the internal validation set(s) (prefix `"val_"`), and
 * the value of the main metric achieved by the entire ensemble on the validation set(s) (prefix `"ensemble_val_"`).
 
-![Training history example.](figures/training_history.png)
+![Training history example.](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/training_history.png)
 
 The x-axis corresponds to the training time, the y-axis to the metric values. Note that the y-axis may be scaled
 logarithmically if necessary.
@@ -41,7 +41,7 @@ corresponding the entire ensemble of models, as new models are normally only add
 Truth-prediction plots visualize the relationship between ground truth and model predictions in regression problems as
 scatter plots.
 
-![Truth-prediction example](figures/truth_prediction.png)
+![Truth-prediction example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/truth_prediction.png)
 
 The x-axis corresponds to the true labels, the y-axis to the predicted labels, and each dot corresponds to one sample.
 If the prediction model worked perfectly, all dots would lie on the main diagonal (gray dashed line).
@@ -52,7 +52,7 @@ If the prediction model worked perfectly, all dots would lie on the main diagona
 visualize the diagnostic ability of binary classifiers as their decision thresholds vary. They are similar to
 precision-recall curves.
 
-![ROC curve example](figures/roc_curve.png)
+![ROC curve example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/roc_curve.png)
 
 The x-axis corresponds to the false positive rate at each decision threshold (equivalent to 1-specificity), the y-axis
 to the corresponding true positive rate. Every curve starts in (0,0) (classifier always predicts negative class) and
@@ -67,7 +67,7 @@ Furthermore, the bootstrapped 95% confidence interval around the ROC-curve is dr
 Precision-recall curves (PR-curves) visualize the diagnostic ability of binary classifiers as their decision
 thresholds vary. They are similar to receiver operating characteristic curves.
 
-![PR curve example](figures/pr_curve.png)
+![PR curve example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/pr_curve.png)
 
 The x-axis corresponds to the recall at each decision threshold (a.k.a. true positive rate, sensitivity),
 the y-axis to the corresponding precision (a.k.a. positive predictive value). Every curve starts in (0,1) (classifier
@@ -83,7 +83,7 @@ Furthermore, the bootstrapped 95% confidence interval around the PR-curve is dra
 Calibration curves visualize the relationship between the decision thresholds of binary classifiers and the
 corresponding fraction of positive samples.
 
-![Calibration curve example](figures/calibration_curve.png)
+![Calibration curve example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/calibration_curve.png)
 
 The x-axis corresponds to decision thresholds, the y-axis to the fraction of positive samples. Fractions of positive
 samples are computed by partitioning the range of thresholds into bins and dividing the number of positive samples by
@@ -99,7 +99,7 @@ The bootstrapped 95% confidence interval around the calibration curve is drawn i
 
 Threshold-metric plots visualize the dependency of thresholded performance metrics on specific decision thresholds.
 
-![Threshold-metric example](figures/threshold_metric.png)
+![Threshold-metric example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/threshold_metric.png)
 
 The x-axis corresponds to decision thresholds, the y-axis to values of performance metrics for binary classification
 that lie between 0 (worst) and 1 (optimal). The gray dashed line visualizes the "standard" decision threshold at 0.5.
@@ -113,7 +113,7 @@ In the figure above, accuracy, balanced accuracy, sensitivity and specificity at
 [Confusion matrices](https://en.wikipedia.org/wiki/Confusion_matrix) visualize the total numbers of samples in each
 combination of true and predicted class.
 
-![Confusion matrix example](figures/confusion_matrix.png)
+![Confusion matrix example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/confusion_matrix.png)
 
 The x-axis corresponds to the predicted labels and the y-axis to the true labels. The top-left cell, therefore, displays
 the number of correctly predicted samples belonging to the "first" class. In general, the cells on the diagonal
@@ -132,7 +132,7 @@ In binary classification, the decision threshold underlying confusion matrices i
 Beeswarm plots are an effective means to visualize local (i.e., sample-wise) model explanations given in terms of
 feature importance scores.
 
-![Beeswarm plot example](figures/beeswarm.png)
+![Beeswarm plot example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/beeswarm.png)
 
 On the left, individual features are listed, and for each feature one dot is draw for every sample. The x-coordinates
 of the dots represent the importance of the respective feature for predicting the respective sample, and the color (if
@@ -151,7 +151,7 @@ The styling of beeswarm plots in CaTabRa was largely inspired by the [shap packa
 Bar plots complement beeswarm plots by visualizing global model explanations, given in terms of feature importance
 scores.
 
-![Bar plot example](figures/bar.png)
+![Bar plot example](https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/bar.png)
 
 For every feature there are one or two bars, depending on whether feature importance is split into positive and negative
 contributions. In any case, the "absolute" importance of a feature is given by the total width of the bar(s), so in the

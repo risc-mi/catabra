@@ -18,6 +18,15 @@ class Autoencoder(SamplewiseOODDetector):
     Autoencoder for out-of distribution detection.
     Uses a neural network to encode data into a lower dimensional space and reconstruct the original data from it.
     Reconstruction error determines the likelihood of a sample being out-of-distribution.
+
+    Parameters
+    ----------
+    target_dim_factor: float, default=0.25
+        Fraction of features in the smallest dimension.
+    reduction_factor: float, default=0.9
+        How much each layer reduces the dimensionality
+    threshold: float, default=0.5
+        Threshold value to decide when a sample is out of distribution
     """
 
     _mlp_kwargs = {
@@ -73,13 +82,7 @@ class Autoencoder(SamplewiseOODDetector):
         return self._regressor.extract(num_layers)
 
     def __init__(self, subset=1, target_dim_factor=0.25, reduction_factor=0.9, thresh=0.5,
-                 random_state: int=None, verbose=True, mlp_kwargs=None):
-        """
-        Initialization of Autoencoder
-        :param: target_dim_factor: how
-        :param: reduction_factor: how much each layer reduces the dimensionality
-        :param: p_val: p-value to decide when a sample is out of distribution
-        """
+                 random_state: int=None, verbose=False, mlp_kwargs=None):
         super().__init__(subset=subset, random_state=random_state, verbose=verbose)
         self._target_dim_factor = target_dim_factor
         self._reduction_factor = reduction_factor
@@ -118,8 +121,13 @@ class Autoencoder(SamplewiseOODDetector):
 
     def _fit_transformed(self, X: pd.DataFrame, y: pd.Series):
         """
-        :param: X: samples to fit autoencoder on
-        :param y: ignored. Only for interface consistency
+
+        Parameters
+        ----------
+        X: DataFrame
+            Samples to fit autoencoder on
+        y:
+            Ignored. Only for interface consistency
         """
         num_layers = np.log(self._target_dim_factor) // np.log(self._reduction_factor)
         self._encoder_layers = np.round(np.power(np.repeat(self._reduction_factor, num_layers),
@@ -149,23 +157,3 @@ class Autoencoder(SamplewiseOODDetector):
 
     def predict_raw(self, X):
         return self._regressor.predict(X)
-
-
-def test():
-    auto = Autoencoder()
-    from sklearn.datasets import load_breast_cancer
-    X, y = load_breast_cancer(return_X_y=True)
-    X = pd.DataFrame(X)
-    auto.fit(X)
-    print(np.mean(auto.predict_proba(X)))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.0001,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.001,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.01,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,0.1,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,1,X.shape[0] * X.shape[1]).reshape(X.shape))))
-    print(np.mean(auto.predict_proba(X + np.random.normal(0,100,X.shape[0] * X.shape[1]).reshape(X.shape))))
-
-    train, test = train_test_split(X)
-    auto.fit(train)
-    print(np.mean(auto.predict_proba(test)))
-

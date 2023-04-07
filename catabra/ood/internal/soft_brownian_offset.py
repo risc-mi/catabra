@@ -1,36 +1,48 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
+import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
-
-from catabra.ood.base import SamplewiseOODDetector
-from catabra.ood.utils import make_standard_transformer
-
-import numpy as np
-
 from sklearn.metrics import pairwise_distances
 from tqdm import tqdm
 
-# Based on. https://github.com/flxai/soft-brownian-offset/blob/master/sbo/sbo.py
+from catabra.ood.base import SamplewiseOODDetector
+from catabra.ood.utils import make_standard_transformer
 
 
 def soft_brownian_offset(X, d_min=0.5, d_off=0.1, n_samples=1, show_progress=False, softness=False,
                          random_state=None):
     """Generates OOD samples using SBO on the input X and returns n_samples number of samples constrained by
-    other parameters.
-    Args:
-        X (:obj:`numpy.array`): In-distribution (ID) data to form OOD samples around. First dimension contains samples
-        d_min (float): (Likely) Minimum distance to ID data
-        d_off (float): Offset distance used in each iteration
-        n_samples(int): Number of samples to return
-        show_progress(boolean): Whether to show a tqdm progress bar
-        softness(float): Describes softness of minimum distance. Parameter between 0 (hard) and 1 (soft)
-        random_state(int): RNG state used for reproducibility
-    Returns:
-        :obj:`numpy.array`:
-            Out of distribution samples of shape (n_samples, X.shape[1])
+    other parameters. Based on [1].
+
+    Parameters
+    ----------
+    X: ndarray
+        In-distribution (ID) data to form OOD samples around. First dimension contains samples.
+    d_min: float, default=0.5
+        (Likely) Minimum distance to ID data.
+    d_off: float, default=0.1
+        Offset distance used in each iteration.
+    n_samples: int, default=1
+        Number of samples to return.
+    show_progress: bool, default=False
+        Whether to show a tqdm progress bar.
+    softness: float, default=False
+        Describes softness of minimum distance. Parameter between 0 (hard) and 1 (soft).
+    random_state: int
+        RNG state used for reproducibility.
+
+    Returns
+    -------
+    ndarray
+        Out of distribution samples of shape (n_samples, X.shape[1])
+
+    References
+    ----------
+    .. [1] https://github.com/flxai/soft-brownian-offset/blob/master/sbo/sbo.py
+
     """
     if softness == 0:
         softness = False
@@ -66,19 +78,32 @@ def soft_brownian_offset(X, d_min=0.5, d_off=0.1, n_samples=1, show_progress=Fal
     return np.array(ys)
 
 
-# Inspired by https://stackoverflow.com/a/33977530/10484131
 def gaussian_hyperspheric_offset(n_samples, mu=4, std=.7, n_dim=3, random_state=None):
-    """Generates OOD samples using GHO and returns n_samples number of samples constrained by other
-    parameters.
-    Args:
-        n_samples(int): Number of samples to return
-        mu (float): Mean of distribution
-        std (float): Standard deviation of distribution
-        n_dim (int): Number of dimensions
-        random_state(int): RNG state used for reproducibility
-    Returns:
-        :obj:`numpy.array`:
-            Out of distribution samples of shape (n_samples, n_dim)
+    """
+    Generates OOD samples using GHO and returns n_samples number of samples constrained by other
+    parameters. Inspired by [1].
+
+    Parameters
+    ----------
+    n_samples: int
+        Number of samples to return.
+    mu: float, default=4
+        Mean of distribution.
+    std: float, default=0.7
+        Standard deviation of distribution.
+    n_dim: int, default=3
+        Number of dimensions.
+    random_state: int, optional
+        RNG state used for reproducibility.
+
+    Returns
+    -------
+    ndarray
+        Out of distribution samples of shape (n_samples, n_dim)
+
+    References
+    ----------
+    .. [1] https://stackoverflow.com/a/33977530/10484131
     """
     if random_state is not None:
         np.random.seed(random_state)
@@ -94,7 +119,21 @@ class SoftBrownianOffset(SamplewiseOODDetector):
     Out-of-Distribution detector using soft brownian offset.
     Transforms samples into a lower dimensional space and generates synthetic OOD samples in this subspace.
     A classifier is trained to detect the OOD samples.
-    Requires sbo to be installed.
+
+    Parameters
+    ----------
+    classifier: default=RandomForestClassifier
+        Classifier for training to differentiate in- (ID) and out-of-distribution (OOD) samples.
+    dim_reduction: default=PCA
+        Dimensionality reduction algorithm to use.
+    dist_min: float, default=0.2
+        (Likely) Minimum distance to ID data
+    dist_off: float, default=0.01
+        Offset distance used in each iteration
+    softness: float, default=0
+        Describes softness of minimum distance. Parameter between 0 (hard) and 1 (soft)
+    samples: float, default=1
+        Number of samples to return in proportion to original samples
     """
 
     def __init__(
@@ -110,16 +149,6 @@ class SoftBrownianOffset(SamplewiseOODDetector):
             verbose: bool = True,
             **kwargs
     ):
-
-        """
-        Initialize SoftBrownianOffset
-        :param classifier: classifier for training to differentiate in- (ID) and out-of-distribution (OOD) samples
-        :param dist_min: (Likely) Minimum distance to ID data
-        :param dist_off: Offset distance used in each iteration
-        :param softness: Describes softness of minimum distance. Parameter between 0 (hard) and 1 (soft)
-        :param samples: Number of samples to return in proportion to original samples
-        """
-
         super().__init__(subset, random_state=random_state, verbose=verbose)
 
         dimred_kwargs = kwargs.get('dim_reduction', {})
@@ -152,27 +181,4 @@ class SoftBrownianOffset(SamplewiseOODDetector):
         return self._classifier.predict(X)
 
     def _predict_proba_transformed(self, X):
-        return self._classifier.predict_proba(X)
-
-
-# TODO make pytest
-def test():
-    test = np.array([
-        [0, 1, 2],
-        [0.1, 1.1, 2.1],
-        [0.2, 1.2, 2.2],
-        [0.3, 1.3, 2.3],
-        [0.4, 1.4, 2.4],
-        [0.5, 1.5, 2.5],
-        [0.6, 1.6, 2.6],
-        [0.7, 1.7, 2.7],
-        [0.8, 1.8, 2.8],
-        [0.9, 1.9, 2.9],
-    ])
-
-    ood = soft_brownian_offset(test, n_samples=10)
-    import plotly.express as px
-    df = pd.DataFrame(np.vstack([test, ood]), columns=['x', 'y', 'z'])
-    df['id'] = [True] * test.shape[0] + [False] * ood.shape[0]
-    fig = px.scatter_3d(df, x='x', y='y', z='z', color='id')
-    fig.show()
+        return self._classifier.predict_proba(X)[:,1]

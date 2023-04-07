@@ -1,24 +1,28 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
+import sys
 from typing import Optional
+
 import numpy as np
 import pandas as pd
-import sklearn.impute
-import sklearn.pipeline
-import sklearn.preprocessing
 import sklearn.cluster
 import sklearn.compose
 import sklearn.decomposition
 import sklearn.feature_selection
+import sklearn.impute
 import sklearn.kernel_approximation
-from sklearn.utils import _safe_indexing
-from sklearn.utils.fixes import delayed
-from sklearn.utils._mask import _get_mask
+import sklearn.pipeline
+import sklearn.preprocessing
 from joblib import Parallel
-import sys
+from sklearn.utils import _safe_indexing
+from sklearn.utils._mask import _get_mask
+from sklearn.utils.fixes import delayed
 
-from .base import TransformationExplainer, IdentityTransformationExplainer
+from catabra.explanation.base import (
+    IdentityTransformationExplainer,
+    TransformationExplainer,
+)
 
 
 def sklearn_explainer_factory(obj, params=None):

@@ -1,17 +1,18 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Optional, Dict, Any
+import time as py_time  # otherwise shadowed by parameter of method `fit()`
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
-import time as py_time      # otherwise shadowed by parameter of method `fit()`
 from sklearn.base import clone
 from sklearn.impute import SimpleImputer
-from sklearn.pipeline import make_pipeline, Pipeline
+from sklearn.pipeline import Pipeline, make_pipeline
 
-from ..util import logging, preprocessing
-from .base import AutoMLBackend
-from .fitted_ensemble import FittedEnsemble, _model_predict
+from catabra.automl.base import AutoMLBackend
+from catabra.automl.fitted_ensemble import FittedEnsemble, _model_predict
+from catabra.util import logging, preprocessing
 
 
 def _flatten_transformer_pipeline(obj) -> list:
@@ -214,15 +215,20 @@ def register_backend(name: str, preprocessing=None, estimator=None):
     """
     Register a fixed pipeline as new AutoML backend. Tne term "AutoML" is strictly speaking not appropriate here, since
     hyperparameters are not automatically optimized.
-    :param name: The name of the pipeline. It can be activated by setting config parameter `"automl"` to this name.
-    :param preprocessing: Optional preprocessing steps. If given, must be an object implement scikit-learn's
-    transformer API, in particular methods `fit_transform()` and `transform()`. It should also subclass
-    `sklearn.base.BaseEstimator` for being able to get/set hyperparameters with `get_params()` and `set_params()`,
-    respectively.
-    :param estimator: The final estimator (classifier/regressor). Must be an object implement scikit-learn's
-    estimator API, in particular methods `fit()`, `predict()` and, if used for classification, `predict_proba()`.
-    It should also subclass `sklearn.base.BaseEstimator` for being able to get/set hyperparameters with `get_params()`
-    and `set_params()`, respectively.
+
+    Parameters
+    ----------
+    name: str
+        The name of the pipeline. It can be activated by setting config parameter `"automl"` to this name.
+    preprocessing: optional
+        Optional preprocessing steps. If given, must be an object implement scikit-learn's transformer API, in
+        particular methods `fit_transform()` and `transform()`. It should also subclass `sklearn.base.BaseEstimator` for
+        being able to get/set hyperparameters with `get_params()` and `set_params()`, respectively.
+    estimator: optional
+        The final estimator (classifier/regressor). Must be an object implement scikit-learn's estimator API, in
+        particular methods `fit()`, `predict()` and, if used for classification, `predict_proba()`.  It should also
+        subclass `sklearn.base.BaseEstimator` for being able to get/set hyperparameters with `get_params()` and
+        `set_params()`, respectively.
     """
     if estimator is None:
         raise ValueError('The final estimator of a pipeline cannot be None.')
@@ -251,9 +257,13 @@ def standard_preprocessing() -> preprocessing.NumCatTransformer:
     """
     Construct a transformer that scales numerical and time-like columns to the range [0, 1], one-hot encodes
     categorical columns, and imputes missing numerical values with -1 (after scaling).
-    :return: Instance of class NumCatTransformer. Parameters of its components can be retrieved and set via
-    `get_params()` and `set_params()`, respectively, following the scikit-learn convention of composing names with
-    the infix "__". Example: `set_params(num_transformer__simpleimputer__strategy="mean")`.
+
+    Returns
+    -------
+    NumCatTransformer
+        The transformer object. Parameters of its components can be retrieved and set via `get_params()` and
+        `set_params()`, respectively, following the scikit-learn convention of composing names with the infix "__".
+        Example: `set_params(num_transformer__simpleimputer__strategy="mean")`.
     """
     return preprocessing.NumCatTransformer(
         num_transformer=make_pipeline(

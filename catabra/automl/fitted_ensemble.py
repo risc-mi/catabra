@@ -1,16 +1,17 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Dict, Any
 from functools import partial
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import joblib
 import numpy as np
 import pandas as pd
 import sklearn
 import sklearn.ensemble
-import joblib
 
-from ..util import metrics, io
+from catabra.util import io, metrics
 
 
 def _preprocess(x, pp: list):
@@ -108,25 +109,31 @@ def _model_predict(model: Union[dict, 'FittedModel'], x, batch_size: Optional[in
 
 
 class FittedModel:
+    """
+    Canonical, uniform representation of fitted prediction models, independent of the method and backend used for
+    fitting them. Ideally, the preprocessing transformations and estimator passed as arguments should be plain
+    sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
+
+    Note that the name "FittedModel" was chosen to be consistent with auto-sklearn's terminology. Strictly speaking,
+    this class represents whole pipelines rather than just prediction models.
+
+
+    Parameters
+    ----------
+    preprocessing:
+        single preprocessing transformation or list of such transformations. Each step must implement the `transform()`
+        method. `None` defaults to the empty list.
+    estimator:
+        Final estimator, must implement the `predict()` and, in case of classification, the `predict_proba()` method.
+
+    Notes
+    -----
+    There is no clear definition of what constitutes a preprocessing step and what the final estimator.
+    As a rule of thumb, try to set `estimator` to an atomic sklearn/XGBoost/TensorFlow/... model that cannot be
+    decomposed into individual parts anymore, and put everything else into `preprocessing`.
+    """
 
     def __init__(self, preprocessing=None, estimator=None):
-        """
-        Canonical, uniform representation of fitted prediction models, independent of the method and backend used for
-        fitting them. Ideally, the preprocessing transformations and estimator passed as arguments should be plain
-        sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
-
-        Note that the name "FittedModel" was chosen to be consistent with auto-sklearn's terminology. Strictly speaking,
-        this class represents whole pipelines rather than just prediction models.
-
-        :param preprocessing: Optional, single preprocessing transformation or list of such transformations. Each step
-        must implement the `transform()` method. None defaults to the empty list.
-        :param estimator: Final estimator, must implement the `predict()` and, in case of classification, the
-        `predict_proba()` method.
-        Note that there is no clear definition of what constitutes a preprocessing step and what the final estimator.
-        As a rule of thumb, try to set `estimator` to an atomic sklearn/XGBoost/TensorFlow/... model that cannot be
-        decomposed into individual parts anymore, and put everything else into `preprocessing`.
-        """
-
         if estimator is None:
             raise ValueError('The estimator of a FittedModel cannot be None.')
         if preprocessing is None:
@@ -144,9 +151,17 @@ class FittedModel:
     def transform(self, x: pd.DataFrame, batch_size: Optional[int] = None):
         """
         Transform given data by applying the preprocessing steps of this FittedModel object.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Transformed data, array-like of shape `(n_samples, n_features)`.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+
+        Returns
+        -------
+            Transformed data, array-like of shape `(n_samples, n_features)`.
         """
         if batch_size is None or len(x) <= batch_size:
             return _preprocess(x, self.preprocessing)
@@ -161,10 +176,19 @@ class FittedModel:
 
     def predict(self, x: pd.DataFrame, batch_size: Optional[int] = None) -> np.ndarray:
         """
-        Apply this FittedModel object to given data.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
+        Apply this `FittedModel` object to given data.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+
+        Returns
+        -------
+        ndarray
+            Array of predictions. In case of classification, these are class indicators rather than probabilities.
         """
         return _model_predict(self, x, batch_size=batch_size, proba=False, copy=False)
 
@@ -172,9 +196,18 @@ class FittedModel:
         """
         Apply this FittedModel object to given data. In contrast to method `predict()`, this method returns class
         probabilities in case of classification tasks. Does not work for regression tasks.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedModel was trained on.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+
+        Returns
+        -------
+        ndarray
+            Array of class probabilities, of shape `(n_samples, n_classes)`.
         """
         return _model_predict(self, x, batch_size=batch_size, proba=True, copy=False)
 
@@ -184,9 +217,13 @@ class FittedModel:
     def dump(self, fn: Union[Path, str], as_dict: bool = False):
         """
         Dump this FittedModel object to disk.
-        :param fn: File name.
-        :param as_dict: Whether to convert this object into a dict before dumping it.
-        Set to True for maximum portability.
+
+        Parameters
+        ----------
+        fn: Path | str
+            File name.
+        as_dict: bool, default=False
+            Whether to convert this object into a dict before dumping it. Set to True for maximum portability.
         """
         io.dump(self.to_dict() if as_dict else self, fn)
 
@@ -194,8 +231,16 @@ class FittedModel:
     def load(cls, fn: Union[Path, str]) -> 'FittedModel':
         """
         Load a dumped FittedModel from disk. The value of parameter `as_dict` upon dumping does not matter.
-        :param fn: File name.
-        :return: FittedModel object.
+
+        Parameters
+        ----------
+        fn: Path | str
+            File name.
+
+        Returns
+        -------
+        FittedModel
+            The loaded `FittedModel` object.
         """
         obj = io.load(fn)
         if isinstance(obj, dict):
@@ -215,40 +260,42 @@ class FittedModel:
 
 
 class FittedEnsemble:
+    """
+    Canonical, uniform representation of fitted ensembles of prediction models, independent of the method and
+    backend used for fitting them. Ideally, the constituent models and meta estimators passed as arguments should
+    be plain sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
+
+    Parameters
+    ----------
+    name: str, optional
+        Optional, name of this ensemble (e.g., name of the AutoML-backend used for generating it).
+    task: str, optional
+        Prediction task, one of `"regression"`, `"binary_classification"`, `"multiclass_classification"` or
+        `"multilabel_classification"`.
+    models: dict, optional
+        Constituent models of the ensemble, a non-empty dict. Each element must be a FittedModel or a dict of the form
+        {
+            "preprocessing": preprocessing,
+            "estimator": estimator
+        }
+        which is used to initialize a `FittedModel` object. The keys of the dict serve as unique model-IDs.
+    meta_input: list, optional
+        List of model-IDs that serve as the input to the meta estimator (must be a subset of the keys of `models`).
+        None defaults to all model-IDs, in the same order as in `models`.
+    meta_estimator: optional
+        Meta estimator that combines the outputs of the individual models into a final prediction. Must implement the
+        `predict()` method and, in case of classification, the `predict_proba()` method. Alternatively, `estimator` can
+        also be a list of weights with the same length as `meta_input`, in which case soft voting with the specified
+        weights is employed. The weights are completely arbitrary, i.e., they can be negative and do not need to sum to
+        1. None defaults to a soft voting estimator with uniform weights.
+    calibrator:
+        Calibrator, optional. If given, must be a fitted calibrator with a `transform()` or `predict()` method that
+        takes the output of `meta_estimator` as input and returns an array of the same shape. May only be provided for
+        classification tasks.
+    """
 
     def __init__(self, name: Optional[str] = None, task: str = None, models: dict = None, meta_input: list = None,
                  meta_estimator=None, calibrator=None):
-        """
-        Canonical, uniform representation of fitted ensembles of prediction models, independent of the method and
-        backend used for fitting them. Ideally, the constituent models and meta estimators passed as arguments should
-        be plain sklearn/XGBoost/TensorFlow/... objects, but this is no formal requirement.
-
-        :param name: Optional, name of this ensemble (e.g., name of the AutoML-backend used for generating it).
-        :param task: Prediction task, one of "regression", "binary_classification", "multiclass_classification" or
-        "multilabel_classification".
-        :param models: Constituent models of the ensemble, a non-empty dict. Each element must be a FittedModel or a
-        dict of the form
-
-            {
-                "preprocessing": preprocessing,
-                "estimator": estimator
-            }
-
-        which is used to initialize a FittedModel object. The keys of the dict serve as unique model-IDs.
-
-        :param meta_input: List of model-IDs that serve as the input to the meta estimator (must be a subset of the
-        keys of `models`). None defaults to all model-IDs, in the same order as in `models`.
-        :param meta_estimator: Meta estimator that combines the outputs of the individual models into a final
-        prediction. Must implement the `predict()` method and, in case of classification, the `predict_proba()` method.
-        Alternatively, `estimator` can also be a list of weights with the same length as `meta_input`, in which case
-        soft voting with the specified weights is employed. The weights are completely arbitrary, i.e., they can be
-        negative and do not need to sum to 1.
-        None defaults to a soft voting estimator with uniform weights.
-        :param calibrator: Calibrator, optional. If given, must be a fitted calibrator with a `transform()` or
-        `predict()` method that takes the output of `meta_estimator` as input and returns an array of
-        the same shape. May only be provided for classification tasks.
-        """
-
         if not models:
             raise ValueError('A FittedEnsemble cannot be instantiated without models.')
         if task not in ('regression', 'binary_classification', 'multiclass_classification',
@@ -273,7 +320,9 @@ class FittedEnsemble:
 
     @property
     def model_ids_(self) -> list:
-        """List of IDs for accessing individual (constituent) models of the final ensemble."""
+        """
+        List of IDs for accessing individual (constituent) models of the final ensemble.
+        """
         return list(self.models_)
 
     @property
@@ -303,14 +352,26 @@ class FittedEnsemble:
                 calibrated: bool = 'auto') -> np.ndarray:
         """
         Apply trained models to given data.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
-        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None; note that only the entire ensemble is
-        calibrated, not individual constituents.
-        :return: Array of predictions. In case of classification, these are class indicators rather than probabilities.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        model_id: optional
+            The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        calibrated: bool | 'auto', default='auto'
+            Whether to return calibrated predictions in case of classification tasks. If `"auto"`, calibrated
+            predictions are returned iff `model_id` is `None`; note that only the entire ensemble is calibrated, not
+            individual constituents.
+
+        Returns
+        -------
+        ndarray
+            Array of predictions. In case of classification, these are class indicators rather than probabilities.
         """
         if model_id is None:
             y = self._predict_all(x, jobs, batch_size, calibrated is not False, False)['__ensemble__']
@@ -331,14 +392,26 @@ class FittedEnsemble:
         """
         Apply trained models to given data. In contrast to method `predict()`, this method returns class probabilities
         in case of classification tasks. Does not work for regression tasks.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param model_id: The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
-        :param calibrated: Whether to return calibrated predictions in case of classification tasks.
-        If "auto", calibrated predictions are returned iff `model_id` is None; note that only the entire ensemble is
-        calibrated, not individual constituents.
-        :return: Array of class probabilities, of shape `(n_samples, n_classes)`.
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        model_id:
+            The ID of the model to apply, as in `model_ids_`. If None, the whole ensemble is applied.
+        calibrated: bool | 'auto', default='auto'
+            Whether to return calibrated predictions in case of classification tasks. If "auto", calibrated predictions
+            are returned iff `model_id` is None; note that only the entire ensemble is calibrated, not individual
+            constituents.
+
+        Returns
+        -------
+        ndarray
+            Array of class probabilities, of shape `(n_samples, n_classes)`.
         """
         if model_id is None:
             y = self._predict_all(x, jobs, batch_size, calibrated is not False, True)['__ensemble__']
@@ -354,13 +427,24 @@ class FittedEnsemble:
         Apply all trained models to given data, including constituent models and the entire ensemble. In classification
         tasks, class probabilities are returned for all constituent models and class indices only for the whole
         ensemble.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param calibrated_ensemble: Whether to return calibrated predictions of the whole ensemble. Does not affect
-        constituent models, whose predictions are always returned uncalibrated. This can lead to awkward situations for
-        singleton ensembles when predictions of the sole model are returned both calibrated und uncalibrated.
-        :return: Dict mapping model IDs to prediction-arrays. The key of the entire ensemble is "__ensemble__".
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        calibrated_ensemble: bool, default=False
+            Whether to return calibrated predictions of the whole ensemble. Does not affect constituent models, whose
+            predictions are always returned uncalibrated. This can lead to awkward situations for singleton ensembles
+            when predictions of the sole model are returned both calibrated und uncalibrated.
+
+        Returns
+        -------
+        Dict[Any, np.ndarray]
+            Dict mapping model IDs to prediction-arrays. The key of the entire ensemble is "__ensemble__".
         """
         return self._predict_all(x, jobs, batch_size, calibrated_ensemble, False)
 
@@ -370,13 +454,24 @@ class FittedEnsemble:
         Apply all trained models to given data, including constituent models and the entire ensemble. In contrast to
         method `predict_all()`, this method returns class probabilities in case of classification tasks. Does not work
         for regression tasks.
-        :param x: Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
-        :param jobs: The number of jobs to use, or -1 if all available processors shall be used.
-        :param batch_size: Batch size, i.e., number of samples processed in parallel.
-        :param calibrated_ensemble: Whether to return calibrated predictions of the whole ensemble. Does not affect
-        constituent models, whose predictions are always returned uncalibrated. This can lead to awkward situations for
-        singleton ensembles when predictions of the sole model are returned both calibrated und uncalibrated.
-        :return: Dict mapping model IDs to probability-arrays. The key of the entire ensemble is "__ensemble__".
+
+        Parameters
+        ----------
+        x: DataFrame
+            Features DataFrame. Must have the exact same format as the data this FittedEnsemble was trained on.
+        jobs: int, optional
+            The number of jobs to use, or -1 if all available processors shall be used.
+        batch_size: int, optional
+            Batch size, i.e., number of samples processed in parallel.
+        calibrated_ensemble: bool, default=False
+            Whether to return calibrated predictions of the whole ensemble. Does not affect constituent models, whose
+            predictions are always returned uncalibrated. This can lead to awkward situations for singleton ensembles
+            when predictions of the sole model are returned both calibrated und uncalibrated.
+
+        Returns
+        -------
+        Dict[Any, np.ndarray]:
+            Dict mapping model IDs to probability-arrays. The key of the entire ensemble is "__ensemble__".
         """
         return self._predict_all(x, jobs, batch_size, calibrated_ensemble, True)
 
@@ -399,9 +494,13 @@ class FittedEnsemble:
     def dump(self, fn: Union[Path, str], as_dict: bool = False):
         """
         Dump this FittedEnsemble object to disk.
-        :param fn: File name.
-        :param as_dict: Whether to convert this object into a dict before dumping it.
-        Set to True for maximum portability.
+
+        Parameters
+        ----------
+        fn: Path | str
+            File name.
+        as_dict: bool, default=False
+            Whether to convert this object into a dict before dumping it. Set to True for maximum portability.
         """
         io.dump(self.to_dict() if as_dict else self, fn)
 
@@ -409,8 +508,16 @@ class FittedEnsemble:
     def load(cls, fn: Union[Path, str]) -> 'FittedEnsemble':
         """
         Load a dumped FittedEnsemble from disk. The value of parameter `as_dict` upon dumping does not matter.
-        :param fn: File name.
-        :return: FittedEnsemble object.
+
+        Parameters
+        ----------
+        fn: Path | str
+            File name.
+
+        Returns
+        -------
+        FittedEnsemble
+            The loaded FittedEnsemble object.
         """
         obj = io.load(fn)
         if isinstance(obj, dict):

@@ -1,23 +1,33 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union, Optional, Iterable, Dict, List
-from pathlib import Path
 import json
 import pickle
+from csv import Sniffer
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Union
+
 import joblib
 import pandas as pd
-from csv import Sniffer
 
-from ..core.paths import CaTabRaPaths
+from catabra.core.paths import CaTabRaPaths
 
 
 def make_path(p: Union[str, Path], absolute: bool = False) -> Path:
     """
     Convert a path-like object into a proper path object, i.e., an instance of class `Path`.
-    :param p: Path-like object. If an instance of `Path` and `absolute` is False, `p` is returned unchanged.
-    :param absolute: Whether to make sure that the output is an absolute path. If False, the path may be relative.
-    :return: Path object.
+
+    Parameters
+    ----------
+    p: str | Path
+        Path-like object. If an instance of `Path` and `absolute` is False, `p` is returned unchanged.
+    absolute: bool, default=False
+        Whether to make sure that the output is an absolute path. If False, the path may be relative.
+
+    Returns
+    -------
+    Path
+        Path object.
     """
     if not isinstance(p, Path):
         p = Path(p)
@@ -30,10 +40,19 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
     """
     Read a DataFrame from a CSV, Excel, HDF5, Pickle or Parquet file. The file type is determined from the file
     extension of the given file.
-    :param fn: The file to read.
-    :param key: The key(s) in the HDF5 file, if `fn` is an HDF5 file. Defaults to "table". If an iterable, all
-    keys are read and concatenated along the row axis.
-    :return: A DataFrame.
+
+    Parameters
+    ----------
+    fn: str | Path
+        The file to read.
+    key: str | Iterable[str], default='table'
+        The key(s) in the HDF5 file, if `fn` is an HDF5 file. Defaults to "table". If an iterable, all keys are read and
+        concatenated along the row axis.
+
+    Returns
+    -------
+    DataFrame
+        A DataFrame.
     """
     fn = make_path(fn)
     fmt, _ = _infer_file_format(fn.suffixes)
@@ -65,12 +84,21 @@ def read_df(fn: Union[str, Path], key: Union[str, Iterable[str]] = 'table') -> p
 def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
     """
     Read multiple DataFrames from a single file.
+
     * If an Excel file, all sheets are read and returned.
     * If an H5 file, all top-level keys are read and returned.
     * If any other file, the singleton dict `{"table": df}` is returned, where `df` is the single DataFrame contained
-        in the file.
-    :param fn: The file to read.
-    :return: A dict mapping keys to DataFrames, possibly empty.
+      in the file.
+
+    Parameters
+    ----------
+    fn: str, Path
+        The file to read.
+
+    Returns
+    -------
+    str | DataFrame
+        A dict mapping keys to DataFrames, possibly empty.
     """
     fn = make_path(fn)
     fmt, _ = _infer_file_format(fn.suffixes)
@@ -78,7 +106,8 @@ def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
         return pd.read_excel(str(fn), sheet_name=None)
     elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode='r') as h5:
-            out = {k[1:]: df for k, df in h5.items()}       # `k[1:]` to trim leading "/"
+            # `k[1:]` to trim leading "/"; don't iterate over `h5.items()`; skip "/"
+            out = {k[1:]: h5[k] for k in h5.keys() if len(k) > 1}
         return out
     else:
         return dict(table=read_df(fn))
@@ -87,10 +116,17 @@ def read_dfs(fn: Union[str, Path]) -> Dict[str, pd.DataFrame]:
 def write_df(df: pd.DataFrame, fn: Union[str, Path], key: str = 'table', mode: str = 'w'):
     """
     Write a DataFrame to file. The file type is determined from the file extension of the given file.
-    :param df: The DataFrame to write.
-    :param fn: The target file name.
-    :param key: The key in the HDF5 file, if `fn` is an HDF5 file. If None, `fn` may contain only one table.
-    :param mode: The mode in which the HDF5 file shall be opened, if `fn` is an HDF5 file. Ignored otherwise.
+
+    Parameters
+    ----------
+    df: DataFrame
+        The DataFrame to write.
+    fn: str | Path
+        The target file name.
+    key: str, default='table'
+        The key in the HDF5 file, if `fn` is an HDF5 file. If None, `fn` may contain only one table.
+    mode: str, default='w'
+        The mode in which the HDF5 file shall be opened, if `fn` is an HDF5 file. Ignored otherwise.
     """
     fn = make_path(fn)
     fn.parent.mkdir(exist_ok=True, parents=True)
@@ -122,9 +158,15 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
     """
     Write a dict of DataFrames to file. The file type is determined from the file extension of the given file.
     Unless an Excel- or HDF5 file, `dfs` must be empty or a singleton.
-    :param dfs: The DataFrames to write. If empty and `mode` differs from "a", the file is deleted.
-    :param fn: The target file name.
-    :param mode: The mode in which the file shall be opened, if `fn` is an Excel- or HDF5 file. Ignored otherwise.
+
+    Parameters
+    ----------
+    dfs: dict
+        The DataFrames to write. If empty and `mode` differs from "a", the file is deleted.
+    fn: str | Path
+        The target file name.
+    mode: str, default='w'
+        The mode in which the file shall be opened, if `fn` is an Excel- or HDF5 file. Ignored otherwise.
     """
     fn = make_path(fn)
     if not dfs:
@@ -143,11 +185,11 @@ def write_dfs(dfs: Dict[str, pd.DataFrame], fn: Union[str, Path], mode: str = 'w
                     df = df.copy()
                     for c in delta_cols:
                         df[c] = df[c].astype('str')
-                df.to_excel(writer, sheet_name=k)
+                df.to_excel(writer, sheet_name=str(k))
     elif fmt == 'hdf':
         with pd.HDFStore(str(fn), mode=mode) as h5:
             for k, df in dfs.items():
-                h5[k] = df
+                h5[str(k)] = df
     elif len(dfs) > 1:
         raise RuntimeError(f'Cannot write more than one DataFrame to a "{fn.suffix}" file.')
     else:
@@ -158,11 +200,20 @@ def load(fn: Union[str, Path]):
     """
     Load a Python object from disk. The object can be stored in JSON, Pickle or joblib format. The format is
     automatically determined based on the given file extension:
+
     * ".json" => JSON
     * ".pkl", ".pickle" => Pickle
     * ".joblib" => joblib
-    :param fn: The file to load.
-    :return: The loaded object.
+
+    Parameters
+    ----------
+    fn: str | Path
+        The file to load.
+
+    Returns
+    -------
+    Any
+        The loaded object.
     """
     fn = make_path(fn)
     fmt, _ = _infer_file_format(fn.suffixes)
@@ -182,16 +233,23 @@ def dump(obj, fn: Union[str, Path]):
     """
     Dump a Python object to disk, either as a JSON, Pickle or joblib file. The format is determined automatically based
     on the given file extension:
+
     * ".json" => JSON
     * ".pkl", ".pickle" => Pickle
     * ".joblib" => joblib
 
-    When dumping objects as JSON, calling `to_json()` beforehand might be necessary to ensure compliance with the
-    JSON standard.
-    joblib is preferred over Pickle, as it is more efficient if the object contains large Numpy arrays.
+    Parameters
+    ----------
+    obj:
+        The object to dump.
+    fn: str | Path
+        The file.
 
-    :param obj: The object to dump.
-    :param fn: The file.
+    Notes
+    -----
+    When dumping objects as JSON, calling `to_json()` beforehand might be necessary to ensure compliance with the JSON
+    standard. joblib is preferred over Pickle, as it is more efficient if the object contains large Numpy arrays.
+
     """
     fn = make_path(fn)
     fmt, _ = _infer_file_format(fn.suffixes)
@@ -210,8 +268,16 @@ def dump(obj, fn: Union[str, Path]):
 def to_json(x):
     """
     Returns a JSON-compliant representation of the given object.
-    :param x: Arbitrary object.
-    :return: Representation of `x` that can be serialized as JSON.
+
+    Parameters
+    ----------
+    x:
+        Arbitrary object.
+
+    Returns
+    -------
+    Any
+        Representation of `x` that can be serialized as JSON.
     """
     if isinstance(x, Path):
         return x.as_posix()
@@ -236,11 +302,22 @@ def convert_rows_to_str(d: [dict, pd.DataFrame], rowindex_to_convert: list,
     """
     Converts rows (indexed via rowindex_to_convert) to str, mainly used for saving dataframes (to avoid missing values
     in .xlsx-files in case of e.g. timedelta datatype)
-    :param d: Single DataFrame or dictionary of dataframes
-    :param rowindex_to_convert: List of row indices (e.g., features), that should be converted to str
-    :param inplace: Determines if changes will be made to input data or a deep-copy of it
-    :param skip: List of column(s) that should not be converted to string
-    :return: Modified (str-converted rows) single DataFrame or dictionary of dataframes
+
+    Parameters
+    ----------
+    d: dict | DataFrame
+        Single DataFrame or dictionary of dataframes
+    rowindex_to_convert: list
+        List of row indices (e.g., features), that should be converted to str
+    inplace: bool, default=True
+        Determines if changes will be made to input data or a deep-copy of it
+    skip: list, default=[]
+        List of column(s) that should not be converted to string
+
+    Returns
+    -------
+    DataFrame | dict
+        Modified (str-converted rows) single DataFrame or dictionary of DataFrames.
     """
     if not inplace:
         if isinstance(d, pd.DataFrame):
@@ -261,14 +338,19 @@ def convert_rows_to_str(d: [dict, pd.DataFrame], rowindex_to_convert: list,
 
 
 class CaTabRaLoader:
+    """
+    CaTabRaLoader for conveniently accessing artifacts generated by analyzing tables, like trained models, configs,
+    encoders, etc.
+
+    Parameters
+    ----------
+    path: str | Path
+        Path to the CaTabRa directory.
+    check_exists: bool, default=True
+        Check whether the directory pointed to by `path` exists.
+    """
 
     def __init__(self, path: Union[str, Path], check_exists: bool = True):
-        """
-        CaTabRaLoader for conveniently accessing artifacts generated by analyzing tables, like trained models, configs,
-        encoders, etc.
-        :param path: Path to the CaTabRa directory.
-        :param check_exists: Check whether the directory pointed to by `path` exists.
-        """
         self._path = make_path(path, absolute=True)
         if check_exists and not self._path.exists():
             raise ValueError(f'CaTabRa directory "{self._path.as_posix()}" does not exist.')
@@ -291,22 +373,26 @@ class CaTabRaLoader:
         if (self._path / CaTabRaPaths.TrainingHistory).exists():
             return read_df(self._path / CaTabRaPaths.TrainingHistory)
 
-    def get_encoder(self) -> Optional['Encoder']:
+    def get_encoder(self) -> Optional['Encoder']: # noqa F821
         if (self._path / CaTabRaPaths.Encoder).exists():
             from ..util.encoding import Encoder
             return Encoder.load(self._path / CaTabRaPaths.Encoder)
 
-    def get_model(self) -> Optional['AutoMLBackend']:
+    def get_model(self) -> Optional['AutoMLBackend']: # noqa F821
         return self._load(CaTabRaPaths.Model)
 
-    def get_ood(self) -> Optional['OODDetector']:
+    def get_ood(self) -> Optional['OODDetector']: # noqa F821
         return self._load(CaTabRaPaths.OODModel)
 
-    def get_fitted_ensemble(self, from_model: bool = False) -> Optional['FittedEnsemble']:
+    def get_fitted_ensemble(self, from_model: bool = False) -> Optional['FittedEnsemble']: # noqa F821
         """
         Get the trained prediction model as a FittedEnsemble object.
-        :param from_model: Whether to convert a plain model of type AutoMLBackend into a FittedEnsemble object, if
-        such an object does not exist in the directory.
+
+        Parameters
+        ----------
+        from_model: bool, default=False
+            Whether to convert a plain model of type AutoMLBackend into a FittedEnsemble object, if such an object does
+            not exist in the directory.
         """
         if (self._path / CaTabRaPaths.FittedEnsemble).exists():
             from ..automl.fitted_ensemble import FittedEnsemble
@@ -316,17 +402,20 @@ class CaTabRaLoader:
             if hasattr(model, 'fitted_ensemble'):
                 return model.fitted_ensemble()
 
-    def get_model_or_fitted_ensemble(self) -> Union['AutoMLBackend', 'FittedEnsemble', None]:
+    def get_model_or_fitted_ensemble(self) -> Union['AutoMLBackend', 'FittedEnsemble', None]: # noqa F821
         return self.get_model() or self.get_fitted_ensemble()
 
     def get_explainer(self, explainer: Optional[str] = None, fitted_ensemble: Optional['FittedEnsemble'] = None) \
-            -> Optional['EnsembleExplainer']:
+            -> Optional['EnsembleExplainer']: # noqa F821
         """
         Get the explainer object.
-        :param explainer: Name of the explainer to load. If None, the first explainer specified in config param
-        "explainer" is loaded.
-        :param fitted_ensemble: Pre-loaded FittedEnsemble object. If None, method `get_fitted_ensemble()` is used for
-        loading it.
+
+        Parameters
+        ----------
+        explainer: str, optional
+            Name of the explainer to load. If None, the first explainer specified in config param "explainer" is loaded.
+        fitted_ensemble: FittedEnsemble
+            Pre-loaded FittedEnsemble object. If None, method `get_fitted_ensemble()` is used for loading it.
         """
         config = self.get_config() or {}
         if explainer is None:
@@ -366,7 +455,11 @@ class CaTabRaLoader:
     def get_table(self, keep_singleton: bool = False) -> Union[pd.DataFrame, List[pd.DataFrame], None]:
         """
         Get the table(s) originally passed to `analyze()`, if they still reside in their original location.
-        :param keep_singleton: Whether to keep singleton lists. If False, a single DataFrame is returned in that case.
+
+        Parameters
+        ----------
+        keep_singleton: bool, default=False
+            Whether to keep singleton lists. If False, a single DataFrame is returned in that case.
         """
         table = (self.get_invocation() or {}).get('table')
         if table is not None:
