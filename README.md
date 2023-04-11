@@ -93,9 +93,11 @@ Invoking the two commands generates a bunch of results, most notably
 
 ## Examples
 
+The source notebooks for all our examples can be found within the [examples folder
+](https://github.com/risc-mi/catabra/tree/main/examples/)
 ### Walk-Through Tutorials
 
-* **[Workflow.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Workflow.ipynb)**
+* **[Workflow.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/workflow.html)**
   * Analyze data with a binary target
   * Train a high-quality classifier with automatic model selection and hyperparameter tuning
   * Investigate the final classifier and the training history
@@ -103,23 +105,23 @@ Invoking the two commands generates a bunch of results, most notably
   * Evaluate the classifier on held-out test data
   * Explain the classifier by computing SHAP- and permutation importance scores
   * Apply the classifier to new samples
-* **[Longitudinal.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Longitudinal.ipynb)**
+* **[Longitudinal.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/longitudinal.html)**
   * Process longitudinal data by resampling into "samples x features" format
 
 ### Short Examples
 
-* **[Prediction-Tasks.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Prediction-Tasks.ipynb)**
+* **[Prediction-Tasks.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/prediction_tasks.html)**
   * Binary classification
   * Multiclass classification
   * Multilabel classification
   * Regression
-* **[Performance-Metrics.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Performance-Metrics.ipynb)**
+* **[Performance-Metrics.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/performance_metrics.html)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
-* **[Plotting.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Plotting.ipynb)**
+* **[Plotting.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/plotting.html)**
   * Create plots in Python
   * Create interactive plots
-* **[AutoML-Config.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Config.ipynb)**
+* **[AutoML-Config.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/automl_config.html)**
   * General configuration
     * Ensemble size
     * Time- and Memory budget
@@ -128,26 +130,26 @@ Invoking the two commands generates a bunch of results, most notably
     * Model classes and preprocessing steps
     * Resampling strategies for internal validation
     * Grouped splitting
-* **[Fixed-Pipeline.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Fixed-Pipeline.ipynb)**
+* **[Fixed-Pipeline.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/fixed_pipeline.html)**
   * Specify fixed ML pipeline (no automatic hyperparameter optimization)
   * Manually configure hyperparameters
   * Suitable for creating baseline models
 
 ### Extending CaTabRa
 
-* **[AutoML-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/AutoML-Extension.ipynb)**
+* **[AutoML-Extension.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/automl_extension.html)**
   * Add new AutoML backend
-* **[Explanation-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/Explanation-Extension.ipynb)**
+* **[Explanation-Extension.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/explanation_extension.html)**
   * Add new explanation backend
-* **[OOD-Extension.ipynb](https://github.com/risc-mi/catabra/tree/main/examples/OOD-Extension.ipynb)**
+* **[OOD-Extension.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/ood_extension.html)**
   * Add new OOD detection backend
 
 ## Documentation
 
-Directory [doc/](https://github.com/risc-mi/catabra/tree/main/doc/md) documents a couple of specific aspects of CaTabRa,
-like its  command-line interface, available performance metrics, built-in OOD-detectors and model explanation details.
+API Documentation as well as detailed documentation for a couple of specific aspects of CaTabRa,
+like its  command-line interface, available performance metrics, built-in OOD-detectors and model explanation details
+can be found on our [ReadTheDocs](https://catabra.readthedocs.io/en/latest/index.html).
 
-Detailed API documentation is currently in preparation.
 
 ## References
 
