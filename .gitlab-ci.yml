@@ -96,7 +96,7 @@ build-wheel-poetry:
   stage: build
   extends:
     - .poetry-build
-    - .build-on-semversionr
+    - .build-on-semversion
   only:
     - tags
 
