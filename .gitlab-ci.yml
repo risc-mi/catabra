@@ -89,11 +89,14 @@ python-inspect:
   allow_failure: true
 
 build-wheel-poetry:
-  needs: ["python-test-basic", "python-test-slow"]
   stage: build
   extends:
     - .poetry-build
     - .build-on-semversion
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"  && $CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: never
 
 publish-to-risc-pypi:
   needs: ["build-wheel-poetry"]
