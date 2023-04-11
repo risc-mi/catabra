@@ -84,10 +84,10 @@ profile = "black"
 extend_skip = ["__init__.py"]
 
 [tool.poe.tasks]
-format = "black ."
 sort_imports = "isort ."
 lint = "ruff check ."
 test = "pytest -ra --doctest-modules --junitxml=python-junit.xml --cov --cov-report=html --cov-report term"
+update_nbs = "jupyter nbconvert --execute --to notebook --inplace examples/*"
 
 [build-system]
 requires = ["poetry-core"]
