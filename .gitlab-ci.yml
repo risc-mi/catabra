@@ -93,10 +93,6 @@ build-wheel-poetry:
   extends:
     - .poetry-build
     - .build-on-semversion
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"  && $CI_COMMIT_BRANCH == "main"'
-      when: always
-    - when: never
 
 publish-to-risc-pypi:
   needs: ["build-wheel-poetry"]
