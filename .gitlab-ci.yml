@@ -77,7 +77,7 @@ python-test-slow:
   extends:
     - .python-test-with-poetry-slow
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main" || $CI_PIPELINE_SOURCE == "tag"'
       when: always
     - when: never
   allow_failure: false
@@ -87,8 +87,7 @@ python-inspect:
   extends:
     - .python-test-with-poetry-failable
   rules:
-    - if: '($CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main") ||
-          $CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '($CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main") || $CI_PIPELINE_SOURCE == "tag"'
       when: always
     - when: never
   allow_failure: true
