@@ -5,6 +5,9 @@ import shutil
 from pathlib import Path
 
 import pytest
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.multioutput import MultiOutputClassifier
+
 from catabra.analysis import analyze
 from catabra.application import apply
 from catabra.automl import fixed_pipeline
@@ -12,8 +15,6 @@ from catabra.calibration import calibrate
 from catabra.evaluation import evaluate
 from catabra.explanation import explain
 from catabra.util.summary import summarize_importance, summarize_performance
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.multioutput import MultiOutputClassifier
 
 from .util import create_synthetic_data
 

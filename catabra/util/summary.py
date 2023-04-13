@@ -6,6 +6,7 @@ from typing import Iterable, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+
 from catabra.explanation import average_local_explanations
 from catabra.util.io import Path, make_path, read_dfs
 from catabra.util.logging import warn
