@@ -1,9 +1,8 @@
+import glob
+import json
 import os
 from pathlib import Path
-from typing import Union, List
-
-import json
-import glob
+from typing import List, Union
 
 
 class NBContent:
@@ -77,11 +76,9 @@ def remove_mocked_input(file_path: Union[str, Path]):
     with open(file_path, 'r') as file:
         content = json.load(file)
         cells = content[NBContent.cells]
-        print(cells[0])
         while NBContent.tags in cells[0][NBContent.meta] and \
                 'patch' in cells[0][NBContent.meta][NBContent.tags]:
             cells = cells[1:]
-        print(cells[0])
         content[NBContent.cells] = cells
 
     with open(file_path, 'w') as file:
