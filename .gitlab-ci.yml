@@ -51,6 +51,12 @@ stages:
   script:
     - python -m pytest -m "allowed_to_fail" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
 
+.notebooks-test-with-poetry:
+  extends:
+    - .python-test-with-poetry
+  script:
+    - poe update_nbs
+
 python-import-order-check:
   needs: []
   extends:
@@ -86,6 +92,16 @@ python-inspect:
   stage: test
   extends:
     - .python-test-with-poetry-failable
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: never
+  allow_failure: true
+
+jupyter-nb-check:
+  stage: test
+  extends:
+    - .notebooks-test-with-poetry
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
       when: always
