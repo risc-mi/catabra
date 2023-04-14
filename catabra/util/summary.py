@@ -17,7 +17,9 @@ _METRICS_REGEX = re.compile(r'(?:([^:]+):)?([^:@() ]+)(?:@([0-1]?\.?[0-9]*))?(?:
 def summarize_performance(directories: Iterable[Union[str, Path]], metrics: Iterable[Union[str, tuple]],
                           split: Union[str, Iterable[str], None] = None, path_callback=None) -> pd.DataFrame:
     """
-    Summarize the performance of prediction models trained and evaluated with CaTabRa.
+    Summarize the performance of multiple prediction models trained and evaluated with CaTabRa. This is a convenient
+    way for quickly comparing them and selecting the best model(s) for a certain task. An implicit assumption of this
+    function is that all models were trained on the same prediction task.
 
     IMPORTANT: Only pre-evaluated metrics in "metrics.xlsx" and "bootstrapping.xlsx" are considered!
 
@@ -33,20 +35,20 @@ def summarize_performance(directories: Iterable[Union[str, Path]], metrics: Iter
 
         ::
 
-          [target:]metric_name[@threshold][(bootstrapping_aggregation)]
+          "[target:]metric_name[@threshold][(bootstrapping_aggregation)]"
 
-        * `target` is optional and specifies the target (or class in case of multiclass classification); can be "*" to
-          include all available targets, and can be a sequence separated by ",". Ignored if
+        * `target` is optional and specifies the target (or class in case of multiclass classification); can be `"*"` to
+          include all available targets, and can be a sequence separated by `","`. Ignored if
           `bootstrapping_aggregation` is specified.
         * `metric_name` is the name of the actual metric, exactly as written in "metrics.xlsx" or "bootstrapping.xlsx";
-          can be "*" to include all available pre-evaluated metrics, and can be a sequence separated by ",".
+          can be `"*"` to include all available pre-evaluated metrics, and can be a sequence separated by `","`.
         * `threshold` is optional and must be a numeral between 0 and 1 (cannot be a string like "balance"), and cannot
-          be "*". Only relevant for threshold-dependent classification metrics, and mutually exclusive with
+          be `"*"`. Only relevant for threshold-dependent classification metrics, and mutually exclusive with
           `bootstrapping_aggregation`. Note that the given threshold must exactly match one of the thresholds
           evaluated in "metrics.xlsx".
-        * `bootstrapping_aggregation` is optional and specifies the bootstrapping aggregation to include, like "mean",
-          "std", etc.; can be "*" to include all available pre-evaluated aggregations in "bootstrapping.xlsx", and
-          can be a sequence separated by ",".
+        * `bootstrapping_aggregation` is optional and specifies the bootstrapping aggregation to include, like `"mean"`,
+          `"std"`, etc.; can be `"*"` to include all available pre-evaluated aggregations in "bootstrapping.xlsx", and
+          can be a sequence separated by `","`.
 
     split: Iterable[str], default=None
         If a directory in `directories` has subdirectories corresponding to data splits that were evaluated separately,
@@ -59,8 +61,8 @@ def summarize_performance(directories: Iterable[Union[str, Path]], metrics: Iter
     Returns
     -------
     DataFrame
-        One row per evaluation and one column per performance metric. If multiple splits are included in the
-        performance summary, each is put into a separate row.
+        DataFrame with one row per evaluation and one column per performance metric. If multiple splits are included in
+        the performance summary, each is put into a separate row.
 
     Examples
     --------
@@ -157,7 +159,10 @@ def summarize_importance(directories: Iterable[Union[str, Path]], columns: Union
                          split: Union[str, Iterable[str], None] = None,
                          model_id: Union[str, Iterable[str], None] = None, path_callback=None) -> pd.DataFrame:
     """
-    Summarize the feature importance of prediction models trained and explained with CaTabRa.
+    Summarize the feature importance of multiple prediction models trained and explained with CaTabRa. This is a
+    convenient way for quickly comparing them. An implicit assumption of this function is that all models were trained
+    on the same prediction task, and that the same feature importance calculation method was applied to generate the
+    importance scores.
 
     IMPORTANT: Only pre-evaluated feature importance scores are considered!
 
@@ -170,8 +175,8 @@ def summarize_importance(directories: Iterable[Union[str, Path]], columns: Union
         is by using `Path(root_path).rglob(pattern)`.
     columns: Iterable[str], default=None
         The columns in global feature importance scores to consider. For instance, if
-        `catabra.explanation.average_local_explanations()` is used to produce global scores, 4 columns ">0", "<0",
-        ">0 std" and "<0 std" are normally generated. This parameter allows to include only a subset in the summary.
+        `catabra.explanation.average_local_explanations()` is used to produce global scores, 4 columns `">0"`, `"<0"`,
+        `">0 std"` and `"<0 std"` are normally generated. This parameter allows to include only a subset in the summary.
         None defaults to all columns.
     new_column_name: str
         String pattern specifying the names of the columns in the output DataFrame. May have two named fields `feature`
@@ -193,8 +198,8 @@ def summarize_importance(directories: Iterable[Union[str, Path]], columns: Union
     Returns
     -------
     DataFrame
-        One row per explanation and one column per feature-column pair. If multiple splits are included in the
-        importance summary, each is put into a separate row. If there are multiple targets (multiclass/multilabel
+        DataFrame with one row per explanation and one column per feature-column pair. If multiple splits are included
+        in the importance summary, each is put into a separate row. If there are multiple targets (multiclass/multilabel
         classification, multioutput regression) and the feature importance scores for each target are stored in a
         separate table, each is put into a separate row and an additional column "__target__" is added.
 
