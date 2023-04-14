@@ -102,7 +102,7 @@ update_nb.args = [{name='path', positional="True"}]
 update_nbs.sequence = [
     {shell = "find ./examples/* -maxdepth 0 -type d -cmin -60 -exec rm -rf {} +"}, # deletes artefacts created during execution
     {shell = "cd test/test_documentation; python -m patch_notebooks ../../examples"},
-    {cmd = "jupyter nbconvert --execute --to notebook --inplace examples/Workflow.ipynb --log-level WARN"},
+    {cmd = "jupyter nbconvert --execute --to notebook --inplace examples/*.ipynb --debug"},
     {shell = "cd test/test_documentation; python -m patch_notebooks ../../examples --unpatch 1"},
     {shell = "find ./examples/* -maxdepth 0 -type d -cmin -60 -maxdepth 0 -exec rm -rf {} +"}
 ]
