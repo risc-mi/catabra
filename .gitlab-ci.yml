@@ -57,7 +57,7 @@ stages:
   before_script:
     - !reference [.install-poetry, script]
     - poetry install
-    - poetry install --group optional
+    - poetry install --with optional
   script:
     - poe update_nbs
 
