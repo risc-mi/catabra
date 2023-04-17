@@ -54,6 +54,10 @@ stages:
 .notebooks-test-with-poetry:
   extends:
     - .python-test-with-poetry
+  before_script:
+    - !reference [.install-poetry, script]
+    - poetry install
+    - poetry install --group optional
   script:
     - poe update_nbs
 
