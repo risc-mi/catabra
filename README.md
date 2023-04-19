@@ -93,7 +93,7 @@ Invoking the two commands generates a bunch of results, most notably
 
 ## Examples
 
-The source notebooks for all our examples can be found within the
+The source notebooks for all our examples can be found in the
 [examples folder](https://github.com/risc-mi/catabra/tree/main/examples/).
 
 ### Walk-Through Tutorials
@@ -116,6 +116,8 @@ The source notebooks for all our examples can be found within the
   * Multiclass classification
   * Multilabel classification
   * Regression
+* **[House-Sales-Regression.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/house_sales_regression.html)**
+  * Predicting house prices
 * **[Performance-Metrics.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/performance_metrics.html)**
   * Change hyperparameter optimization objective
   * Specify metrics to calculate during model training
