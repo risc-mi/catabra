@@ -11,7 +11,7 @@
 </p>
 
 <div align="center">
-  <img src="doc/figures/workflow.png" width="700px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/workflow.png" width="700px" />
 </div>
 
 [![Platform Support](https://img.shields.io/badge/platform-Linux-blue)]()
@@ -86,15 +86,16 @@ Invoking the two commands generates a bunch of results, most notably
   <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_descriptive.png" width="600px" />
 * performance metrics in tabular and graphical form<br>
   <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_confusion_matrix.png" width="200px" />
-  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_descriptive.png" width="400px" />
+  <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_threshold_metric.png" width="400px" />
 * feature importance scores in tabular and graphical form<br>
   <img src="https://raw.githubusercontent.com/risc-mi/catabra/main/doc/figures/breast_cancer_beeswarm.png" width="600px" />
 * ... and many more.
 
 ## Examples
 
-The source notebooks for all our examples can be found within the [examples folder
-](https://github.com/risc-mi/catabra/tree/main/examples/)
+The source notebooks for all our examples can be found within the
+[examples folder](https://github.com/risc-mi/catabra/tree/main/examples/).
+
 ### Walk-Through Tutorials
 
 * **[Workflow.ipynb](https://catabra.readthedocs.io/en/latest/jupyter/workflow.html)**
