@@ -50,7 +50,7 @@ optional = true
 
 [tool.poetry.group.optional.dependencies]
 xgboost = {version="^1.7.4", extras=['all']}
-plotly = {version="^5.13.1", extras=['all']}
+plotly = {version="~5.7", extras=['all']}
 dask = {version="^2023.2.1", extras=['all']}
 jupyter = {version="^1.0.0", extras=['all']}
 pyod = {version="^1.0.9", extras=['all']}

@@ -2865,18 +2865,18 @@ test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=7.2.2)", "pytest-
 
 [[package]]
 name = "plotly"
-version = "5.14.1"
+version = "5.7.0"
 description = "An open-source, interactive data visualization library for Python"
 category = "dev"
 optional = false
 python-versions = ">=3.6"
 files = [
-    {file = "plotly-5.14.1-py2.py3-none-any.whl", hash = "sha256:a63f3ad9e4cc2e02902a738e5e3e7f3d1307f2732ac71a6c28f1238ed3052826"},
-    {file = "plotly-5.14.1.tar.gz", hash = "sha256:bcac86d7fcba3eff7260c1eddc36ca34dae2aded10a0709808446565e0e53b93"},
+    {file = "plotly-5.7.0-py2.py3-none-any.whl", hash = "sha256:3a35131762c6567813012462e1d496e1d3898f56ab3d386b32f103f7f0c79cf1"},
+    {file = "plotly-5.7.0.tar.gz", hash = "sha256:15ab20e9ed8b55f669b3d35e186eb48f9e1fe07321a1337b8b7df8d3573d265a"},
 ]
 
 [package.dependencies]
-packaging = "*"
+six = "*"
 tenacity = ">=6.2.0"
 
 [[package]]
@@ -4666,4 +4666,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "8f7e5d95f52a7a75679ad2425ae2ca6fde28069495583c2c5fc40e3a7b1011d6"
+content-hash = "1fec994efcf818acb404c87f87f2800002c8b207872e478d14a10a3293ebe0eb"
