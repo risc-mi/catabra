@@ -42,13 +42,15 @@ pandoc = "^2.3"
 nbsphinx-link = "^1.3.0"
 sphinxcontrib-github = "^0.1.3"
 sphinx-rtd-theme = "^1.2.0"
+nbmake = "^1.4.1"
+jupyterlab = "^3.6.3"
 
 [tool.poetry.group.optional]
 optional = true
 
 [tool.poetry.group.optional.dependencies]
 xgboost = {version="^1.7.4", extras=['all']}
-plotly = {version="^5.13.1", extras=['all']}
+plotly = {version="~5.7", extras=['all']}
 dask = {version="^2023.2.1", extras=['all']}
 jupyter = {version="^1.0.0", extras=['all']}
 pyod = {version="^1.0.9", extras=['all']}
@@ -84,11 +86,28 @@ profile = "black"
 extend_skip = ["__init__.py"]
 
 [tool.poe.tasks]
-format = "black ."
 sort_imports = "isort ."
 lint = "ruff check ."
 test = "pytest -ra --doctest-modules --junitxml=python-junit.xml --cov --cov-report=html --cov-report term"
 
+# updates a singular notebook
+update_nb.sequence = [
+    {shell = "cd test/test_documentation; python -m patch_notebooks \"../../\"$path"},
+    {cmd = "jupyter nbconvert --execute --to notebook --inplace $path --debug"},
+    {shell = "cd test/test_documentation; python -m patch_notebooks \"../../\"$path --unpatch 1"},
+]
+update_nb.args = [{name='path', positional="True"}]
+
+# updates multiple notebooks and deletes artefacts
+update_nbs.sequence = [
+    {shell = "find ./examples/* -maxdepth 0 -type d -cmin -60 -exec rm -rf {} +"}, # deletes artefacts created during execution
+    {shell = "cd test/test_documentation; python -m patch_notebooks ../../examples"},
+    {cmd = "jupyter nbconvert --execute --to notebook --inplace examples/*.ipynb --debug"},
+    {shell = "cd test/test_documentation; python -m patch_notebooks ../../examples --unpatch 1"},
+    {shell = "find ./examples/* -maxdepth 0 -type d -cmin -60 -maxdepth 0 -exec rm -rf {} +"}
+]
+update_nbs.ignore_fail = "return_non_zero"
+
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=1.0.8"]
 build-backend = "poetry.core.masonry.api"

@@ -584,6 +584,10 @@ class AutoSklearnBackend(AutoMLBackend):
         if self.task == 'regression':
             from autosklearn.regression import AutoSklearnRegressor as Estimator
             logging.log('Using auto-sklearn 1.0 (regression not supported by 2.0).')
+        elif self.task == 'multilabel_classification':
+            # auto-sklearn 2.0 includes the "sgd" classifier, which is not applicable to multilabel problems
+            from autosklearn.classification import AutoSklearnClassifier as Estimator
+            logging.log('Using auto-sklearn 1.0 (multilabel classification not supported by 2.0).')
         elif groups is None and resampling_strategy is None and include is None and exclude is None:
             try:
                 from autosklearn.experimental.askl2 import (

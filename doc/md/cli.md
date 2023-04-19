@@ -187,7 +187,7 @@ In addition, there are optional arguments as well:
     specified in `FROM`. In binary classification this can also be the name of a built-in thresholding strategy,
     possibly followed by "on" and the split on which to calculate the threshold. Splits must be specified by the name
     of the subdirectory containing the corresponding evaluation results.
-    See [/doc/metrics.md](https://github.com/risc-mi/catabra/tree/main/doc/metrics.md) for a list of built-in
+    See [Metrics](https://catabra.readthedocs.io/en/latest/app_docs/metrics_link.html) for a list of built-in
     thresholding strategies.
 * `--bootstrapping-repetitions BS_REPETITIONS`: Number of bootstrapping repetitions. Set to 0 to disable bootstrapping.
     Overwrites config param `"bootstrapping_repetitions"`.

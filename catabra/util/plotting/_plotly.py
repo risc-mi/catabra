@@ -194,7 +194,7 @@ def confusion_matrix(cm: pd.DataFrame, name: Optional[str] = None, title: Option
     x_class = mg[0].flatten()
     y_class = mg[1][::-1].flatten()
 
-    text = ['<b>{}</b>'.format((np.round(t, 2), 100 * t / n_samples) for t in z)]
+    text = ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), 100 * t / n_samples) for t in z]
     text += ['<b>{}</b><br>{:.2f}%'.format(np.round(t, 2), a) if t > 0 else '<b>{}</b>'.format(np.round(t, 2))
              for t, a in zip(part_totals, part_acc)]
 

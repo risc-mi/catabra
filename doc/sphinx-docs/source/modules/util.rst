@@ -86,3 +86,10 @@ Bootstrapping
 .. automodule:: util.bootstrapping
    :members:
    :show-inheritance:
+
+Summary
+-------------------------
+
+.. automodule:: util.summary
+   :members:
+   :show-inheritance:
