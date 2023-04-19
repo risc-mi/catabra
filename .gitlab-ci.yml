@@ -3,7 +3,11 @@ image: dockernexus01.risc-software.at/python:3.9
 include:
   - project: 'common/ci-templates'
     ref:  0.1.9
-    file: ['/devops/python/build-and-publish.yml', '/devops/util/util.yml', '/devops/python/test.yml']
+    file: [
+        '/devops/python/build-and-publish.yml',
+        '/devops/util/util.yml',
+        '/devops/python/test.yml'
+    ]
 
 stages:
   - test
@@ -47,6 +51,16 @@ stages:
   script:
     - python -m pytest -m "allowed_to_fail" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
 
+.notebooks-test-with-poetry:
+  extends:
+    - .python-test-with-poetry
+  before_script:
+    - !reference [.install-poetry, script]
+    - poetry install
+    - poetry install --with optional
+  script:
+    - poe update_nbs
+
 python-import-order-check:
   needs: []
   extends:
@@ -88,12 +102,23 @@ python-inspect:
     - when: never
   allow_failure: true
 
+jupyter-nb-check:
+  stage: test
+  extends:
+    - .notebooks-test-with-poetry
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"  && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: never
+  allow_failure: true
+
 build-wheel-poetry:
-  needs: ["python-test-basic", "python-test-slow"]
   stage: build
   extends:
     - .poetry-build
     - .build-on-semversion
+  only:
+    - tags
 
 publish-to-risc-pypi:
   needs: ["build-wheel-poetry"]
@@ -103,5 +128,7 @@ publish-to-risc-pypi:
     - .build-on-semversion
   variables:
     DIRECTORY: dist/*
+  only:
+    - tags
 
 

@@ -193,7 +193,7 @@ sample-wise predictions (as saved in `predictions.xlsx`), aggregate performance 
 `metrics.xlsx`), and the corresponding data encoder that can be easily obtained from a
 [`catabra.util.io.CaTabRaLoader`](https://github.com/risc-mi/catabra/tree/main/catabra/util/io.py) object.
 If you only have sample-wise predictions but no performance metrics, refer to
-[/doc/metrics.md](https://github.com/risc-mi/catabra/tree/main/doc/metrics.md) for information on how to create the
+[Metrics](https://catabra.readthedocs.io/en/latest/app_docs/metrics_link.html) for information on how to create the
 latter.
 
 ```python

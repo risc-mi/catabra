@@ -28,11 +28,17 @@ _CATABRA_REGEX = re.compile(r'https?://(?:www\.)?github\.com/risc-mi/catabra(.*)
 
 _CODE_REGEX = re.compile(r'.*\.(?:py|csv)(?:#.*)?')
 
+_DOC_REGEX = re.compile(r'(?:/?|.*github\.com/risc-mi/catabra/tree/main/)doc/.+\.md')
+
 _ROOT = Path(__file__).parent
 while _ROOT.stem != 'catabra':
     _ROOT = _ROOT.parent
     if _ROOT == Path.root:
         raise RuntimeError('No CaTabRa root directory found.')
+
+_SPHINX_DOCS = _ROOT / 'doc/sphinx-docs'
+if not _SPHINX_DOCS.exists():
+    warnings.warn(f'sphinx-docs directory {_SPHINX_DOCS.as_posix()} does not exist. Is the path correct?')
 
 ISSUES = {
     0: ('section reference embedded as image', 1),
@@ -46,6 +52,7 @@ ISSUES = {
     8: ('resource only found locally', 0),
     9: ('source code reference not enclosed in ``', 0),
     10: ('code block without closing ```', 1),
+    11: ('link to "/doc/md" instead of readthedocs', 0),
 }
 
 
@@ -91,10 +98,10 @@ def parse_cell(path: Path, text: Iterable[str], cell_id=None, markdown: bool = T
                             msgs.append((pos, 1, url))
                         abs_refs.append((pos, caption, root + url))
 
-        for url, start, stop in _iterate_bare_links(ln):
+        for url, is_img, start, stop in _iterate_bare_links(ln):
             if start not in url_starts:
                 pos = (cell_id, i, (start, stop))
-                if markdown and code_block < 0:
+                if markdown and code_block < 0 and not is_img:
                     msgs.append((pos, 2, url))
                 abs_refs.append((pos, '', url))
 
@@ -148,6 +155,8 @@ def validate_file(path: Path) -> list:
         if not (_CODE_REGEX.fullmatch(url) is None or caption == ''
                 or (caption.startswith('`') and caption.endswith('`'))):
             msgs.append((pos, 9, caption))
+        if _DOC_REGEX.fullmatch(url):
+            msgs.append((pos, 11, url))
 
     msgs.sort(key=(lambda x: (-1 if x[0][0] is None else x[0][0][0], x[0][1], x[0][2][0])))
 
@@ -193,7 +202,8 @@ def validate_files(files, return_type: str = 'none', output: str = 'print') -> O
         return messages
 
 
-def enumerate_files(d: Path = _ROOT, file_ext=('.py', '.md', '.ipynb', '.txt'), tracked_only: bool = True):
+def enumerate_files(d: Path = _ROOT, file_ext=('.py', '.md', '.ipynb', '.txt'), tracked_only: bool = True,
+                    include_sphinx_docs: bool = False):
     if tracked_only:
         res = subprocess.run(['git', 'ls-files'], cwd=_ROOT, capture_output=True, text=True)
         if res.returncode == 0:
@@ -201,17 +211,19 @@ def enumerate_files(d: Path = _ROOT, file_ext=('.py', '.md', '.ipynb', '.txt'), 
             for f0 in res.stdout.split('\n'):
                 if f0:
                     f = _ROOT / f0      # all paths are relative to `_ROOT`, because `cwd=_ROOT`
-                    if f.suffix.lower() in file_ext and f.is_relative_to(d):
+                    if f.suffix.lower() in file_ext and f.is_relative_to(d) \
+                            and (include_sphinx_docs or not f.is_relative_to(_SPHINX_DOCS)):
                         yield f
             return
         else:
             raise ValueError(res.stderr)
 
     for f in d.iterdir():
-        if f.is_dir():
-            yield from enumerate_files(d=f, file_ext=file_ext, tracked_only=tracked_only)
-        elif f.suffix.lower() in file_ext:
-            yield f
+        if include_sphinx_docs or not f.is_relative_to(_SPHINX_DOCS):
+            if f.is_dir():
+                yield from enumerate_files(d=f, file_ext=file_ext, tracked_only=tracked_only)
+            elif f.suffix.lower() in file_ext:
+                yield f
 
 
 def check_urls(urls):
@@ -290,7 +302,10 @@ def _iterate_bare_links(text: str):
     for match in _URL_REGEX.finditer(text):
         start, stop = match.span()
         url = match.group()
-        if not (0 < start and stop < len(text) and text[start - 1] == '<' and text[stop] == '>'):
+        is_img = False
+        if 0 < start and stop < len(text) and text[start - 1] == '"' and text[stop] == '"':
+            is_img = 10 <= start and text[start - 10:start] == '<img src="'
+        elif not (0 < start and stop < len(text) and text[start - 1] == '<' and text[stop] == '>'):
             while url:
                 if url[-1] in '(.':
                     url = url[:-1]
@@ -311,7 +326,7 @@ def _iterate_bare_links(text: str):
                         stop -= 1
                 else:
                     break
-        yield url, start, stop
+        yield url, is_img, start, stop
 
 
 def _check_url(url: str) -> Tuple[bool, Optional[bool]]:
