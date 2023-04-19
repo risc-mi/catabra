@@ -24,11 +24,11 @@ _URL_REGEX = re.compile(
 
 _HEADER_REGEX = re.compile(r'#+ +(.+?)( +#* *)?')
 
-_CATABRA_REGEX = re.compile(r'https?://(?:www\.)?github\.com/risc-mi/catabra(.*)')
+_CATABRA_GH_REGEX = re.compile(r'https?://(?:www\.)?github\.com/risc-mi/catabra(.*)')
+
+_CATABRA_RTD_REGEX = re.compile(r'https?://catabra\.readthedocs\.io/en/latest(.*)')
 
 _CODE_REGEX = re.compile(r'.*\.(?:py|csv)(?:#.*)?')
-
-_DOC_REGEX = re.compile(r'(?:/?|.*github\.com/risc-mi/catabra/tree/main/)doc/.+\.md')
 
 _ROOT = Path(__file__).parent
 while _ROOT.stem != 'catabra':
@@ -52,7 +52,8 @@ ISSUES = {
     8: ('resource only found locally', 0),
     9: ('source code reference not enclosed in ``', 0),
     10: ('code block without closing ```', 1),
-    11: ('link to "/doc/md" instead of readthedocs', 0),
+    11: ('link to github instead of readthedocs', 0),
+    12: ('readthedocs document not found', 0),
 }
 
 
@@ -148,14 +149,16 @@ def validate_file(path: Path) -> list:
             if exists_local is False:
                 msgs.append((pos, 7, url))
         else:
-            if exists_local is True:
+            if _CATABRA_RTD_REGEX.fullmatch(url):
+                msgs.append((pos, 12, url))
+            elif exists_local is True:
                 msgs.append((pos, 8, url))
             else:
                 msgs.append((pos, 6, url))
         if not (_CODE_REGEX.fullmatch(url) is None or caption == ''
                 or (caption.startswith('`') and caption.endswith('`'))):
             msgs.append((pos, 9, caption))
-        if _DOC_REGEX.fullmatch(url):
+        if (url.endswith('.md') or url.endswith('.ipynb')) and _CATABRA_GH_REGEX.fullmatch(url):
             msgs.append((pos, 11, url))
 
     msgs.sort(key=(lambda x: (-1 if x[0][0] is None else x[0][0][0], x[0][1], x[0][2][0])))
@@ -338,7 +341,7 @@ def _check_url(url: str) -> Tuple[bool, Optional[bool]]:
     except:     # noqa
         exists = False
 
-    match = _CATABRA_REGEX.fullmatch(url)
+    match = _CATABRA_GH_REGEX.fullmatch(url)
     if match is not None:
         match = match.groups()[0]
         if match.startswith('/'):
