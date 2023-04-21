@@ -162,7 +162,7 @@ def test_multi_columns(seed=None):
     assert out.columns.nlevels == 1
 
 
-@pytest.mark.slow
+@pytest.mark.manual
 def test_large(seed=None):
     df, _ = create_random_data(10000000, 1, n_entities=20000, attributes=['attr_' + str(i) for i in range(1, 50)],
                                time_dtype='timestamp', seed=seed)
