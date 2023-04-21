@@ -30,6 +30,8 @@ _CATABRA_RTD_REGEX = re.compile(r'https?://catabra\.readthedocs\.io/en/latest(.*
 
 _CODE_REGEX = re.compile(r'.*\.(?:py|csv)(?:#.*)?')
 
+_DOC_REGEX = re.compile(r'(?:/?|.*github\.com/risc-mi/catabra/tree/main/)doc/.+\.md')
+
 _ROOT = Path(__file__).parent
 while _ROOT.stem != 'catabra':
     _ROOT = _ROOT.parent
