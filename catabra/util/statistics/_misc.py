@@ -210,7 +210,15 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
     dict_stat = calc_numeric_statistics(df, target, classify)
     dict_non_num_stat = calc_non_numeric_statistics(df, target, classify)
 
-    return dict_stat, dict_non_num_stat, (df.corr() if df.shape[1] <= corr_threshold else None)
+    if df.shape[1] <= corr_threshold:
+        try:
+            corr = df.corr(numeric_only=True)
+        except TypeError:
+            corr = df.corr()
+    else:
+        corr = None
+
+    return dict_stat, dict_non_num_stat, corr
 
 
 def mann_whitney_u(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
