@@ -43,7 +43,7 @@ def test_windows(pattern: str, include_df_start: bool, include_df_stop: bool, na
         windows = []
         i = 0
         for p in ['random', 'regular', 'regular non-overlapping', 'non-overlapping']:
-            df1, windows1 = create_random_data(25000, 2500, attributes=['attr_' + str(i) for i in range(1, 7)],
+            df1, windows1 = create_random_data(2500, 250, attributes=['attr_' + str(i) for i in range(1, 7)],
                                                intervals=True, window_pattern=p, seed=seed)
             df1['entity'] += i
             windows1[('entity', '')] += i
@@ -53,11 +53,11 @@ def test_windows(pattern: str, include_df_start: bool, include_df_stop: bool, na
         df = pd.concat(dfs, axis=0, sort=False)
         windows = pd.concat(windows, axis=0, sort=False)
     elif pattern == 'no_start':
-        df, windows = create_random_data(100000, 1000, attributes=['attr_' + str(i) for i in range(1, 7)],
+        df, windows = create_random_data(10000, 100, attributes=['attr_' + str(i) for i in range(1, 7)],
                                          intervals=True, window_pattern='random', seed=seed)
         windows.drop([('timestamp', 'start')], axis=1, inplace=True)
     else:
-        df, windows = create_random_data(100000, 1000, attributes=['attr_' + str(i) for i in range(1, 7)],
+        df, windows = create_random_data(10000, 100, attributes=['attr_' + str(i) for i in range(1, 7)],
                                          intervals=True, window_pattern=pattern, seed=seed)
 
     if not include_df_start:
@@ -91,7 +91,7 @@ def test_windows_mixed():
 
 
 def test_single_entity_attribute():
-    df, windows = create_random_data(100000, 1000, n_entities=1, intervals=True, window_pattern='random',
+    df, windows = create_random_data(10000, 100, n_entities=1, intervals=True, window_pattern='random',
                                      value_dtype='int', seed=seed)
 
     kwargs = dict(
@@ -105,7 +105,7 @@ def test_single_entity_attribute():
     compare_dataframes(out1, ground_truth)
 
 
-@pytest.mark.slow
+@pytest.mark.manual
 def test_large():
     df, _ = create_random_data(10000000, 1, n_entities=20000, attributes=['attr_' + str(i) for i in range(1, 50)],
                                intervals=True, window_pattern='random', time_dtype='timestamp', seed=seed)

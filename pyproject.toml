@@ -61,7 +61,8 @@ pyod = {version="^1.0.9", extras=['all']}
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow",
-    "allowed_to_fail: marks tests that can fail under certain conditions without it being an error"
+    "allowed_to_fail: marks tests that can fail under certain conditions without it being an error",
+    "manual: marks tests that must be executed manually"
 ]
 testpaths = ['test']
 

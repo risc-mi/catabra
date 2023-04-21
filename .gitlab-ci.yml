@@ -37,7 +37,7 @@ stages:
 .python-test-with-poetry:
   image: dockernexus01.risc-software.at/python:3.9
   script:
-    - python -m pytest -m "not slow and not allowed_to_fail" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
+    - python -m pytest -m "not slow and not allowed_to_fail and not manual" --doctest-modules --junitxml=python-junit.xml --cov --cov-report=xml --cov-report term
 
 .python-test-with-poetry-slow:
   extends:

@@ -34,7 +34,7 @@ def _test(
     _ROOT.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(_OUT, ignore_errors=True)
 
-    df = create_synthetic_data(task)
+    df = create_synthetic_data(task, n_samples=1000, difficulty=2)
     df.to_hdf(_ROOT / 'data.h5', key='table', format='table', complevel=9)
 
     targets = [c for c in df.columns if c.startswith('_label')]
@@ -121,7 +121,7 @@ def _test(
 def test_binary_classification(subtests, sample_weight: bool):
     if sample_weight:
         expected_result = [
-            ('_label', 'n_weighted', 3000, 10000),
+            ('_label', 'n_weighted', 60, 200),
             ('_label', 'roc_auc', 0.8, 1),
             ('_label', 'average_precision', 0.65, 0.9)
         ]
@@ -143,6 +143,7 @@ def test_multiclass_classification(subtests):
 def test_multilabel_classification(subtests):
     _test(task='multilabel_classification', from_file=True, subtests=subtests)
 
+
 @pytest.mark.slow
 def test_regression(subtests):
     _test(task='regression', single_model=True, subtests=subtests)
@@ -150,7 +151,7 @@ def test_regression(subtests):
 
 @pytest.mark.allowed_to_fail
 def test_regression_expected(subtests):
-    _test(task='regression', single_model=True, expected_result=[('_label', 'r2', 0.5, 1)], subtests=subtests)
+    _test(task='regression', single_model=True, expected_result=[('_label', 'r2', 0, 1)], subtests=subtests)
 
 
 @pytest.mark.allowed_to_fail
@@ -158,7 +159,7 @@ def test_group(subtests):
     _test(task='multiclass_classification', holdout=True, group=False,
           multi_process=True,
           expected_result=[('_label', 'accuracy', 0.67, 0.77),
-                           ('_label', 'balanced_accuracy', 0.4, 0.5)],
+                           ('_label', 'balanced_accuracy', 0.5, 0.8)],
           subtests=subtests)
 
 

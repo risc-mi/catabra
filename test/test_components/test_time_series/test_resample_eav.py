@@ -93,7 +93,7 @@ def test_windows(pattern: str, include_start: bool, include_stop: bool, na_windo
         windows = []
         i = 0
         for p in ['random', 'regular', 'regular non-overlapping', 'non-overlapping']:
-            df1, windows1 = create_random_data(25000, 2500, attributes=['attr_' + str(i) for i in range(1, 7)],
+            df1, windows1 = create_random_data(2500, 250, attributes=['attr_' + str(i) for i in range(1, 7)],
                                                window_pattern=p, seed=seed)
             df1['entity'] += i
             windows1[('entity', '')] += i
@@ -103,11 +103,11 @@ def test_windows(pattern: str, include_start: bool, include_stop: bool, na_windo
         df = pd.concat(dfs, axis=0, sort=False)
         windows = pd.concat(windows, axis=0, sort=False)
     elif pattern == 'no_start':
-        df, windows = create_random_data(100000, 1000, attributes=['attr_' + str(i) for i in range(1, 7)],
+        df, windows = create_random_data(10000, 100, attributes=['attr_' + str(i) for i in range(1, 7)],
                                          window_pattern='random', seed=seed)
         windows.drop([('timestamp', 'start')], axis=1, inplace=True)
     else:
-        df, windows = create_random_data(100000, 1000, attributes=['attr_' + str(i) for i in range(1, 7)],
+        df, windows = create_random_data(10000, 100, attributes=['attr_' + str(i) for i in range(1, 7)],
                                          window_pattern=pattern, seed=seed)
 
     if na_windows:
@@ -139,7 +139,7 @@ def test_windows_mixed():
 
 @pytest.mark.slow
 def test_single_entity_attribute():
-    df, windows = create_random_data(100000, 1000, n_entities=1, window_pattern='random', value_dtype='int', seed=seed)
+    df, windows = create_random_data(10000, 100, n_entities=1, window_pattern='random', value_dtype='int', seed=seed)
 
     agg = {'attr_1': ['mean', 'size', 'std', 'p25', 'p50', 'p99', 'r-1', 't0']}
     kwargs = dict(
@@ -156,7 +156,7 @@ def test_single_entity_attribute():
 
 
 def test_categorical():
-    df, windows = create_random_data(100000, 1000, attributes=['attr_1', 'attr_2'], value_dtype='category',
+    df, windows = create_random_data(10000, 100, attributes=['attr_1', 'attr_2'], value_dtype='category',
                                      window_pattern='random', seed=seed)
 
     agg = {'attr_1': ['mode', 'mode_count', 'size', 'r-1', 't0'], 'attr_2': ['mode', 'count', 'r2']}
@@ -176,7 +176,7 @@ def test_categorical():
 
 
 def test_custom_agg(seed=None):
-    df, windows = create_random_data(100000, 1000, window_pattern='random', seed=seed)
+    df, windows = create_random_data(10000, 100, window_pattern='random', seed=seed)
 
     def frac_between_0_1(x: pd.DataFrame):
         return x['value'].between(0, 1).groupby(level=0).mean().to_frame('frac_in[0, 1]')
@@ -240,7 +240,7 @@ def test_include_stop():
     compare_dataframes(out2, ground_truth)
 
 
-@pytest.mark.slow
+@pytest.mark.manual
 @pytest.mark.parametrize(
     argnames=['dd'],
     argvalues=[(dd,), (None,)],

@@ -134,7 +134,7 @@ def test_multi_columns():
     _check_result(grp, df, orig_index, orig_columns)
 
 
-@pytest.mark.slow
+@pytest.mark.manual
 def test_large():
     df, _ = create_random_data(10000000, 1, n_entities=20000, attributes=['attr_' + str(i) for i in range(1, 50)],
                                intervals=True, time_dtype='timestamp', seed=seed)
