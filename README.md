@@ -156,7 +156,28 @@ can be found on our [ReadTheDocs](https://catabra.readthedocs.io/en/latest/index
 
 ## References
 
-A conference paper describing CaTabRa is currently in preparation.
+If you use CaTabRa in your research, we would appreciate citing the following conference paper:
+
+* A. Maletzky, S. Kaltenleithner, P. Moser and M. Giretzlehner.
+  *CaTabRa: Efficient Analysis and Predictive Modeling of Tabular Data*. In: I. Maglogiannis, L. Iliadis, J. MacIntyre
+  and M. Dominguez (eds), Artificial Intelligence Applications and Innovations (AIAI 2023). IFIP Advances in
+  Information and Communication Technology, vol 676, pp 57-68, 2023.
+  [DOI:10.1007/978-3-031-34107-6_5](https://doi.org/10.1007/978-3-031-34107-6_5)
+
+  ```
+  @inproceedings{CaTabRa2023,
+    author = {Maletzky, Alexander and Kaltenleithner, Sophie and Moser, Philipp and Giretzlehner, Michael},
+    editor = {Maglogiannis, Ilias and Iliadis, Lazaros and MacIntyre, John and Dominguez, Manuel},
+    title = {{CaTabRa}: Efficient Analysis and Predictive Modeling of Tabular Data},
+    booktitle = {Artificial Intelligence Applications and Innovations},
+    year = {2023},
+    publisher = {Springer Nature Switzerland},
+    address = {Cham},
+    pages = {57--68},
+    isbn = {978-3-031-34107-6},
+    doi = {10.1007/978-3-031-34107-6_5}
+  }
+  ```
 
 ## Contact
 
