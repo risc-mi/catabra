@@ -22,9 +22,9 @@ from catabra.util.encoding import Encoder
 def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
             split: Optional[str] = None, sample_weight: Optional[str] = None, ignore: Optional[Iterable[str]] = None,
-            calibrate: Optional[str] = None, time: Optional[int] = None, out: Union[str, Path, None] = None,
-            config: Union[str, Path, dict, None] = None, default_config: Optional[str] = None,
-            monitor: Optional[str] = None, jobs: Optional[int] = None,
+            create_stats: Optional[bool] = None, calibrate: Optional[str] = None, time: Optional[int] = None,
+            out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
+            default_config: Optional[str] = None, monitor: Optional[str] = None, jobs: Optional[int] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
@@ -53,6 +53,8 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     ignore: Iterable[str], optional
         List of columns to ignore when training prediction models. Automatically includes `group`and `split`, but may
         contain further columns.
+    create_stats: bool, optional
+        Whether to generate and save descriptive statistics of the given data table.
     calibrate: str, optional
         Value in column `split` defining the subset to calibrate the trained classifier on. If `None`, no calibration
         happens. Ignored in regression tasks or if `split` is not specified.
@@ -86,6 +88,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         split=split,
         sample_weight=sample_weight,
         ignore=ignore,
+        create_stats=create_stats,
         calibrate=calibrate,
         time=time,
         out=out,
@@ -175,9 +178,10 @@ class CaTabRaAnalysis(CaTabRaBase):
                 y_train = None
 
             # descriptive statistics for overall dataset
-            statistics.save_descriptive_statistics(df=df.drop(self._invocation.ignore, axis=1, errors='ignore'),
-                                                   target=target, classify=self._invocation.classify,
-                                                   fn=self._invocation.out / CaTabRaPaths.Statistics)
+            if self._invocation.create_stats:
+                statistics.save_descriptive_statistics(df=df.drop(self._invocation.ignore, axis=1, errors='ignore'),
+                                                       target=target, classify=self._invocation.classify,
+                                                       fn=self._invocation.out / CaTabRaPaths.Statistics)
 
             # encoder
             encoder = Encoder(classify=self._invocation.classify)
@@ -244,7 +248,8 @@ class CaTabRaAnalysis(CaTabRaBase):
                          split=self._invocation.split,
                          sample_weight=self._invocation.sample_weight,
                          out=self._invocation.out / 'eval',
-                         jobs=self._invocation.jobs)
+                         jobs=self._invocation.jobs,
+                         create_stats=self._invocation.create_stats)
 
     def _get_config_dict(self):
         if isinstance(self._invocation.config_src, (str, Path)):
@@ -546,6 +551,10 @@ class AnalysisInvocation(Invocation):
     def default_config(self) -> Optional[str]:
         return self._default_config
 
+    @property
+    def create_stats(self) -> Optional[bool]:
+        return self._create_stats
+
     def __init__(
             self,
             *table: Union[str, Path, pd.DataFrame],
@@ -562,6 +571,7 @@ class AnalysisInvocation(Invocation):
             config: Union[str, Path, dict, None] = None,
             default_config: Optional[str] = None,
             monitor: Optional[str] = None,
+            create_stats: Optional[bool] = None,
             **_
     ):
 
@@ -577,6 +587,7 @@ class AnalysisInvocation(Invocation):
         self._default_config = default_config
         self._monitor = monitor
         self._target = None
+        self._create_stats = create_stats
 
     def update(self, src: dict = None):
         super().update(src)
@@ -599,6 +610,8 @@ class AnalysisInvocation(Invocation):
                 self._default_config = src.get('default_config')
             if self._monitor is None:
                 self._monitor = src.get('monitor')
+            if self._create_stats is None:
+                self._create_stats = src.get('create_stats')
             self._target = src.get('target')
 
     def resolve(self):
@@ -613,6 +626,8 @@ class AnalysisInvocation(Invocation):
             self._default_config = 'full'
         if self._monitor == '':
             self._monitor = None
+        if self._create_stats is None:
+            self._create_stats = True
         self._ignore = set() if self._ignore is None else set(self._ignore)
 
         if not self._target:
@@ -646,6 +661,7 @@ class AnalysisInvocation(Invocation):
             classify=self._classify,
             group=self._group,
             ignore=self._ignore,
+            create_stats=self._create_stats,
             calibrate=self._calibrate,
             config=self._config_src,
             default_config=self._default_config,
