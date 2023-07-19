@@ -34,6 +34,10 @@ Set up a new Python environment with Python >=3.9 (e.g. using
 activate it, and then run
 
 ```shell
+pip install poetry
+```
+(unless Poetry has been installed already) and
+```shell
 git clone https://github.com/risc-mi/catabra.git
 cd catabra
 poetry install
