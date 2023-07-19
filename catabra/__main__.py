@@ -40,12 +40,19 @@ def make_parser():
                  ' from this file.'
         )
 
+    def _add_stats(_p: argparse.ArgumentParser):
+        _p.add_argument(
+            '--no-stats',
+            action='store_true',
+            help='Disable generating descriptive statistics.'
+        )
+
     def _analyze(args: argparse.Namespace):
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
                 sample_weight=args.sample_weight, ignore=args.ignore, calibrate=args.calibrate, time=args.time,
                 out=args.out, config=args.config, default_config=args.default_config, monitor=args.monitor,
-                jobs=args.jobs, from_invocation=getattr(args, 'from', None))
+                jobs=args.jobs, from_invocation=getattr(args, 'from', None), create_stats=not args.no_stats)
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -58,7 +65,8 @@ def make_parser():
         evaluate(*(args.on or []), folder=args.src, split=args.split, sample_weight=args.sample_weight,
                  model_id=parse_model_id(args.model_id), explain=expl, glob=getattr(args, 'global'), out=args.out,
                  jobs=args.jobs, batch_size=args.batch_size, threshold=args.threshold, bootstrapping_metrics=bs_metrics,
-                 bootstrapping_repetitions=args.bootstrapping_repetitions, from_invocation=getattr(args, 'from', None))
+                 bootstrapping_repetitions=args.bootstrapping_repetitions, from_invocation=getattr(args, 'from', None),
+                 create_stats=not args.no_stats, check_ood=not args.no_ood)
 
     def _explain(args: argparse.Namespace):
         if args.explainer == '':
@@ -158,6 +166,7 @@ def make_parser():
         metavar='IGNORE',
         help='Names of columns to ignore, typically ID-columns. GROUP, SPLIT and SAMPLE_WEIGHT are always ignored.'
     )
+    _add_stats(analyzer)
     analyzer.add_argument(
         '-t', '--time',
         type=int,
@@ -232,6 +241,12 @@ def make_parser():
              ' If given, SOURCE is evaluated on each split separately.'
     )
     _add_weights(evaluator)
+    _add_stats(evaluator)
+    evaluator.add_argument(
+        '--no-ood',
+        action='store_true',
+        help='Disable OOD detection.'
+    )
     evaluator.add_argument(
         '-m', '--model-id',
         type=str,

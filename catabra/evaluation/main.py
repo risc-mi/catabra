@@ -16,9 +16,10 @@ from catabra.util.bootstrapping import Bootstrapping
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,
              glob: Optional[bool] = False, split: Optional[str] = None, sample_weight: Optional[str] = None,
-             out: Union[str, Path, None] = None, jobs: Optional[int] = None, batch_size: Optional[int] = None,
-             threshold: Union[float, str, None] = None, bootstrapping_repetitions: Optional[int] = None,
-             bootstrapping_metrics: Optional[list] = None, from_invocation: Union[str, Path, dict, None] = None):
+             create_stats: Optional[bool] = None, check_ood: Optional[bool] = None, out: Union[str, Path, None] = None,
+             jobs: Optional[int] = None, batch_size: Optional[int] = None, threshold: Union[float, str, None] = None,
+             bootstrapping_repetitions: Optional[int] = None, bootstrapping_metrics: Optional[list] = None,
+             from_invocation: Union[str, Path, dict, None] = None):
     """
     Evaluate an existing CaTabRa object (OOD-detector, prediction model, ...) on held-out test data.
 
@@ -44,6 +45,10 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
     sample_weight: str, optional
         Column with sample weights. If specified and not `""`, must have numeric data type. Sample weights are used both
         for training and evaluating prediction models.
+    create_stats: bool, optional
+        Whether to generate and save descriptive statistics of the given data table.
+    check_ood: bool, optional
+        Whether to apply the OOD-detector (if any) to the given data.
     out: str | Path, optional
         Directory where to save all generated artifacts. Defaults to a directory located in `folder`, with a name
         following a fixed naming pattern. If `out` already exists, the user is prompted to specify whether it should be
@@ -77,6 +82,8 @@ def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = 
         glob=glob,
         split=split,
         sample_weight=sample_weight,
+        create_stats=create_stats,
+        check_ood=check_ood,
         out=out,
         jobs=jobs,
         batch_size=batch_size,
@@ -128,15 +135,16 @@ class CaTabRaEvaluation(CaTabRaBase):
             model = loader.get_model_or_fitted_ensemble()
             ood = loader.get_ood()
 
-            # descriptive statistics for each train/test split
+            # descriptive statistics and OOD detection for each train/test split
             if encoder.task_ is not None:
                 target = list(y_test.columns)
                 for mask, directory in _iter_splits():
-                    statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
-                                                           target=target,
-                                                           classify=encoder.task_ != 'regression',
-                                                           fn=directory / CaTabRaPaths.Statistics)
-                    if ood is not None:
+                    if self._invocation.create_stats:
+                        statistics.save_descriptive_statistics(df=df.loc[mask, list(x_test.columns) + target],
+                                                               target=target,
+                                                               classify=encoder.task_ != 'regression',
+                                                               fn=directory / CaTabRaPaths.Statistics)
+                    if self._invocation.check_ood and ood is not None:
                         # OOD detection must be applied to each split separately, because some detectors (e.g., KS)
                         # evaluate distribution of whole dataset
                         ood_proba = ood.predict_proba(x_test[mask])
@@ -368,11 +376,21 @@ class EvaluationInvocation(Invocation):
     def bootstrapping_metrics(self) -> Optional[list]:
         return self._bootstrapping_metrics
 
+    @property
+    def create_stats(self) -> Optional[bool]:
+        return self._create_stats
+
+    @property
+    def check_ood(self) -> Optional[bool]:
+        return self._check_ood
+
     def __init__(
         self,
         *table,
         split: Optional[str] = None,
         sample_weight: Optional[str] = None,
+        create_stats: Optional[bool] = None,
+        check_ood: Optional[bool] = None,
         out: Union[str, Path, None] = None,
         jobs: Optional[int] = None,
         folder: Union[str, Path] = None,
@@ -388,6 +406,8 @@ class EvaluationInvocation(Invocation):
         super().__init__(*table, split=split, sample_weight=sample_weight, out=out, jobs=jobs)
         self._folder = folder
         self._model_id = model_id
+        self._create_stats = create_stats
+        self._check_ood = check_ood
         self._explain = explain
         self._glob = glob
         self._batch_size = batch_size
@@ -416,6 +436,10 @@ class EvaluationInvocation(Invocation):
                 self._bootstrapping_metrics = src.get('bootstrapping_metrics')
             if self._batch_size is None:
                 self._batch_size = src.get('batch_size')
+            if self._create_stats is None:
+                self._create_stats = src.get('create_stats')
+            if self._check_ood is None:
+                self._check_ood = src.get('check_ood')
 
     def resolve(self):
         super().resolve()
@@ -437,6 +461,11 @@ class EvaluationInvocation(Invocation):
                     self._threshold_on = s[1].strip()
         elif isinstance(self._threshold_raw, (int, float)):
             self._threshold = self._threshold_raw
+
+        if self._create_stats is None:
+            self._create_stats = True
+        if self._check_ood is None:
+            self._check_ood = True
 
         if self._folder is None:
             raise ValueError('No CaTabRa directory specified.')
@@ -467,7 +496,9 @@ class EvaluationInvocation(Invocation):
             threshold=self._threshold_raw,
             bootstrapping_repetitions=self._bootstrapping_repetitions,
             bootstrapping_metrics=self._bootstrapping_metrics,
-            batch_size=self._batch_size
+            batch_size=self._batch_size,
+            create_stats=self._create_stats,
+            check_ood=self._check_ood
         ))
         return dic
 

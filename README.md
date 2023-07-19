@@ -29,10 +29,14 @@ CaTabRa is both a command-line tool and a library, which means it can be easily 
 ### Installation
 
 Clone the repository and install the package with [Poetry](https://python-poetry.org/docs/).
-Set up a new Python environment with Python >=3.9 (e.g. using
+Set up a new Python environment with Python >=3.9, <3.11 (e.g. using
 [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands)),
 activate it, and then run
 
+```shell
+pip install poetry
+```
+(unless Poetry has been installed already) and
 ```shell
 git clone https://github.com/risc-mi/catabra.git
 cd catabra
