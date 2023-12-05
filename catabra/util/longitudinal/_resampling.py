@@ -78,7 +78,7 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F82
     time_col: str, optional
         Name of the column in `df` containing observation times, and also name of column(s) in `windows` containing
         start- and end times of the windows. Note that despite its name the data type of the column is arbitrary, as
-        long as its values can be compared wrt. `<` and `<=`.
+        long as it supports the following arithmetic- and order operations: `-`, `/`, `<`, `<=`.
     attribute_col: str, optional
         Name of the column in `df` containing attribute identifiers. If None, all entries are assumed to belong to the
         same attribute; in that case `agg` may only contain one single item.
@@ -464,11 +464,11 @@ def resample_interval(
     start_col: str, optional
         Name of the column in `df` (and `windows` if it has only one column index level) containing start times. If
         None, all start times are assumed to be -inf. Note that despite its name the data type of the column is
-        arbitrary, as long as its values can be compared wrt. `<` and `<=`.
+        arbitrary, as long as it supports the following arithmetic- and order operations: `-`, `/`, `<`, `<=`.
     stop_col: str, optional
         Name of the column in `df` (and `windows` if it has only one column index level) containing end times. If None,
         all end times are assumed to be +inf. Note that despite its name the data type of the column is arbitrary, as
-        long as its values can be compared wrt. `<` and `<=`.
+        long as it supports the following arithmetic- and order operations: `-`, `/`, `<`, `<=`.
     attribute_col: str, optional
         Name of the column in `df` containing attribute identifiers. If None, all entries are assumed to belong to the
         same attribute.
@@ -1490,7 +1490,8 @@ def _analyze_windows(windows: pd.DataFrame, entity_col, start_col, stop_col, inc
 
             out['n_shifts_regular'] = 0
             if regular.any():
-                n_shifts = np.ceil(out.loc[regular, 'max_duration'] / out.loc[regular, 'max_offset'])
+                with np.errstate(divide='ignore', invalid='ignore'):    # ignore division-by-0 warnings (handled below)
+                    n_shifts = np.ceil(out.loc[regular, 'max_duration'] / out.loc[regular, 'max_offset'])
                 finite_mask = np.isfinite(n_shifts)
                 n_shifts[~finite_mask] = out.loc[regular, 'n'][~finite_mask]
                 n_shifts = n_shifts.astype(np.int32)
