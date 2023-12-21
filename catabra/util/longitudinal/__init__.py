@@ -2,6 +2,6 @@
 #  All rights reserved.
 
 from ._misc import group_temporal, prev_next_values
-from ._resampling import resample_eav, resample_interval
+from ._resampling import resample_eav, resample_interval, make_windows
 
-__all__ = ['resample_eav', 'resample_interval', 'group_temporal', 'prev_next_values']
+__all__ = ['resample_eav', 'resample_interval', 'make_windows', 'group_temporal', 'prev_next_values']

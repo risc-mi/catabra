@@ -1,7 +1,8 @@
 #  Copyright (c) 2022. RISC Software GmbH.
 #  All rights reserved.
 
-from typing import Union
+import collections
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -32,7 +33,7 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F82
         `entity_col`, which can be very costly both in terms of time and memory. Especially if `df` is known to be
         sorted wrt. entities already, the calling function should better take care of this; see
         https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
-    windows: pd.DataFrame | dask.dataframe.DataFrame
+    windows: pd.DataFrame | dask.dataframe.DataFrame | callable
         The target windows into which `df` is resampled. Must have two column index levels and columns `(time_col,
         "start")` (optional; contains start times of each window), `(time_col, "stop")` (optional; contains end times of
         each window), `(entity_col, "")` (optional; contains entity identifiers) and `(window_group_col, "")` (optional;
@@ -44,6 +45,10 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F82
         in terms of time and memory. Especially if `windows` is known to be sorted wrt. entities already, the calling
         function should better take care of this; see
         https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+        Alternatively, `windows` can be a callable that, when applied to a DataFrame and keyword arguments
+        `entity_col`, `time_col`, `attribute_col` and `value_col`, returns a DataFrame of the form described above.
+        The canonical example of such a callable is the result returned by `make_windows()`; see the documentation of
+        `make_windows()` for details.
     agg: dict
         The aggregations to apply. Must be a dict mapping attribute identifiers to lists of aggregation functions,
         which are applied to all observed values of the respective attribute in each specified window. Supported
@@ -144,6 +149,10 @@ def resample_eav(df: Union[pd.DataFrame, 'dask.dataframe.DataFrame'], # noqa F82
     assert value_col in df.columns
     assert attribute_col is None or attribute_col in df.columns
     assert entity_col is None or entity_col in df.columns or entity_col == df.index.name
+
+    if callable(windows):
+        windows = windows(df=df, time_col=time_col, entity_col=entity_col, attribute_col=attribute_col,
+                          value_col=value_col)
 
     tmp_col = '__tmp__'
     assert windows.columns.nlevels == 2
@@ -425,7 +434,7 @@ def resample_interval(
 
     Parameters
     ----------
-    df: pd.DataFrame, dask.dataframe.DataFrame
+    df: pd.DataFrame | dask.dataframe.DataFrame
         The DataFrame to resample. Must have columns `value_col` (contains observed values), `start_col` (optional;
         contains start times), `stop_time` (optional; contains end times), `attribute_col` (optional; contains attribute
         identifiers) and `entity_col` (optional; contains entity identifiers). Must have one column index level. Data
@@ -440,7 +449,7 @@ def resample_interval(
         very costly both in terms of time and memory. Especially if `df` is known to be sorted wrt. entities already,
         the calling function should better take care of this; see
         https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
-    windows: pd.DataFrame, dask.dataframe.DataFrame
+    windows: pd.DataFrame | dask.dataframe.DataFrame | callable
         The target windows into which `df` is resampled. Must have either one or two columns index level(s). If it has
         one column index level, must have columns `start_col` (optional; contains start times of each window),
         `stop_col` (optional; contains end times of each window) and `entity_col` (optional; contains entity
@@ -454,6 +463,10 @@ def resample_interval(
         Especially if `windows` is known to be sorted wrt. entities already, the calling function should better take
         care of this; see
         https://docs.dask.org/en/stable/generated/dask.dataframe.DataFrame.set_index.html.
+        Alternatively, `windows` can be a callable that, when applied to a DataFrame and keyword arguments
+        `entity_col`, `start_col`, `stop_col`, `time_col`, `attribute_col` and `value_col`, returns a DataFrame of the
+        form described above. The canonical example of such a callable is the result returned by `make_windows()`; see
+        the documentation of `make_windows()` for details.
     attributes: list, optional
         The attributes to consider. Must be a list-like of attribute identifiers. None defaults to the list of all such
         identifiers present in column `attribute_col`. If `attribute_col` is None but `attributes` is not, it must be a
@@ -541,6 +554,10 @@ def resample_interval(
     else:
         assert stop_col in df.columns
         time_dtype = df[stop_col].dtype
+
+    if callable(windows):
+        windows = windows(df=df, time_col=time_col, entity_col=entity_col, attribute_col=attribute_col,
+                          value_col=value_col, start_col=start_col, stop_col=stop_col)
 
     # restrict `df` to relevant entries
     mask = ~df[value_col].isna()        # `.notna()` does not work with Dask DataFrames
@@ -717,6 +734,290 @@ def resample_interval(
         )
 
     return out
+
+
+class make_windows:
+    """
+    Convenience function for easily creating windows that can be passed to functions `resample_eav()` and
+    `resample_interval()`.
+    Note that internally, invoking this function does not create the actual windows-DataFrame yet. Instead, when
+    passing the resulting callable to `resample_eav()` or `resample_interval()`, it is applied to the DataFrame to be
+    resampled. This allows to implicitly refer to it here; see the examples below for specific use-cases.
+
+    Parameters
+    ----------
+    df: pd.DataFrame | str, optional
+        Source DataFrame. If None, defaults to the DataFrame to be resampled in `resample_eav()` or
+        `resample_interval()`.
+        Can also be a string, which will be evaluated using Python's `eval()` function. The string can contain
+        references to the DataFrame to be resampled via variable `df`, and to column-names `entity_col`, `time_col`,
+        `start_col` and `stop_col` passed to `resample_eav()` and `resample_interval()`.
+        Example: "df.groupby(entity_col)[time_col].max().to_frame()"
+    entity: pd.Series | pd.Index | str | scalar, optional
+        Entity of each window. Series are used as-is (possibly after re-ordering rows to match other row indices),
+        strings refer to columns in `df`, and scalars are replicated to populate every window with the same value.
+        If None, defaults to `df[entity_col]` if `df` contains that column.
+    start: pd.Series | pd.Index | str | scalar, optional
+        Start time of each window. Series are used as-is (possibly after re-ordering rows to match other row indices),
+        strings refer to columns in `df`, and scalars are replicated to populate every window with the same value.
+        Note that despite its name the data type of the start times is arbitrary, as long as it supports the following
+        arithmetic- and order operations: `-`, `/`, `<`, `<=`.
+        `start` and `start_rel` are mutually exclusive.
+    stop: pd.Series | pd.Index | str | scalar, optional
+        Stop time of each window. Series are used as-is (possibly after re-ordering rows to match other row indices),
+        strings refer to columns in `df`, and scalars are replicated to populate every window with the same value.
+        Note that despite its name the data type of the stop times is arbitrary, as long as it supports the following
+        arithmetic- and order operations: `-`, `/`, `<`, `<=`.
+        `stop` and `stop_rel` are mutually exclusive.
+    start_rel: pd.Series | pd.Index | str | scalar, optional
+        Start time of each window, relative to `anchor`. Series are used as-is (possibly after re-ordering rows to
+        match other row indices), strings refer to columns in `df`, and scalars are replicated to populate every window
+        with the same value. If given, `anchor` must be given, too.
+        `start` and `start_rel` are mutually exclusive.
+    stop_rel: pd.Series | pd.Index | str | scalar, optional
+        Stop time of each window, relative to `anchor`. Series are used as-is (possibly after re-ordering rows to
+        match other row indices), strings refer to columns in `df`, and scalars are replicated to populate every window
+        with the same value. If given, `anchor` must be given, too.
+        `stop` and `stop_rel` are mutually exclusive.
+    duration: pd.Series | pd.Index | str | scalar, optional
+        Duration of each window. Series are used as-is (possibly after re-ordering rows to match other row indices),
+        strings refer to columns in `df`, and scalars are replicated to populate every window with the same value.
+        Durations can only be specified if exactly one endpoint (either start or stop) is specified; the other endpoint
+        is then computed from `duration`.
+    anchor: pd.Series | pd.Index | str | scalar, optional
+        Anchor time `start_rel` and `stop_rel` refer to. Series are used as-is (possibly after re-ordering rows to
+        match other row indices), strings refer to columns in `df`, and scalars are replicated to populate every window
+        with the same value. Ignored unless `start_rel` or `stop_rel` is given.
+        If `start_rel` or `stop_rel` is given but `anchor` is None, it defaults to `time_col`, but a warning message is
+        printed.
+
+    Notes
+    -----
+    * The current implementation does not support Dask DataFrames.
+    * This function does not check whether windows are non-empty, i.e., whether start times come before end times.
+
+    Examples
+    --------
+    * Use-case 1: Create fixed-length windows relative to the time column in the DataFrame to be resampled. Since
+      `anchor` is required by `start_rel` but not set explicitly, it defaults to `time_col`, but a warning message is
+      printed.
+
+      ::
+
+        resample_eav(
+            df_to_be_resampled,
+            make_windows(
+                start_rel=pd.Timedelta("-1 day"),
+                stop_rel=pd.Timedelta("-1 hour")
+            ),
+            ...
+        )
+
+    * Use-case 2: Similar to use-case 1, but only create one window per entity, for the temporally last entry. Note
+      how the DataFrame to be resampled is only passed once directly to function `resample_eav()`; `make_windows()`
+      refers to it implicitly via variable name "df" in the string of keyword argument `df`. Note also that the
+      resulting DataFrame may have entities on its row index.
+
+      ::
+
+        resample_eav(
+            df_to_be_resampled,
+            make_windows(
+                df="df.groupby(entity_col)[time_col].max().to_frame()",
+                start_rel=pd.Timedelta("-7 days"),
+                duration=pd.Timedelta("5 days"),
+                anchor="timestamp"
+            ),
+            time_col="timestamp",
+            entity_col=...,
+            ...
+        )
+
+    * Use-case 3: `make_windows()` can be used with function `resample_interval()`, too -- regardless of whether
+      `time_col` is passed to `resample_interval()` or not.
+
+      ::
+
+        resample_interval(
+            df_to_be_resampled,
+            make_windows(
+                stop=pd.Series(...),
+                duration=pd.Series(...),    # must have the same row index as the Series passed to `start`
+            ),
+            start_col=...,
+            stop_col=...,
+            time_col=...,                   # optional
+            ...
+        )
+    """
+
+    def __init__(self, df: Union[pd.DataFrame, str, None] = None, entity=None, start=None, stop=None, start_rel=None,
+                 stop_rel=None, duration=None, anchor=None):
+        self.df = df
+        self.entity = entity
+        self.start = start
+        self.stop = stop
+        self.start_rel = start_rel
+        self.stop_rel = stop_rel
+        self.duration = duration
+        self.anchor = anchor
+
+    def __call__(self, df: Optional[pd.DataFrame] = None, **columns) -> pd.DataFrame:
+        if self.df is not None:
+            if isinstance(self.df, str):
+                df = eval(self.df, dict(df=df, **columns))
+            else:
+                df = self.df
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError(f'`make_windows()` requires a Pandas DataFrame, but got {df} of type {type(df)}.')
+
+        entity_col = columns.get('entity_col')
+        entity = self.entity
+        if entity is None:
+            if entity_col in df.columns:
+                entity = df[entity_col]
+            elif entity_col == df.index.name:
+                entity = df.index
+        else:
+            entity = make_windows._parse(df, entity, 'entity', allow_str=True, allow_index=True)
+        # `entity` is now either None, or a scalar, or a Series (with arbitrary index)
+
+        time_col = columns.get('time_col')
+        start = self.start
+        start_rel = self.start_rel
+        stop = self.stop
+        stop_rel = self.stop_rel
+        duration = self.duration
+        anchor = self.anchor
+        if not (start is None or start_rel is None):
+            raise ValueError('At least one of `start` or `start_rel` must be None.')
+        if not (stop is None or stop_rel is None):
+            raise ValueError('At least one of `stop` or `stop_rel` must be None.')
+        if start is None and start_rel is None and stop is None and stop_rel is None:
+            raise ValueError('At least one of `start`, `start_rel`, `stop` or `stop_rel` must be given.')
+        if duration is not None and not (start is None and start_rel is None) \
+                and not (stop is None and stop_rel is None):
+            raise ValueError('If `duration` is given, it is not possible to explicitly specify both endpoints.')
+        if not (start_rel is None and stop_rel is None) and anchor is None:
+            if time_col is None:
+                raise ValueError('`anchor` is required and defaults to `time_col`, but `time_col` is None.')
+            else:
+                anchor = time_col
+                print(
+                    f'Setting `anchor` to `time_col` (= "{time_col}").',
+                    'Pass `anchor` explicitly to silence this message.'
+                )
+        elif start_rel is None and stop_rel is None and anchor is not None:
+            anchor = None
+            print(
+                'Warning: `anchor` given, but `start_rel` and `stop_rel` are None; ignoring `anchor`.',
+                'Did you mean `start_rel`/`stop_rel` instead of `start`/`stop`?'
+            )
+
+        start = make_windows._parse(df, start, 'start')
+        start_rel = make_windows._parse(df, start_rel, 'start_rel')
+        stop = make_windows._parse(df, stop, 'stop')
+        stop_rel = make_windows._parse(df, stop_rel, 'stop_rel')
+        duration = make_windows._parse(df, duration, 'duration')
+        anchor = make_windows._parse(df, anchor, 'anchor')
+        # these time columns are either None, or scalars, or Series (with arbitrary index)
+
+        index: Optional[pd.Index] = None if self.df is None else df.index
+        for value in (entity, start, start_rel, stop, stop_rel, duration, anchor):
+            if isinstance(value, pd.Series):
+                if index is None:
+                    index = value.index
+                elif len(value) != len(index):
+                    raise ValueError('All of the given Series must have the same length.')
+                elif index is value.index or (index == value.index).all():
+                    pass
+                elif not index.is_unique:
+                    raise ValueError('Only unique row indices can be reindexed.')
+                elif not index.isin(value.index).all():
+                    raise ValueError(
+                        'All of the given Series must have the same row index keys, possibly in different order.'
+                    )
+                else:
+                    # reindex `values` in place
+                    value.values[:] = value.reindex(index).values
+                    value.index = index
+
+        if index is None:
+            raise ValueError(
+                'Unable to build the windows-DataFrame, because its row index cannot be inferred from the given data.'
+            )
+
+        # all columns are either None, or scalars, or Series with the exact same row index
+
+        if time_col is None:
+            # 1 column index level
+            start_col = columns.get('start_col')
+            stop_col = columns.get('stop_col')
+            if start_col == stop_col:
+                raise ValueError('If `time_col` is None, `start_col` must be different from `stop_col`.')
+        else:
+            # 2 column index levels
+            entity_col = None if entity_col is None else (entity_col, '')
+            start_col = (time_col, 'start')
+            stop_col = (time_col, 'stop')
+
+        if entity is None or entity_col is None:
+            out = pd.DataFrame(index=index)
+        elif isinstance(entity, pd.Series):
+            out = entity.to_frame(entity_col)
+        else:
+            out = pd.DataFrame(data={entity_col: entity}, index=index)
+
+        if start_col is not None:
+            if start is not None:
+                out[start_col] = start
+            elif start_rel is not None:
+                out[start_col] = anchor + start_rel
+
+        if stop_col is not None:
+            if stop is not None:
+                out[stop_col] = stop
+            elif stop_rel is not None:
+                out[stop_col] = anchor + stop_rel
+            elif duration is not None:
+                out[stop_col] = out[start_col] + duration
+
+        if duration is not None and start_col is not None and stop_col in out.columns and start_col not in out.columns:
+            out[start_col] = out[stop_col] - duration
+
+        return out
+
+    @staticmethod
+    def _parse(df: pd.DataFrame, value, name: str, allow_str: bool = False, allow_index: bool = False):
+        or_index = ' or Index' if allow_index else ''
+        if value is None or isinstance(value, pd.Series):
+            pass
+        elif isinstance(value, pd.Index):
+            if allow_index:
+                value = pd.Series(value, index=value)
+            else:
+                raise ValueError(f'`{name}` must not be an Index. Pass a Series instead.')
+        elif isinstance(value, str):
+            if value in df.columns:
+                value = df[value]
+            elif allow_index and value == df.index.name:
+                value = pd.Series(df.index, index=df.index)
+            elif not allow_str:
+                raise ValueError(f'"{value}" not found in the given DataFrame.')
+        elif isinstance(value, pd.DataFrame):
+            raise ValueError(f'`{name}` must not be a DataFrame. Pass a Series{or_index} instead.')
+        elif str(type(value)).startswith("<class 'dask."):
+            raise ValueError(f'`{name}` must not be a Dask object. Pass a Pandas Series{or_index} instead.')
+        elif isinstance(value, collections.abc.Iterable):
+            raise ValueError(
+                f'`{name}` must not be an iterable, but got {value} of type {type(value)}.'
+                f'Pass a Pandas Series{or_index} instead.'
+            )
+
+        return value
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__ + '()'
 
 
 def partition_series(s: pd.Series, n, shuffle: bool = True) -> pd.Series:
