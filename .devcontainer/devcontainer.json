@@ -35,13 +35,6 @@
 			}
         }
     },
-
-	"remoteEnv": {
-	  	"PATH": "${containerEnv:PATH}:/usr/local/cuda/bin",
-	 	"LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64",
-	 	"XLA_FLAGS": "--xla_gpu_cuda_data_dir=/usr/local/cuda"
-	},
-
 	// 👇 Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "vscode",
 
