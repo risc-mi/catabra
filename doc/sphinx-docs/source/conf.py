@@ -10,7 +10,8 @@ import os
 import sys
 from urllib.parse import quote
 
-sys.path.insert(0, os.path.abspath('../../../catabra/'))
+_catabra_root = os.path.abspath('../../../catabra/')
+sys.path.insert(0, _catabra_root)
 sys.path.insert(0, os.path.abspath('_ext'))
 
 project = 'CaTabRa'
@@ -55,10 +56,9 @@ def linkcode_resolve(domain, info):
     if not info['module']:
         return None
     filename = quote(info['module'].replace('.', '/'))
-    filename = 'catabra/' + filename
-    if os.path.exists(os.path.abspath('../../../catabra/' + filename + '.py')):
+    if os.path.exists(os.path.join(_catabra_root, filename + '.py')):
         pass
-    elif os.path.exists(os.path.abspath('../../../catabra/' + filename + '/__init__.py')):
+    elif os.path.exists(os.path.join(_catabra_root, filename, '__init__.py')):
         # this is not optimal yet, since the object may actually be defined in different file
         filename += '/__init__'
     else:
@@ -71,5 +71,5 @@ def linkcode_resolve(domain, info):
         anchor = ""
 
     # github
-    result = github_url + "blob/main/%s.py%s" % (filename, anchor)
+    result = github_url + "blob/main/catabra/%s.py%s" % (filename, anchor)
     return result
