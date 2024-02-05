@@ -1,0 +1,42 @@
+{
+	"name": "catabra",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			"PYTHON_VERSION": "3.9.7",
+			"BASE_IMAGE": "mcr.microsoft.com/vscode/devcontainers/base:ubuntu"
+		}
+	},
+	// 👇 Features to add to the Dev Container. More info: https://containers.dev/implementors/features.
+	// "features": {},
+
+	// 👇 Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// 👇 Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": [
+		"poetry install"
+	],
+
+	// 👇 Configure tool-specific properties.
+	"customizations": {
+        "vscode": {
+            "extensions":[
+				"ms-python.python",
+				"njpwerner.autodocstring",
+				"ms-toolsai.jupyter",
+				"ms-toolsai.jupyter-keymap",
+				"ms-toolsai.jupyter-renderers",
+				"ms-toolsai.vscode-jupyter-cell-tags",
+				"ms-toolsai.vscode-jupyter-slideshow"
+			],
+			"settings": {
+				"python.pythonPath": "/.venv/bin/python"
+			}
+        }
+    },
+	// 👇 Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "vscode",
+
+	"initializeCommand": "ECHO Initializing..."
+}
