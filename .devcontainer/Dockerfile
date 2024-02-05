@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
 ARG POETRY_VERSION=1.5.1
-LABEL maintainer="Sophie Kaltenleithner <sophie.kaltenleithner@risc-software.at>, Alexander Maletzky <alexander.maletzky@risc-software.at>"
+LABEL maintainer="RISC Software GmbH"
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -yq \
