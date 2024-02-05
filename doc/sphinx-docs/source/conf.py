@@ -56,6 +56,14 @@ def linkcode_resolve(domain, info):
         return None
     filename = quote(info['module'].replace('.', '/'))
     filename = 'catabra/' + filename
+    if os.path.exists(os.path.abspath('../../../catabra/' + filename + '.py')):
+        pass
+    elif os.path.exists(os.path.abspath('../../../catabra/' + filename + '/__init__.py')):
+        # this is not optimal yet, since the object may actually be defined in different file
+        filename += '/__init__'
+    else:
+        return None
+
     if "fullname" in info:
         anchor = info["fullname"]
         anchor = "#:~:text=" + quote(anchor.split(".")[-1])
