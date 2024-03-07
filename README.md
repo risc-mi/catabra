@@ -160,7 +160,7 @@ can be found on our [ReadTheDocs](https://catabra.readthedocs.io/en/latest/index
 
 ## References
 
-If you use CaTabRa in your research, we would appreciate citing the following conference paper:
+**If you use CaTabRa in your research, we would appreciate citing the following conference paper:**
 
 * A. Maletzky, S. Kaltenleithner, P. Moser and M. Giretzlehner.
   *CaTabRa: Efficient Analysis and Predictive Modeling of Tabular Data*. In: I. Maglogiannis, L. Iliadis, J. MacIntyre
@@ -182,6 +182,21 @@ If you use CaTabRa in your research, we would appreciate citing the following co
     doi = {10.1007/978-3-031-34107-6_5}
   }
   ```
+
+**The following publications used CaTabRa for data analysis and model development:**
+
+* N. Stroh, H. Stefanits, A. Maletzky, S. Kaltenleithner, S. Thumfart, M. Giretzlehner, R. Drexler, F. Ricklefs,
+  L. Dührsen, S. Aspalter, P. Rauch, A. Gruber and M. Gmeiner.
+  *Machine learning based outcome prediction of microsurgically treated unruptured intracranial aneurysms*.
+  Scientific Reports 13:22641, 2023. [DOI:10.1038/s41598-023-50012-8](https://doi.org/10.1038/s41598-023-50012-8)
+* T. Tschoellitsch, P. Moser, A. Maletzky, P. Seidl, C. Böck, T. Roland, H. Ludwig, S. Süssner, S. Hochreiter and
+  J. Meier.
+  *Potential Predictors for Deterioration of Renal Function After Transfusion*. Anesthesia & Analgesia 138(3):145-154, 2024.
+  [DOI:10.1213/ANE.0000000000006720](https://doi.org/10.1213/ANE.0000000000006720)
+* T. Tschoellitsch, A. Maletzky, P. Moser, P. Seidl, C. Böck, T. Tomic Mahečić, S. Thumfart, M. Giretzlehner,
+  S. Hochreiter and J. Meier.
+  *Machine Learning Prediction of Unsafe Discharge from Intensive Care: a retrospective cohort study*. submitted
+  
 
 ## Contact
 
