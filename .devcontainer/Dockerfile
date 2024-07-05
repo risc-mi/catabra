@@ -5,7 +5,7 @@ ARG PYTHON_VERSION
 ARG POETRY_VERSION=1.5.1
 LABEL maintainer="RISC Software GmbH"
 
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -yq \
     build-essential \
     libssl-dev \
@@ -25,8 +25,8 @@ RUN apt-get update && apt-get install -yq \
     python3-distutils \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PYENV_ROOT $HOME/.pyenv
-ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
+ENV PYENV_ROOT=/.pyenv
+ENV PATH=$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
 # Install pyenv
 RUN set -ex \
@@ -41,6 +41,7 @@ RUN pip install --upgrade pip
 # Install and configure Poetry
 ENV POETRY_VERSION=${POETRY_VERSION} \
     POETRY_HOME=/opt/poetry \
-    POETRY_VIRTUALENVS_CREATE=true
+    POETRY_VIRTUALENVS_CREATE=false
+    # POETRY_VIRTUALENVS_IN_PROJECT=true
 RUN curl -sSL https://install.python-poetry.org | python -
 ENV PATH="${PATH}:${POETRY_HOME}/bin"

@@ -14,7 +14,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.11"
+python = ">=3.9,<3.11"   # update in devcontainer.json accordingly
 llvmlite = "0.38.0"
 shap = "^0.41.0"
 auto-sklearn = "^0.14.6"
