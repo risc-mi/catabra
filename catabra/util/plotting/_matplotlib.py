@@ -562,7 +562,7 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
 
 
 def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict] = None, title: Optional[str] = None,
-                   x_label: Optional[str] = None, ax=None, figsize='auto', **kwargs):
+                   x_label: Optional[str] = None, ax=None, figsize='auto', cmap='red_blue', **kwargs):
     """
     Create a horizontal bar plot.
 
@@ -588,6 +588,8 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
         An existing axis, or None.
     figsize: default='auto'
         Figure size or "auto".
+    cmap: str, default='red_blue'
+        Name of a color map.
 
     Returns
     -------
@@ -611,8 +613,9 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
 
     negative_values_present = any((values[columns] < 0).any().any() for columns in groups.values())
     positive_values_present = any((values[columns] > 0).any().any() for columns in groups.values())
-    neg_color = _common.get_colormap('blue_rgb')
-    pos_color = _common.get_colormap('red_rgb')
+    cmap = _common.get_colormap(cmap)
+    neg_color = np.asarray(cmap(0.0)[:3])
+    pos_color = np.asarray(cmap(1.0)[:3])
 
     if len(groups) > 1:
         if negative_values_present:
