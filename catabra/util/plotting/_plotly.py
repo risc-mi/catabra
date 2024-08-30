@@ -65,7 +65,8 @@ def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History
         xaxis=dict(title='Time' + unit_suffix),
         yaxis=dict(title='Metric', type=y_scale),
         title=dict(text=_common.make_title(None, title), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
@@ -438,7 +439,8 @@ def threshold_metric_curve(th: np.ndarray, ys, threshold: Optional[float] = None
         xaxis=dict(title='Threshold', range=[min(-0.05, x_min), max(1.05, x_max)], constrain='domain'),
         yaxis=dict(title='Metric', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
@@ -503,7 +505,8 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         yaxis=dict(title='Fraction of positive class', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
         showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
-                   or any(lbl is not None for lbl in deviation_legend)
+                   or any(lbl is not None for lbl in deviation_legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
