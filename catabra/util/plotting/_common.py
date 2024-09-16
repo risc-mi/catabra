@@ -28,9 +28,41 @@ def get_colormap(cmap):
             return getattr(shap.plots.colors, cmap)
         except:     # noqa
             pass
+        try:
+            return load_saved_colormap(cmap)
+        except:     # noqa
+            pass
         raise ValueError('Unknown color map: ' + cmap)
     else:
         return cmap
+
+
+def load_saved_colormap(name: str):
+    import pickle
+    from pathlib import Path
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    with open(Path(__file__).parent / (name + '.pkl'), mode='rb') as fh:
+        data = pickle.load(fh)
+    
+    cmap = LinearSegmentedColormap(name, {
+        "red": [(scale, color[0], color[0]) for scale, color in data['colors']],
+        "green": [(scale, color[1], color[1]) for scale, color in data['colors']],
+        "blue": [(scale, color[2], color[2]) for scale, color in data['colors']],
+        "alpha": [(scale, color[3], color[3]) for scale, color in data['colors']]
+    })
+    c = data.get('bad')
+    if c is not None:
+        cmap.set_bad(c)
+    c = data.get('over')
+    if c is not None:
+        cmap.set_over(c)
+    c = data.get('under')
+    if c is not None:
+        cmap.set_under(c)
+
+    return cmap
 
 
 def convert_timedelta(x: np.ndarray) -> Tuple[pd.Timedelta, str]:

@@ -1546,7 +1546,7 @@ def calc_metrics(predictions: Union[str, Path, pd.DataFrame], encoder: 'Encoder'
 
     y_true, y_hat, weight = _get_y_true_hat_weight_from_predictions(predictions, encoder)
     y_true = encoder.transform(y=y_true, inplace=False)
-    na_mask = ~np.isnan(y_hat).any(axis=1) & y_true.notna().all(axis=1)
+    na_mask = y_hat.notna().all(axis=1) & y_true.notna().all(axis=1)
 
     if isinstance(sample_weight, str):
         if sample_weight == 'from_predictions':
@@ -1670,7 +1670,7 @@ def plot_results(predictions: Union[str, Path, pd.DataFrame], metrics_: Union[st
                 roc_pr_curve = metrics.roc_pr_curve(y_true, y_hat, sample_weight=sample_weight)
                 roc_curve = roc_pr_curve[:3]
                 pr_curve = roc_pr_curve[3:]
-                na_mask = ~np.isnan(y_hat) & y_true.notna()
+                na_mask = y_hat.notna() & y_true.notna()
                 _, _, roc_curve_bs, pr_curve_bs, calibration_bs = \
                     _bootstrap(bootstrapping_repetitions, y_true[na_mask], y_hat[na_mask],
                                calib=calib, calc_roc_pr_calibration=True,

@@ -65,7 +65,8 @@ def training_history(x: np.ndarray, ys, title: Optional[str] = 'Training History
         xaxis=dict(title='Time' + unit_suffix),
         yaxis=dict(title='Metric', type=y_scale),
         title=dict(text=_common.make_title(None, title), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
@@ -438,7 +439,8 @@ def threshold_metric_curve(th: np.ndarray, ys, threshold: Optional[float] = None
         xaxis=dict(title='Threshold', range=[min(-0.05, x_min), max(1.05, x_max)], constrain='domain'),
         yaxis=dict(title='Metric', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
-        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
+        showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
@@ -503,7 +505,8 @@ def calibration_curve(th_lower: np.ndarray, th_upper: np.ndarray, ys, name: Opti
         yaxis=dict(title='Fraction of positive class', range=[min(-0.05, y_min), max(1.05, y_max)], constrain='domain'),
         title=dict(text=_common.make_title(name, title, sep='<br>'), x=0.5, xref='paper'),
         showlegend=len(ys) > 1 or any(lbl is not None for lbl in legend)
-                   or any(lbl is not None for lbl in deviation_legend)
+                   or any(lbl is not None for lbl in deviation_legend),
+        hovermode='x unified' if len(ys) > 1 else 'closest'
     )
     return fig
 
@@ -626,7 +629,7 @@ def beeswarm(values: pd.DataFrame, colors: Union[pd.DataFrame, pd.Series, None] 
 
 
 def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict] = None, title: Optional[str] = None,
-                   x_label: Optional[str] = None, **kwargs):
+                   x_label: Optional[str] = None, cmap='red_blue', **kwargs):
     """
     Create a horizontal bar plot.
     :param values: Values to plot, a DataFrame whose rows correspond to the rows in the plot and whose columns
@@ -641,6 +644,7 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
 
     :param title: Title of the figure.
     :param x_label: Label of the x-axis.
+    :param cmap: Name of a color map.
     :return: plotly figure object.
     """
 
@@ -655,8 +659,9 @@ def horizontal_bar(values: Union[pd.Series, pd.DataFrame], groups: Optional[dict
 
     fig = go.Figure()
 
-    neg_color = (_common.get_colormap('blue_rgb')[:3] * 255).astype(np.uint8)
-    pos_color = (_common.get_colormap('red_rgb')[:3] * 255).astype(np.uint8)
+    cmap = _common.get_colormap(cmap)
+    neg_color = (np.asarray(cmap(0.0)[:3]) * 255).astype(np.uint8)
+    pos_color = (np.asarray(cmap(1.0)[:3]) * 255).astype(np.uint8)
     pos_color = f'rgb({pos_color[0]},{pos_color[1]},{pos_color[2]})'
     neg_color = f'rgb({neg_color[0]},{neg_color[1]},{neg_color[2]})'
 

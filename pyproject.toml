@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "catabra"
-version = "0.1.0"
+version = "0.1.1"
 description = "CaTabRa is a Python package for analyzing tabular data in a largely automated way"
 authors = ["RISC Software GmbH"]
 license = "Apache 2.0 with Commons Clause"
@@ -14,7 +14,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.11"
+python = ">=3.9,<3.11"   # update in devcontainer.json accordingly
 llvmlite = "0.38.0"
 shap = "^0.41.0"
 auto-sklearn = "^0.14.6"
@@ -26,6 +26,7 @@ openpyxl = "^3.0.9"
 matplotlib = "^3.4.3"
 numpy = "^1.21.5"
 numba = "^0.55.1"
+catabra-pandas = "*"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
