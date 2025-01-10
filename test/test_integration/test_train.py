@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 import shutil
@@ -48,6 +48,7 @@ def _test(
         'ensemble_size': 1 if single_model else 10,
         'auto-sklearn': {} if holdout else dict(resampling_strategy='cv',
                                                 resampling_strategy_arguments=dict(folds=3)),
+        'memory_limit': 9000,
         'ood_class': None  # OOD detection is tested separately elsewhere
     }
     if not holdout:

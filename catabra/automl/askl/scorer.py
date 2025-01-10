@@ -1,9 +1,8 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from autosklearn import metrics
-
-from catabra.util import metrics as um
+from catabra_lib import metrics as um
 
 # scorers not yet predefined in austosklearn
 _EXTRA_SCORERS = dict(

@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 import importlib
@@ -17,6 +17,8 @@ import pandas as pd
 import sklearn
 import yaml
 from autosklearn import __version__ as askl_version
+from catabra_lib import metrics, split
+from catabra_lib.preprocessing import FeatureFilter
 from smac.callbacks import IncorporateRunResultCallback
 from smac.runhistory.runhistory import RunHistory
 from smac.tae import StatusType
@@ -25,9 +27,8 @@ from catabra.automl.askl import explanation
 from catabra.automl.askl.scorer import get_scorer
 from catabra.automl.base import AutoMLBackend
 from catabra.automl.fitted_ensemble import FittedEnsemble, _model_predict
-from catabra.util import io, logging, metrics, split
+from catabra.util import io, logging
 from catabra.util.common import repr_list, repr_timedelta
-from catabra.util.preprocessing import FeatureFilter
 
 explanation.TransformationExplainer.register_factory('auto-sklearn', explanation.askl_explainer_factory,
                                                      errors='ignore')

@@ -1,16 +1,11 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from typing import Union
 
+from catabra_lib.plotting import mpl_backend, plotly_backend
+
 from catabra.util.io import Path, make_path
-from catabra.util.plotting import _matplotlib as mpl_backend  # noqa F401
-
-try:
-    from catabra.util.plotting import _plotly as plotly_backend
-except ModuleNotFoundError:
-    plotly_backend = None
-
 
 PLOTLY_WARNING = 'plotly is required for creating interactive plots. You can install it either through' \
                  ' pip (`pip install plotly==5.7.0`) or conda (`conda install plotly=5.7.0 -c plotly`).' \
@@ -61,3 +56,6 @@ def save(fig, fn: Union[str, Path], png: bool = False):
         fig.write_html(fn, include_plotlyjs='cdn', include_mathjax='cdn', full_html=True)
     else:
         raise ValueError(f'Cannot save figure of type {type(fig)}.')
+
+
+__all__ = ['mpl_backend', 'plotly_backend', 'save']

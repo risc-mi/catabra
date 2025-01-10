@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 import sys
@@ -247,61 +247,49 @@ class ColumnTransformerExplainer(TransformationExplainer):
             return False
 
 
-class NumCatTransformerExplainer(TransformationExplainer):
+class DTypeTransformerExplainer(TransformationExplainer):
 
-    def __init__(self, transformer: 'NumCatTransformerExplainer', params=None):
-        super(NumCatTransformerExplainer, self).__init__(transformer=transformer, params=params)
+    def __init__(self, transformer: 'DTypeTransformer', params=None):   # noqa F821 # type: ignore
+        super(DTypeTransformerExplainer, self).__init__(transformer=transformer, params=params)
         if params is None:
-            num_params = cat_params = None
-            self._n_num: Optional[int] = None
-            self._n_cat: Optional[int] = None
+            sub_params = [None] * len(self._transformer.transformers_)
+            self._n_cols: Optional[list] = None
             self._columns: Optional[list] = None
         else:
-            num_params = params.get('num_explainer')
-            cat_params = params.get('cat_explainer')
-            self._n_num = params.get('n_num')
-            self._n_cat = params.get('n_cat')
+            sub_params = params.get('sub_explainer', [None] * len(self._transformer.transformers_))
+            self._n_cols = params.get('n_cols')
             self._columns = params.get('columns')
-        if self._transformer.num_transformer_ is None:
-            self._num_explainer = None
-        else:
-            self._num_explainer = TransformationExplainer.make(self._transformer.num_transformer_, params=num_params)
-        if self._transformer.cat_transformer_ is None:
-            self._cat_explainer = None
-        else:
-            self._cat_explainer = TransformationExplainer.make(self._transformer.cat_transformer_, params=cat_params)
+        self._explainer = [
+            None if trans is None else TransformationExplainer.make(trans, params=p)
+            for p, (_, trans, _) in zip(sub_params, self._transformer.transformers_)
+        ]
         self._current_columns = None
 
     @property
     def params_(self) -> dict:
-        out = super(NumCatTransformerExplainer, self).params_
-        if self._num_explainer is not None:
-            out['num_explainer'] = self._num_explainer.params_
-        if self._cat_explainer is not None:
-            out['cat_explainer'] = self._cat_explainer.params_
-        out.update(n_num=self._n_num, n_cat=self._n_cat, columns=self._columns)
+        out = super(DTypeTransformerExplainer, self).params_
+        out['sub_explainer'] = [None if e is None else e.params_ for e in self._explainer]
+        out.update(n_cols=self._n_cols, columns=self._columns)
         return out
 
     def fit_forward(self, x: pd.DataFrame, y):
         self._transformer._validate_input(x)        # noqa
+        x, _ = self._transformer._convert_temporal(x)   # noqa
         self._columns = list(x.columns)
         self._current_columns = list(x.columns)
-        num, num_df = self._forward_num(x, y, fit=True)
-        cat, cat_df = self._forward_cat(x, y, fit=True)
-        self._n_num = (0 if num is None else num.shape[1]) if num_df is None else num_df.shape[1]
-        self._n_cat = (0 if cat is None else cat.shape[1]) if cat_df is None else cat_df.shape[1]
-        return self._transformer.__class__._combine_results(num, num_df, cat, cat_df,                   # noqa
-                                                            x[self._transformer.passthrough_cols_])
+        out = [self._partial_forward(x, y, expl, trans, cols, fit=True)
+               for expl, (_, trans, cols) in zip(self._explainer, self._transformer.transformers_)]
+        self._n_cols = [x_trans.shape[1] for x_trans in out]
+        return self._transformer.__class__._combine_results(out)    # noqa
 
     def forward(self, x: pd.DataFrame):
         self._transformer._validate_input(x)        # noqa
+        x, _ = self._transformer._convert_temporal(x)   # noqa
         self._current_columns = list(x.columns)
-        num, num_df = self._forward_num(x, None)
-        cat, cat_df = self._forward_cat(x, None)
-        assert self._n_num == (0 if num is None else num.shape[1]) if num_df is None else num_df.shape[1]
-        assert self._n_cat == (0 if cat is None else cat.shape[1]) if cat_df is None else cat_df.shape[1]
-        return self._transformer.__class__._combine_results(num, num_df, cat, cat_df,                   # noqa
-                                                            x[self._transformer.passthrough_cols_])
+        out = [self._partial_forward(x, None, expl, trans, cols, fit=False)
+               for expl, (_, trans, cols) in zip(self._explainer, self._transformer.transformers_)]
+        assert tuple(self._n_cols) == tuple(x_trans.shape[1] for x_trans in out)
+        return self._transformer.__class__._combine_results(out)    # noqa
 
     def backward(self, s: np.ndarray) -> np.ndarray:
         self._validate_backward_input(s, self._current_columns, min_rank=2)
@@ -311,54 +299,43 @@ class NumCatTransformerExplainer(TransformationExplainer):
         self._validate_backward_input(s, self._columns, min_rank=1)
         return self._backward(s, self._columns, 'backward_global')
 
-    def _forward_num(self, x: pd.DataFrame, y, fit: bool = False):
-        if self._num_explainer is not None:
-            x_num, _ = self._transformer._prepare_num(x[self._transformer.num_cols_])       # noqa
-            num = self._num_explainer.fit_forward(x_num, y) if fit else self._num_explainer.forward(x_num)
-            num, num_df = self._transformer._postproc_num(num, x.index)     # noqa
+    def _partial_forward(self, x: pd.DataFrame, y, expl, trans, cols, fit: bool = False):
+        if expl is None:
+            # passthrough
+            X_trans = x[cols]
         else:
-            num = num_df = None
-        return num, num_df
-
-    def _forward_cat(self, x: pd.DataFrame, y, fit: bool = False):
-        if self._cat_explainer is not None:
-            x_cat = x[self._transformer.cat_cols_]
-            cat = self._cat_explainer.fit_forward(x_cat, y) if fit else self._cat_explainer.forward(x_cat)
-            cat, cat_df = self._transformer._postproc_cat(cat, x.index)     # noqa
-        else:
-            cat = cat_df = None
-        return cat, cat_df
+            X_trans = expl.fit_forward(x[cols], y) if fit else expl.forward(x[cols])
+            X_trans, X_trans_df = self._transformer._postproc(X_trans, trans, cols, x.index)
+            if X_trans_df is not None:
+                X_trans = X_trans_df
+        return X_trans
 
     def _validate_backward_input(self, s, columns, min_rank: int = 2):
-        assert self._n_num is not None
-        assert self._n_cat is not None
+        assert self._n_cols is not None
         assert columns is not None
-        n_out = self._n_num + self._n_cat + len(self._transformer.passthrough_cols_)
+        n_out = sum(self._n_cols)
         if len(s.shape) < min_rank:
             raise ValueError(f'S must be at least a {min_rank}D array.')
         elif s.shape[-1] != n_out:
             raise ValueError(_BACKWARD_INPUT_SHAPE.format(s.shape[-1], self.__class__.__name__, n_out))
 
     def _backward(self, s: np.ndarray, columns: list, func: str) -> np.ndarray:
-        if self._num_explainer is None:
-            num = s[..., :0]
-        else:
-            num = getattr(self._num_explainer, func)(s[..., :self._n_num])
-        assert num.shape[-1] == len(self._transformer.num_cols_)
-        if self._cat_explainer is None:
-            cat = s[..., :0]
-        else:
-            cat = getattr(self._cat_explainer, func)(s[..., self._n_num:self._n_num + self._n_cat])
-        assert cat.shape[-1] == len(self._transformer.cat_cols_)
+        i = 0
+        lst = []
+        for expl, n_cols, (_, _, cols) in zip(self._explainer, self._n_cols, self._transformer.transformers_):
+            if expl is None:
+                s_back = s[..., i:i + n_cols]
+            else:
+                s_back = getattr(expl, func)(s[..., i:i + n_cols])
+            i += n_cols
+            assert s_back.shape[-1] == len(cols)
+            lst.append(s_back)
 
         out = np.zeros(s.shape[:-1] + (len(columns),), dtype=s.dtype)
 
-        for i, c in enumerate(self._transformer.num_cols_):
-            out[..., columns.index(c)] += num[..., i]
-        for i, c in enumerate(self._transformer.cat_cols_):
-            out[..., columns.index(c)] += cat[..., i]
-        for i, c in enumerate(self._transformer.passthrough_cols_):
-            out[..., columns.index(c)] += s[..., self._n_num + self._n_cat + i]
+        for s_back, (_, _, cols) in zip(lst, self._transformer.transformers_):
+            for i, c in enumerate(cols):
+                out[..., columns.index(c)] += s_back[..., i]
 
         return out
 
@@ -598,10 +575,12 @@ class FeatureAgglomerationExplainer(TransformationExplainer):
     def forward(self, x):
         if self._transformer.pooling_func in (np.min, np.max):
             self._weights = np.zeros(x.shape, dtype=np.float32)
+            x0 = np.asarray(x)
             for lbl in self._clusters:
                 mask = np.asarray(self._transformer.labels_ == lbl)     # (n_features,)
-                mask = (mask[np.newaxis] & (x == self._transformer.pooling_func(x[:, mask], axis=1)[..., np.newaxis]))\
-                    .astype(self._weights.dtype)                        # (n_samples, n_features)
+                mask = (
+                    mask[np.newaxis] & (x0 == self._transformer.pooling_func(x0[:, mask], axis=1)[..., np.newaxis])
+                ).astype(self._weights.dtype)                        # (n_samples, n_features)
                 mask /= np.maximum(mask.sum(axis=1, keepdims=True), 1e-8)
                 self._weights += mask
         return self.transform(x)

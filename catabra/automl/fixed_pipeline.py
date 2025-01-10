@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 import time as py_time  # otherwise shadowed by parameter of method `fit()`
@@ -6,13 +6,14 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from catabra_lib import preprocessing
 from sklearn.base import clone
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline, make_pipeline
 
 from catabra.automl.base import AutoMLBackend
 from catabra.automl.fitted_ensemble import FittedEnsemble, _model_predict
-from catabra.util import logging, preprocessing
+from catabra.util import logging
 
 
 def _flatten_transformer_pipeline(obj) -> list:
@@ -253,27 +254,29 @@ def register_backend(name: str, preprocessing=None, estimator=None):
 ###############################################
 
 
-def standard_preprocessing() -> preprocessing.NumCatTransformer:
+def standard_preprocessing() -> preprocessing.DTypeTransformer:
     """
     Construct a transformer that scales numerical and time-like columns to the range [0, 1], one-hot encodes
     categorical columns, and imputes missing numerical values with -1 (after scaling).
 
     Returns
     -------
-    NumCatTransformer
+    DTypeTransformer
         The transformer object. Parameters of its components can be retrieved and set via `get_params()` and
         `set_params()`, respectively, following the scikit-learn convention of composing names with the infix "__".
         Example: `set_params(num_transformer__simpleimputer__strategy="mean")`.
     """
-    return preprocessing.NumCatTransformer(
-        num_transformer=make_pipeline(
+    return preprocessing.DTypeTransformer(
+        num=make_pipeline(
             preprocessing.MinMaxScaler(fit_bool=False),
             SimpleImputer(strategy='constant', fill_value=-1),
             'passthrough'
         ),
-        cat_transformer=preprocessing.OneHotEncoder(drop_na=True),
+        cat=preprocessing.OneHotEncoder(drop_na=True),
         obj='drop',
         bool='num',     # cast to float by setting False to 0 and True to 1
-        timedelta='[s]',
-        timestamp='[s]'
+        timedelta='num',
+        datetime='num',
+        timedelta_resolution='s',
+        datetime_resolution='s'
     )
