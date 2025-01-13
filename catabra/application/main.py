@@ -101,7 +101,8 @@ class CaTabRaApplication(CaTabRaBase):
             if self._invocation.check_ood and ood is not None:
                 ood_proba = ood.predict_proba(X)
                 if isinstance(ood_proba, (pd.Series, np.ndarray)):
-                    ood_predictions = pd.DataFrame(ood_proba, columns=['proba'])
+                    assert len(ood_proba) == len(X)
+                    ood_predictions = pd.DataFrame(ood_proba, columns=['proba'], index=X.index)
                 else:
                     assert isinstance(ood, OverallOODDetector)
                     ood_predictions = pd.DataFrame(index=['overall'], data={'proba': [ood_proba]})
@@ -130,9 +131,9 @@ class CaTabRaApplication(CaTabRaBase):
                 if model_predictions is None:
                     caption = 'OOD results'
                     model_predictions = ood_predictions
-                elif ood_predictions is not None:
+                elif ood_predictions is not None and len(model_predictions) == len(ood_predictions) \
+                        and (model_predictions.index == ood_predictions.index).all():
                     caption = 'Predictions and OOD results'
-                    assert (model_predictions.index == ood_predictions.index).all()
                     ood_predictions.columns = ['__ood_' + c for c in ood_predictions.columns]
                     model_predictions = pd.concat([model_predictions, ood_predictions], axis=1, sort=False)
 
