@@ -1,11 +1,11 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from catabra_lib.statistics import chi_square, mann_whitney_u
 
 from catabra.util import logging
 from catabra.util.io import Path, convert_rows_to_str, make_path, write_df, write_dfs
@@ -219,100 +219,3 @@ def calc_descriptive_statistics(df: pd.DataFrame, target: list, classify: bool, 
         corr = None
 
     return dict_stat, dict_non_num_stat, corr
-
-
-def mann_whitney_u(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
-    """
-    Mann-Whitney U test for testing whether two samples are equal (more precisely: have equal median). Only applicable
-    to numerical observations; categorical observations should be treated with the chi square test. The Mann-Whitney U
-    test is a special case of the Kruskal-Wallis H test, which works for more than two samples.
-
-    Parameters
-    ----------
-    x: ndarray | Series
-        First sample, array-like with numerical values.
-    y: ndarray | Series
-        Second sample, array-like with numerical values.
-    **kwargs:
-        Keyword arguments passed to `scipy.stats.mannwhitneyu()`.
-
-    Returns
-    -------
-    float
-        P-value. Smaller values mean that `x` and `y` are distributed differently. Note that this test is symmetric
-        between `x` and `y`.
-    """
-    args = []
-    for a in (x, y):
-        if a.dtype.kind == 'b':
-            a = a.astype(np.float32)
-        elif a.dtype.kind == 'm':
-            a = a[~np.isnan(a)] / pd.Timedelta(1, unit='s')
-        elif a.dtype.kind == 'M':
-            a = (a[~np.isnan(a)] - pd.Timestamp(0)) / pd.Timedelta(1, unit='s')
-        elif a.dtype.kind == 'O':
-            raise TypeError(f'Invalid data type for Mann-Whitney U test: expected numerical but found {a.dtype}')
-        else:
-            try:
-                na_mask = np.isnan(a)
-                if na_mask.any():
-                    a = a[~na_mask]
-            except:     # noqa
-                pass
-        if len(a) == 0:
-            return np.nan
-        args.append(a)
-
-    try:
-        return stats.mannwhitneyu(*args, **kwargs).pvalue
-    except TypeError:
-        return np.nan
-
-
-def chi_square(x: Union[np.ndarray, pd.Series], y: Union[np.ndarray, pd.Series], **kwargs) -> float:
-    """
-    Chi square test for testing whether a sample of categorical observations is distributed according to another sample
-    of categorical observations.
-
-    Parameters
-    ----------
-    x: ndarray | Series
-        First sample, array-like with categorical values.
-    y: ndarray, Series
-        Second sample, array-like with categorical values.
-    **kwargs:
-        Keyword arguments passed to `scipy.stats.chisquare()`.
-
-    Returns
-    -------
-    float
-        p-value. Smaller values mean that `x` is distributed differently from `y`.  Note that this test is *not*
-        symmetric between `x` and `y`!
-    """
-    if not isinstance(x, pd.Series):
-        x = pd.Series(x)
-    if not isinstance(y, pd.Series):
-        y = pd.Series(y)
-
-    x = x.value_counts()
-    y = y.value_counts(normalize=True) * x.sum()
-
-    # with categorical data types, all categories are listed even if they don't actually appear; must be dropped
-    x = x[x > 0]
-    y = y[y > 0]
-
-    if len(x) == 0 or len(y) == 0:
-        return np.nan
-
-    all_cats = list(set(x.index).union(y.index))
-    x = x.reindex(all_cats, fill_value=0)
-    y = y.reindex(all_cats, fill_value=0)
-
-    old = np.seterr(all='ignore')
-    try:
-        out = stats.chisquare(x, y, **kwargs).pvalue
-        np.seterr(**old)
-        return out
-    except:     # noqa
-        np.seterr(**old)
-        return np.nan

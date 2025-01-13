@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from functools import partial
@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import sklearn
 import sklearn.ensemble
+from catabra_lib import metrics
 
-from catabra.util import io, metrics
+from catabra.util import io
 
 
 def _preprocess(x, pp: list):

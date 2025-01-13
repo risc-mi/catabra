@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from pathlib import Path
@@ -6,10 +6,11 @@ from typing import Optional, Type, Union
 
 import numpy as np
 import pandas as pd
+from catabra_lib import metrics
 
 from catabra.core import CaTabRaBase, CaTabRaPaths, Invocation
 from catabra.ood.base import OverallOODDetector, SamplewiseOODDetector
-from catabra.util import io, logging, metrics
+from catabra.util import io, logging
 from catabra.util import table as tu
 
 

@@ -23,6 +23,10 @@ descriptive statistics, creating out-of-distribution detectors, training predict
 regression tasks, and evaluating/explaining/applying these models on unseen data.
 
 CaTabRa is both a command-line tool and a library, which means it can be easily integrated into other projects.
+If you only need particular data processing functions but do not want to install all of CaTabRa, check out
+**[CaTabRa-pandas](https://github.com/risc-mi/catabra-pandas)** and
+**[CaTabRa-lib](https://github.com/risc-mi/catabra-lib)**: they have **minimal dependencies** and run on
+**every platform**.
 
 ## Quickstart
 
@@ -46,7 +50,7 @@ poetry install
 The project is installed in editable mode by default. This is useful if you plan to make changes to CaTabRa's code.
 
 **IMPORTANT**: CaTabRa currently only runs on Linux, because
-[auto-sklearn only runs on Linux](https://automl.github.io/auto-sklearn/master/installation.html). If on Windows,
+[auto-sklearn only runs on Linux](https://automl.github.io/auto-sklearn/master/installation.html). On Windows,
 you can use a virtual machine, like [WSL 2](https://docs.microsoft.com/en-us/windows/wsl/about), and install CaTabRa
 there. If you want to use Jupyter, install Jupyter on the virtual machine as well and launch it with the `--no-browser`
 flag.
@@ -195,7 +199,9 @@ can be found on our [ReadTheDocs](https://catabra.readthedocs.io/en/latest/index
   [DOI:10.1213/ANE.0000000000006720](https://doi.org/10.1213/ANE.0000000000006720)
 * T. Tschoellitsch, A. Maletzky, P. Moser, P. Seidl, C. Böck, T. Tomic Mahečić, S. Thumfart, M. Giretzlehner,
   S. Hochreiter and J. Meier.
-  *Machine Learning Prediction of Unsafe Discharge from Intensive Care: a retrospective cohort study*. submitted
+  *Machine Learning Prediction of Unsafe Discharge from Intensive Care: a retrospective cohort study*.
+  Journal of Clinical Anesthesia 99:111654, 2024.
+  [DOI:10.1016/j.jclinane.2024.111654](https://doi.org/10.1016/j.jclinane.2024.111654)
   
 
 ## Contact

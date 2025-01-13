@@ -15,7 +15,7 @@ sys.path.insert(0, _catabra_root)
 sys.path.insert(0, os.path.abspath('_ext'))
 
 project = 'CaTabRa'
-copyright = '2023, RISC Software GmbH'
+copyright = '2023-2025, RISC Software GmbH'
 author = 'RISC Software GmbH'
 github_url = 'https://github.com/risc-mi/catabra/'
 

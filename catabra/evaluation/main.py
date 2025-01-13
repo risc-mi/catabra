@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from pathlib import Path
@@ -6,12 +6,13 @@ from typing import Callable, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+from catabra_lib import metrics
+from catabra_lib.bootstrapping import Bootstrapping
 
 from catabra.core import CaTabRaBase, CaTabRaPaths, Invocation
 from catabra.ood.base import OverallOODDetector
-from catabra.util import io, logging, metrics, plotting, statistics
+from catabra.util import io, logging, plotting, statistics
 from catabra.util import table as tu
-from catabra.util.bootstrapping import Bootstrapping
 
 
 def evaluate(*table: Union[str, Path, pd.DataFrame], folder: Union[str, Path] = None, model_id=None, explain=None,

@@ -32,7 +32,7 @@ Plotting
 Metrics
 -------------------
 
-.. automodule:: util.metrics
+.. automodule:: catabra_lib.metrics
    :members:
    :no-undoc-members:
    :show-inheritance:
@@ -47,7 +47,7 @@ Statistics
 Preprocessing
 -------------------------
 
-.. automodule:: util.preprocessing
+.. automodule:: catabra_lib.preprocessing
    :members:
    :show-inheritance:
 
@@ -69,7 +69,7 @@ Table
 Split
 -----------------
 
-.. automodule:: util.split
+.. automodule:: catabra_lib.split
    :members:
    :show-inheritance:
 
@@ -83,7 +83,7 @@ Longitudinal
 Bootstrapping
 -------------------------
 
-.. automodule:: util.bootstrapping
+.. automodule:: catabra_lib.bootstrapping
    :members:
    :show-inheritance:
 

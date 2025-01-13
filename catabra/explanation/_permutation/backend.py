@@ -1,4 +1,4 @@
-#  Copyright (c) 2022. RISC Software GmbH.
+#  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
 from typing import Dict, List, Optional
@@ -6,11 +6,11 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 import sklearn
+from catabra_lib import metrics
 from joblib import Parallel, delayed
 
 from catabra.automl.fitted_ensemble import FittedEnsemble
 from catabra.explanation.base import EnsembleExplainer
-from catabra.util import metrics
 from catabra.util.logging import progress_bar
 
 

@@ -1,9 +1,9 @@
 # Metrics
 
-## Built-in Regression Metrics
+This section lists all built-in metrics that are available through the
+[`catabra-lib.metrics`](https://catabra.readthedocs.io/en/latest/modules/util.html#module-catabra_lib.metrics) module.
 
-This section lists all built-in regression metrics that are implemented in the
-[`catabra.util.metrics`](https://github.com/risc-mi/catabra/tree/main/catabra/util/metrics.py) module.
+## Built-in Regression Metrics
 
 ### R²
 
@@ -123,8 +123,6 @@ This section lists all built-in regression metrics that are implemented in the
 
 ## Built-in Classification Metrics
 
-This section lists all built-in classification metrics that are implemented in the `util.metrics` module.
-
 ### Area under Receiver Operator Characteristic Curve
 
 * Implementation:
@@ -187,7 +185,7 @@ This section lists all built-in classification metrics that are implemented in t
 ### Hinge Loss
 
 * Implementation:
-  * binary: `hinge_loss`
+  * binary & multiclass: `hinge_loss`
   * multilabel: `hinge_loss_micro`, `hinge_loss_macro`, `hinge_loss_samples`, `hinge_loss_weighted`
 * Range: [0, inf)
 * Optimum: 0
@@ -200,7 +198,7 @@ This section lists all built-in classification metrics that are implemented in t
 ### Log Loss
 
 * Implementation:
-  * binary: `log_loss`
+  * binary & multiclass: `log_loss`
   * multilabel: `log_loss_micro`, `log_loss_macro`, `log_loss_samples`, `log_loss_weighted`
 * Also known as: logistic loss, cross-entropy loss
 * Range: [0, inf)
@@ -222,12 +220,16 @@ This section lists all built-in classification metrics that are implemented in t
 ### Confusion Matrix
 
 * Implementation:
-  * binary & multiclass: `confusion_matrix`
+  * binary, multiclass, multilabel: `confusion_matrix`
 * Accepts probabilities: **no**
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.confusion_matrix.html#sklearn.metrics.confusion_matrix),
     [Wikipedia](https://en.wikipedia.org/wiki/Confusion_matrix)
-* **Note**: Not actually a metric.
+* **Note**: Not actually a metric. Refer to Section "Confusion-Matrix Based Metrics" for how to compute classification
+    metrics directly on confusion matrices instead of ground-truth and predictions.
+* **Note**: For binary- and multiclass problems, behaves like `sklearn.metrics.confusion_matrix`; for multilabel
+    problems, behaves like `sklearn.metrics.multilabel_confusion_matrix`. The behavior can also be controlled via
+    parameter `multilabel`.
 
 ### Accuracy
 
@@ -248,7 +250,7 @@ This section lists all built-in classification metrics that are implemented in t
 
 * Implementation:
   * binary: `balanced_accuracy`
-  * multiclass: `balanced_accuracy_micro`, `balanced_accuracy_macro`, `balanced_accuracy_weighted`
+  * multiclass: `balanced_accuracy`, `balanced_accuracy_micro`, `balanced_accuracy_macro`, `balanced_accuracy_weighted`
   * multilabel: `balanced_accuracy_micro`, `balanced_accuracy_macro`, `balanced_accuracy_samples`,
       `balanced_accuracy_weighted`
 * Range: [0, 1]
@@ -256,6 +258,7 @@ This section lists all built-in classification metrics that are implemented in t
 * Accepts probabilities: **no**
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.balanced_accuracy_score.html#sklearn.metrics.balanced_accuracy_score)
+* **Note**: `balanced_accuracy` is defined for multiclass problems even without specifying an averaging policy.
 * **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 * **Note**: Closely related to `informedness`, which is `balanced_accuracy * 2 - 1` in the binary case.
 
@@ -370,8 +373,10 @@ This section lists all built-in classification metrics that are implemented in t
 * Documentation:
     [scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.hamming_loss.html#sklearn.metrics.hamming_loss),
     [Wikipedia](https://en.wikipedia.org/wiki/Hamming_distance)
-* **Note**: `hamming_loss` is equivalent to `1 - accuracy`.
-* **Note**: `hamming_loss` is defined for multiclass problems even without specifying an averaging policy.
+* **Note**: `hamming_loss` is equivalent to `1 - accuracy`. For multilabel problems, the averaging policy defaults to
+    `"macro"`, whereas `accuracy` returns subset accuracy (i.e., all labels must match) by default.
+* **Note**: `hamming_loss` is defined for multiclass and multilabel problems even without specifying an averaging
+    policy.
 * **Note**: Refer to Section "Averaging" for information about micro-, macro-, samples- and weighted averaging.
 
 ### Jaccard Index
@@ -531,8 +536,8 @@ suitable value for parameter `average` of the non-suffixed function.
 
 ### Multilabel Classification
 
-Binary classification metrics can be applied to each class of a multilabel problem separately, and then averaged to
-obtain a single scalar value. Three averaging policies are supported by default, and can be specified either by using
+Binary classification metrics can be applied to each label of a multilabel problem separately, and then averaged to
+obtain a single scalar value. Four averaging policies are supported by default, and can be specified either by using
 a properly suffixed version of the function, or via the `average` parameter of the original function:
 * **micro**: Metrics are computed globally by counting the total true positives, true negatives, false positives and
     false negatives across all classes.
@@ -541,8 +546,31 @@ a properly suffixed version of the function, or via the `average` parameter of t
 * **weighted**: Weighted mean of per-class metric values, with weights corresponding to the number of instances of each
     class.
 
-**Note**: Some metrics, like `accuracy`, are defined for multilabel problems even without averaging. What is reported
-in metrics.xlsx are still the averaged versions, though.
+In addition, passing `average=None` returns the metric value for each label separately, in an array of shape
+`(n_labels,)`.
+
+**Note**: Some metrics, most prominently `accuracy` and `balanced_accuracy`, are defined for multiclass/multilabel
+problems even without averaging. What is reported in metrics.xlsx are still the averaged versions, though.
+
+## Confusion-Matrix Based Metrics
+
+Every classification metric that operates on class predictions (e.g., `accuracy`, `sensitivity`, etc.) has a
+corresponding variant that operates directly on confusion matrices, suffixed with `_cm`. This comes in handy when
+multiple such metrics are to be computed, and the number of samples is huge: simply compute the confusion matrix once,
+and then compute the desired metrics on the (small) confusion matrix.
+
+The following statements hold true for some metric `metric` and its confusion-matrix based variant `metric_cm`:
+
+* `metric_cm` generally accepts the same keyword arguments as `metric`. The only notable exception is
+    `sample_weight`, which has to be taken into account when constructing the confusion matrix.
+* `metric_cm` generally accepts the same averaging policies as `metric`, with only two exceptions:
+    * `average="samples"` is not supported by `metric_cm`, simply because there is no sample dimension anymore.
+    * `average="global"` is not supported by `accuracy_cm` in multilabel problems.
+
+    Furthermore, `metric_cm` and `metric` use the same default averaging policy.
+* For all `y_true` and `y_hat`: `metric(y_true, y_hat, sample_weight=sw, **kwargs)` is equal to
+    `metric_cm(cm=confusion_matrix(y_true, y_hat, sample_weight=sw), **kwargs)`, unless `metric_cm` is not defined due
+    to one of the reasons listed above.
 
 ## Calculating Metrics from Raw Predictions
 
