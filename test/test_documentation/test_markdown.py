@@ -348,16 +348,19 @@ def _check_url(url: str) -> Tuple[bool, Optional[bool]]:
         match = match.groups()[0]
         if match.startswith('/'):
             match = match[1:]
-        if match:
-            if match.startswith('tree/main') or match.startswith('blob/main'):
-                match = match[9:]
-                if match.startswith('/'):
-                    match = match[1:]
-                match = (_ROOT / match).exists()
+            if match:
+                if match.startswith('tree/main') or match.startswith('blob/main'):
+                    match = match[9:]
+                    if match.startswith('/'):
+                        match = match[1:]
+                    match = (_ROOT / match).exists()
+                else:
+                    match = match == '.git'
             else:
-                match = match == '.git'
+                # CaTabRa root
+                match = True
         else:
-            # CaTabRa root
+            # CaTabRa root or other repository (catabra-pandas, ...)
             match = True
 
     return exists, match

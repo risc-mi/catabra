@@ -299,6 +299,20 @@ files = [
 msgpack = "*"
 
 [[package]]
+name = "catabra-lib"
+version = "0.0.3"
+description = "CaTabRa-lib is a library with useful data-science-related functions and classes built atop scikit-learn"
+optional = false
+python-versions = "<4.0.0,>=3.6.1"
+files = [
+    {file = "catabra_lib-0.0.3-py3-none-any.whl", hash = "sha256:a4dedd33ed0cb7abcf956252b58a2b9ad1a4c73fe8cd1a07d35926fa78de48ee"},
+    {file = "catabra_lib-0.0.3.tar.gz", hash = "sha256:c869d5574c9f3fbb46926348ae37d8b0980e273faee47380c12b2e31e93538ef"},
+]
+
+[package.dependencies]
+scikit-learn = {version = ">=0.24.0", markers = "python_version >= \"3.9\""}
+
+[[package]]
 name = "catabra-pandas"
 version = "0.0.1"
 description = "CaTabRa-pandas is a library with additional functionality for pandas"
@@ -4478,4 +4492,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "aceda33436706c5625af778c8792153cf4f0c695aea1bfd144f23909040cb59b"
+content-hash = "9d45812fd373ae620034f2ff2a702f6e4107759b13b52e746fe874f9279a93a1"

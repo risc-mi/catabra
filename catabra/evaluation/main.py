@@ -1,6 +1,7 @@
 #  Copyright (c) 2022-2025. RISC Software GmbH.
 #  All rights reserved.
 
+from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Type, Union
 
@@ -1769,17 +1770,18 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
 
     default_mapping = []
     cm_mapping = []
+    cm_kwargs = dict(average=None) if task == 'multilabel_classification' else {}
     for m in metric_list:
         if not isinstance(m, str):
             default_mapping.append((m.__name__, m))
         elif m.endswith('_cm'):
-            cm_mapping.append((m, metrics.get(m), None))
+            cm_mapping.append((m, metrics.get(m), cm_kwargs))
         elif any(m.endswith(suffix) for suffix in ('_micro', '_macro', '_samples', '_weighted')):
             if task in ('binary_classification', 'multilabel_classification'):
                 i = m.rfind('_')
                 try:
                     func = metrics.get(m[:i] + '_cm')
-                    cm_mapping.append((m, func, m[i + 1:]))
+                    cm_mapping.append((m, func, dict(average=m[i + 1:])))
                 except:     # noqa
                     default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m), threshold=threshold)))
             elif task == 'multiclass_classification':
@@ -1788,7 +1790,7 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
                 default_mapping.append((m, metrics.get(m)))
         elif task in ('binary_classification', 'multilabel_classification'):
             try:
-                cm_mapping.append((m, metrics.get(m + '_cm'), None))
+                cm_mapping.append((m, metrics.get(m + '_cm'), cm_kwargs))
             except:     # noqa
                 default_mapping.append((m, metrics.maybe_thresholded(metrics.get(m), threshold=threshold)))
         elif task == 'multiclass_classification':
@@ -1817,9 +1819,9 @@ def performance_summary(*args, sample_weight: Optional[np.ndarray] = None, task:
             tn = (((y_hat < threshold) & (y_true < 1)) * w).sum(axis=0)
             fn = (((y_hat < threshold) & (y_true > 0)) * w).sum(axis=0)
 
-            for n, f, avg in cm_mapping:
+            for n, f, kwargs in cm_mapping:
                 try:
-                    out[n] = f(tp=tp, fp=fp, tn=tn, fn=fn, average=avg)
+                    out[n] = f(tp=tp, fp=fp, tn=tn, fn=fn, **kwargs)
                 except:  # noqa
                     if add_na_results:
                         out[n] = np.nan
@@ -1865,7 +1867,7 @@ def _bootstrap(n_repetitions: int, y_true, y_hat, sample_weight: Optional[np.nda
         if calc_roc_pr_calibration:
             bootstrapping_fn['roc_pr_curve'] = metrics.roc_pr_curve
             if calib is not None:
-                bootstrapping_fn['calibration_curve'] = metrics.partial(
+                bootstrapping_fn['calibration_curve'] = partial(
                     metrics.calibration_curve,
                     thresholds=np.r_[calib['threshold_lower'].values[0], calib['threshold_upper'].values]
                 )
