@@ -5,15 +5,11 @@ build:
   tools:
     python: "3.9"
   jobs:
-    post_create_environment:
-      # Install poetry
-      # https://python-poetry.org/docs/#installing-manually
-      - pip install poetry
-      - poetry config virtualenvs.create false
     post_install:
+      - pip install poetry
       # Install dependencies with dev dependencies group
       # https://python-poetry.org/docs/managing-dependencies/#dependency-groups
-      - poetry install --with dev,optional
+      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install --with dev,optional
 
 sphinx:
   configuration: doc/sphinx-docs/source/conf.py
