@@ -181,7 +181,11 @@ def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, f
     # metrics must be passed as triples `(name, optimum, sign)`
 
     val = main_metric[1] - (main_metric[2] * run_value.cost)
-    train = main_metric[1] - (main_metric[2] * run_value.additional_info['train_loss'])
+    try:
+        train = main_metric[1] - (main_metric[2] * run_value.additional_info['train_loss'])
+    except TypeError:
+        # sometimes `run_value.additional_info['train_loss']` is a dict (?) => multiplication raises a TypeError
+        train = np.nan
     test = main_metric[1] - (main_metric[2] * run_value.additional_info.get('test_loss', np.nan))
 
     # additional metrics are only available for validation set for single models,
@@ -453,10 +457,12 @@ class AutoSklearnBackend(AutoMLBackend):
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None, monitor=None) -> 'AutoSklearnBackend':
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, memory: Optional[int] = None,
+            jobs: Optional[int] = None, dataset_name: Optional[str] = None, monitor=None) -> 'AutoSklearnBackend':
         if time is None:
             time = self.config.get('time_limit')
+        if memory is None:
+            memory = self.config.get('memory_limit')
         if jobs is None:
             jobs = self.config.get('jobs')
         tmp_folder = self.tmp_folder
@@ -464,13 +470,14 @@ class AutoSklearnBackend(AutoMLBackend):
             shutil.rmtree(tmp_folder)
         kwargs = dict(
             time_left_for_this_task=600 if time is None or time < 0 else time * 60,  # `time` is given in minutes!
+            memory_limit=memory,
             n_jobs=-1 if jobs is None else jobs,
             tmp_folder=tmp_folder if tmp_folder is None else tmp_folder.as_posix(),
             delete_tmp_folder_after_terminate=tmp_folder is None,
             load_models=True
         )
         for config_param, askl_param in (('ensemble_size', None), ('ensemble_nbest', None),
-                                         ('ensemble_nbest', 'max_models_on_disc'), ('memory_limit', None)):
+                                         ('ensemble_nbest', 'max_models_on_disc')):
             value = self.config.get(config_param)
             if value is not None:
                 kwargs[askl_param or config_param] = value
@@ -589,6 +596,13 @@ class AutoSklearnBackend(AutoMLBackend):
             # auto-sklearn 2.0 includes the "sgd" classifier, which is not applicable to multilabel problems
             from autosklearn.classification import AutoSklearnClassifier as Estimator
             logging.log('Using auto-sklearn 1.0 (multilabel classification not supported by 2.0).')
+        elif LooseVersion(askl_version) >= LooseVersion('0.15.0') and metric is not None \
+                and metric.name not in ('roc_auc', 'balanced_accuracy', 'log_loss'):
+            # see https://github.com/automl/auto-sklearn/issues/1734
+            # most probably a bug that will be fixed eventually
+            from autosklearn.classification import AutoSklearnClassifier as Estimator
+            logging.log('Using auto-sklearn 1.0. Choose "balanced_accuracy", "roc_auc" or "log_loss" as the main'
+                        ' classification metric to use 2.0.')
         elif groups is None and resampling_strategy is None and include is None and exclude is None:
             try:
                 from autosklearn.experimental.askl2 import (

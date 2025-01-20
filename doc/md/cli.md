@@ -86,6 +86,9 @@ In addition to the positional `TABLE` argument, optional arguments can be provid
     working directory.
 * `--time TIME`: Time budget for model training, in minutes. Some AutoML backends require a fixed budget, others might
     not. Overwrites the `"time_limit"` config param. `0` means that no prediction models are trained.
+* `--memory`: Memory budget for model training, in MB unless explicitly specified otherwise by adding suffix "mb" or
+    "gb" (case-insensitive). Some AutoML backends require a fixed budget, others might not.
+    Overwrites the `"memory_limit"` config param.
 * `--jobs JOBS`: Number of jobs to use. Overwrites the `"jobs"` config param.
 * `--config CONFIG`: Path to a JSON file containing an alternative config dict. Merged with the default config specified
     via parameter `--default-config`. See Section Configuration below for details.

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "catabra"
-version = "0.1.1"
+version = "0.1.2"
 description = "CaTabRa is a Python package for analyzing tabular data in a largely automated way"
 authors = ["RISC Software GmbH"]
 license = "Apache 2.0 with Commons Clause"
@@ -17,7 +17,7 @@ classifiers = [
 python = ">=3.9,<3.11"   # update in devcontainer.json accordingly
 llvmlite = "0.38.0"
 shap = "^0.41.0"
-auto-sklearn = "^0.14.6"
+auto-sklearn = "^0.15.0"
 pandas = "^1.4.1"
 tables = "^3.6.1"
 xlrd = "^2.0.1"

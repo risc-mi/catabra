@@ -102,8 +102,8 @@ class AutoMLBackend:
         raise NotImplementedError()
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None, monitor=None) -> 'AutoMLBackend':
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, memory: Optional[int] = None,
+            jobs: Optional[int] = None, dataset_name: Optional[str] = None, monitor=None) -> 'AutoMLBackend':
         """
         Fit models and/or an ensemble thereof to new data.
 
@@ -122,6 +122,8 @@ class AutoMLBackend:
         time: int, optional
             The time budget, in minutes, or -1 if no budget is imposed. Overwrites the time budget specified in the
             config dict.
+        memory: int, optional
+            The memory budget, in MB. Overwrites the time budget specified in the config dict.
         jobs: int, optional
             The number of jobs to use, or -1 if all available processors shall be used. Overwrites the number of jobs
             specified in the config dict.

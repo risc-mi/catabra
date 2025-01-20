@@ -16,7 +16,8 @@ information, including the default values of the parameters.
 * `"ensemble_size"`: Maximum size of the final ensemble of prediction models. Passed to the AutoML backend.
 * `"ensemble_nbest"`: Maximum number of best single models to use in the final ensemble. Passed to the AutoML
     backend.
-* `"memory_limit"`: Memory limit for single prediction models, in MB. Passed to the AutoML backend.
+* `"memory_limit"`: Memory limit for single prediction models, in MB. Passed to the AutoML backend. Overwritten by
+    command-line argument `--memory`.
 * `"time_limit"`: Time limit for overall model training, in minutes; negative means no time limit. Overwritten by
     command-line argument `--time`.
 * `"jobs"`: Number of jobs to use; negative means all available processors. Overwritten by command-line argument

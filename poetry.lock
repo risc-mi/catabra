@@ -175,12 +175,12 @@ tests-no-zope = ["cloudpickle", "hypothesis", "mypy (>=1.1.1)", "pympler", "pyte
 
 [[package]]
 name = "auto-sklearn"
-version = "0.14.7"
+version = "0.15.0"
 description = "Automated machine learning."
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "auto-sklearn-0.14.7.tar.gz", hash = "sha256:cdcad93a562ab0664a84d0c71fdb56624f7541f81de3c30272e5ec3447fc428a"},
+    {file = "auto-sklearn-0.15.0.tar.gz", hash = "sha256:082941a56acfc93a83e221e08ef5d5b2083b1ff58d18be7c27d003a11e4a41d0"},
 ]
 
 [package.dependencies]
@@ -205,7 +205,7 @@ typing_extensions = "*"
 [package.extras]
 docs = ["docutils (==0.16)", "numpydoc", "sphinx (<4.3)", "sphinx-gallery", "sphinx_bootstrap_theme", "sphinx_toolbox"]
 examples = ["jupyter", "matplotlib", "notebook", "seaborn"]
-test = ["mypy", "openml", "pre-commit", "pytest (>=4.6)", "pytest-cov", "pytest-timeout", "pytest-xdist"]
+test = ["black", "isort", "mypy", "openml", "pre-commit", "pydocstyle", "pytest (>=4.6)", "pytest-cases (>=3.6.11)", "pytest-cov", "pytest-timeout", "pytest-xdist"]
 
 [[package]]
 name = "babel"
@@ -4492,4 +4492,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "9d45812fd373ae620034f2ff2a702f6e4107759b13b52e746fe874f9279a93a1"
+content-hash = "29be04c9632993e386f4b082a5701c40a7d81de8dad5349bd5f9db135574d6d0"

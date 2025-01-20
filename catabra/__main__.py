@@ -51,8 +51,9 @@ def make_parser():
         from .analysis import analyze
         analyze(*args.table, classify=args.classify, regress=args.regress, group=args.group, split=args.split,
                 sample_weight=args.sample_weight, ignore=args.ignore, calibrate=args.calibrate, time=args.time,
-                out=args.out, config=args.config, default_config=args.default_config, monitor=args.monitor,
-                jobs=args.jobs, from_invocation=getattr(args, 'from', None), create_stats=not args.no_stats)
+                memory=args.memory, out=args.out, config=args.config, default_config=args.default_config,
+                monitor=args.monitor, jobs=args.jobs, from_invocation=getattr(args, 'from', None),
+                create_stats=not args.no_stats)
 
     def _evaluate(args: argparse.Namespace):
         from .evaluation import evaluate
@@ -172,6 +173,13 @@ def make_parser():
         type=int,
         metavar='TIME',
         help='The time budget for training prediction models, in minutes.'
+    )
+    analyzer.add_argument(
+        '-m', '--memory',
+        type=str,
+        metavar='MEM',
+        help='The memory budget for training prediction models, in MB unless explicitly specified otherwise by'
+             ' adding suffix "mb" or "gb" (case-insensitive).'
     )
     analyzer.add_argument(
         '-o', '--out',
