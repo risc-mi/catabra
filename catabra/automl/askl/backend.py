@@ -181,7 +181,11 @@ def _get_metrics_from_run_value(run_value: 'RunValue', main_metric: Tuple[str, f
     # metrics must be passed as triples `(name, optimum, sign)`
 
     val = main_metric[1] - (main_metric[2] * run_value.cost)
-    train = main_metric[1] - (main_metric[2] * run_value.additional_info['train_loss'])
+    try:
+        train = main_metric[1] - (main_metric[2] * run_value.additional_info['train_loss'])
+    except TypeError:
+        # sometimes `run_value.additional_info['train_loss']` is a dict (?) => multiplication raises a TypeError
+        train = np.nan
     test = main_metric[1] - (main_metric[2] * run_value.additional_info.get('test_loss', np.nan))
 
     # additional metrics are only available for validation set for single models,
