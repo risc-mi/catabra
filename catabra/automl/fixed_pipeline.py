@@ -86,11 +86,13 @@ class _FixedPipelineBackend(AutoMLBackend):
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None, monitor=None) -> '_FixedPipelineBackend':
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, memory: Optional[int] = None,
+            jobs: Optional[int] = None, dataset_name: Optional[str] = None, monitor=None) -> '_FixedPipelineBackend':
         self.fit_start_time_ = py_time.time()
         if time is not None:
             logging.warn('Time limits cannot be imposed on fixed pipelines.')
+        if memory is not None:
+            logging.warn('Memory limits cannot be imposed on fixed pipelines.')
         if jobs is None:
             jobs = self.config.get('jobs')
         if groups is not None:

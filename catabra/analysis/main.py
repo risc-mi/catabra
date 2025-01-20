@@ -23,8 +23,9 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None, group: Optional[str] = None,
             split: Optional[str] = None, sample_weight: Optional[str] = None, ignore: Optional[Iterable[str]] = None,
             create_stats: Optional[bool] = None, calibrate: Optional[str] = None, time: Optional[int] = None,
-            out: Union[str, Path, None] = None, config: Union[str, Path, dict, None] = None,
-            default_config: Optional[str] = None, monitor: Optional[str] = None, jobs: Optional[int] = None,
+            memory: Union[int, str, None] = None, out: Union[str, Path, None] = None,
+            config: Union[str, Path, dict, None] = None, default_config: Optional[str] = None,
+            monitor: Optional[str] = None, jobs: Optional[int] = None,
             from_invocation: Union[str, Path, dict, None] = None):
     """
     Analyze a table by creating descriptive statistics and training models for predicting one or more columns from
@@ -61,6 +62,10 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
     time: int, optional
         Time budget for model training, in minutes. Some AutoML backends require a fixed budget, others might not.
         Overwrites the `time_limit` config param.
+    memory: int | str, optional
+        Memory budget for model training. Integers are assumed in MB, strings can specify the unit explicitly via
+        suffix "mb" or "gb" (case-insensitive). Some AutoML backends require a fixed budget, others might not.
+        Overwrites the `memory_limit` config param.
     out: str | Path, optional
         Directory where to save all generated artifacts. Defaults to a directory located in the parent directory of
         `table`, with a name following a fixed naming pattern. If `out` already exists, the user is prompted to specify
@@ -91,6 +96,7 @@ def analyze(*table: Union[str, Path, pd.DataFrame], classify: Optional[Iterable[
         create_stats=create_stats,
         calibrate=calibrate,
         time=time,
+        memory=memory,
         out=out,
         config=config,
         default_config=default_config,
@@ -203,8 +209,8 @@ class CaTabRaAnalysis(CaTabRaBase):
 
                     with self._make_training_monitor() as monitor:
                         backend.fit(x_train, y_train, groups=group_indices, sample_weights=sample_weights,
-                                    time=self._invocation.time, jobs=self._invocation.jobs, dataset_name=dataset_name,
-                                    monitor=monitor)
+                                    time=self._invocation.time, memory=self._invocation.memory,
+                                    jobs=self._invocation.jobs, dataset_name=dataset_name, monitor=monitor)
                     io.dump(backend, self._invocation.out / CaTabRaPaths.Model)
                     io.dump(io.to_json(backend.summary()), self._invocation.out / CaTabRaPaths.ModelSummary)
 
@@ -528,8 +534,12 @@ class AnalysisInvocation(Invocation):
         return self._group
 
     @property
-    def time(self) -> Optional[list]:
+    def time(self) -> Optional[int]:
         return self._time
+
+    @property
+    def memory(self) -> Optional[int]:
+        return self._memory
 
     @property
     def ignore(self) -> Optional[Iterable[str]]:
@@ -565,7 +575,8 @@ class AnalysisInvocation(Invocation):
             regress: Optional[Iterable[Union[str, Path, pd.DataFrame]]] = None,
             group: Optional[str] = None,
             split: Optional[str] = None,
-            time: Optional[str] = None,
+            time: Optional[int] = None,
+            memory: Union[int, str, None] = None,
             ignore: Optional[Iterable[str]] = None,
             calibrate: Optional[str] = None,
             config: Union[str, Path, dict, None] = None,
@@ -581,6 +592,7 @@ class AnalysisInvocation(Invocation):
         self._regress = regress
         self._group = group
         self._time = time
+        self._memory = memory
         self._ignore = ignore
         self._calibrate = calibrate
         self._config_src = config
@@ -600,6 +612,8 @@ class AnalysisInvocation(Invocation):
                 self._group = src.get('group')
             if self._time is None:
                 self._time = src.get('time')
+            if self._memory is None:
+                self._memory = src.get('memory')
             if self._ignore is None:
                 self._ignore = src.get('ignore')
             if self._calibrate is None:
@@ -629,6 +643,19 @@ class AnalysisInvocation(Invocation):
         if self._create_stats is None:
             self._create_stats = True
         self._ignore = set() if self._ignore is None else set(self._ignore)
+
+        if isinstance(self._memory, str):
+            mem = self._memory.strip().lower()
+            factor = 1
+            if mem.endswith('mb'):
+                mem = mem[:-2]
+            elif mem.endswith('gb'):
+                factor = 1000
+                mem = mem[:-2]
+            try:
+                self._memory = factor * int(mem)
+            except ValueError:
+                raise ValueError('Invalid memory specification: ' + self._memory)
 
         if not self._target:
             if self._classify is None:
@@ -667,6 +694,7 @@ class AnalysisInvocation(Invocation):
             default_config=self._default_config,
             monitor=self._monitor,
             time=self._time,
+            memory=self._memory,
         ))
         return dic
 

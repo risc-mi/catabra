@@ -453,10 +453,12 @@ class AutoSklearnBackend(AutoMLBackend):
         )
 
     def fit(self, x_train: pd.DataFrame, y_train: pd.DataFrame, groups: Optional[np.ndarray] = None,
-            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, jobs: Optional[int] = None,
-            dataset_name: Optional[str] = None, monitor=None) -> 'AutoSklearnBackend':
+            sample_weights: Optional[np.ndarray] = None, time: Optional[int] = None, memory: Optional[int] = None,
+            jobs: Optional[int] = None, dataset_name: Optional[str] = None, monitor=None) -> 'AutoSklearnBackend':
         if time is None:
             time = self.config.get('time_limit')
+        if memory is None:
+            memory = self.config.get('memory_limit')
         if jobs is None:
             jobs = self.config.get('jobs')
         tmp_folder = self.tmp_folder
@@ -464,13 +466,14 @@ class AutoSklearnBackend(AutoMLBackend):
             shutil.rmtree(tmp_folder)
         kwargs = dict(
             time_left_for_this_task=600 if time is None or time < 0 else time * 60,  # `time` is given in minutes!
+            memory_limit=memory,
             n_jobs=-1 if jobs is None else jobs,
             tmp_folder=tmp_folder if tmp_folder is None else tmp_folder.as_posix(),
             delete_tmp_folder_after_terminate=tmp_folder is None,
             load_models=True
         )
         for config_param, askl_param in (('ensemble_size', None), ('ensemble_nbest', None),
-                                         ('ensemble_nbest', 'max_models_on_disc'), ('memory_limit', None)):
+                                         ('ensemble_nbest', 'max_models_on_disc')):
             value = self.config.get(config_param)
             if value is not None:
                 kwargs[askl_param or config_param] = value
