@@ -596,6 +596,13 @@ class AutoSklearnBackend(AutoMLBackend):
             # auto-sklearn 2.0 includes the "sgd" classifier, which is not applicable to multilabel problems
             from autosklearn.classification import AutoSklearnClassifier as Estimator
             logging.log('Using auto-sklearn 1.0 (multilabel classification not supported by 2.0).')
+        elif LooseVersion(askl_version) >= LooseVersion('0.15.0') and metric is not None \
+                and metric.name not in ('roc_auc', 'balanced_accuracy', 'log_loss'):
+            # see https://github.com/automl/auto-sklearn/issues/1734
+            # most probably a bug that will be fixed eventually
+            from autosklearn.classification import AutoSklearnClassifier as Estimator
+            logging.log('Using auto-sklearn 1.0. Choose "balanced_accuracy", "roc_auc" or "log_loss" as the main'
+                        ' classification metric to use 2.0.')
         elif groups is None and resampling_strategy is None and include is None and exclude is None:
             try:
                 from autosklearn.experimental.askl2 import (
