@@ -127,6 +127,7 @@ publish-to-risc-pypi:
     - .publish-to-risc-pypi
     - .build-on-semversion
   variables:
+    TWINE_REPOSITORY_URL: https://pypinexus01.risc-software.at/repository/pypi
     DIRECTORY: dist/*
   only:
     - tags
