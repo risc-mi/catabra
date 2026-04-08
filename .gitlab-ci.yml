@@ -1,3 +1,6 @@
+variables:
+  POETRY_VERSION: 1.8.3
+
 image: dockernexus01.risc-software.at/python:3.9
 
 include:
@@ -127,6 +130,7 @@ publish-to-risc-pypi:
     - .publish-to-risc-pypi
     - .build-on-semversion
   variables:
+    TWINE_REPOSITORY_URL: https://pypinexus01.risc-software.at/repository/pypi/
     DIRECTORY: dist/*
   only:
     - tags

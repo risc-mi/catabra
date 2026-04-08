@@ -1,6 +1,6 @@
 """Version information."""
 
-#  Copyright (c) 2022-2025. RISC Software GmbH.
+#  Copyright (c) 2022-2026. RISC Software GmbH.
 #  All rights reserved.
 
-__version__ = "0.1.2"
+__version__ = "0.1.4"
